@@ -1,0 +1,282 @@
+[
+  {
+    "port_code": "SGSIN",
+    "name": "Singapore",
+    "country": "Singapore",
+    "coordinates": {
+      "lat": 1.2897,
+      "lon": 103.8501
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "HKHKG",
+    "name": "Hong Kong",
+    "country": "Hong Kong",
+    "coordinates": {
+      "lat": 22.3193,
+      "lon": 114.1694
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "KRBUS",
+    "name": "Busan",
+    "country": "South Korea",
+    "coordinates": {
+      "lat": 35.1047,
+      "lon": 129.032
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNSHA",
+    "name": "Shanghai",
+    "country": "China",
+    "coordinates": {
+      "lat": 31.2304,
+      "lon": 121.4737
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "JPTYO",
+    "name": "Tokyo",
+    "country": "Japan",
+    "coordinates": {
+      "lat": 35.6762,
+      "lon": 139.6503
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "JPYOK",
+    "name": "Yokohama",
+    "country": "Japan",
+    "coordinates": {
+      "lat": 35.4437,
+      "lon": 139.638
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "KRUSN",
+    "name": "Ulsan",
+    "country": "South Korea",
+    "coordinates": {
+      "lat": 35.5384,
+      "lon": 129.3114
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNNGB",
+    "name": "Ningbo",
+    "country": "China",
+    "coordinates": {
+      "lat": 29.8683,
+      "lon": 121.544
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNTAO",
+    "name": "Qingdao",
+    "country": "China",
+    "coordinates": {
+      "lat": 36.0671,
+      "lon": 120.3826
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNTXG",
+    "name": "Tianjin",
+    "country": "China",
+    "coordinates": {
+      "lat": 39.3434,
+      "lon": 117.3616
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNDLC",
+    "name": "Dalian",
+    "country": "China",
+    "coordinates": {
+      "lat": 38.914,
+      "lon": 121.6147
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNCAN",
+    "name": "Guangzhou",
+    "country": "China",
+    "coordinates": {
+      "lat": 23.1291,
+      "lon": 113.2644
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "CNSNZ",
+    "name": "Shenzhen",
+    "country": "China",
+    "coordinates": {
+      "lat": 22.5431,
+      "lon": 114.0579
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "AEFJR",
+    "name": "Fujairah",
+    "country": "United Arab Emirates",
+    "coordinates": {
+      "lat": 25.1288,
+      "lon": 56.3264
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "AEJEA",
+    "name": "Jebel Ali",
+    "country": "United Arab Emirates",
+    "coordinates": {
+      "lat": 25.0272,
+      "lon": 55.0625
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "NLRTM",
+    "name": "Rotterdam",
+    "country": "Netherlands",
+    "coordinates": {
+      "lat": 51.9225,
+      "lon": 4.4772
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "BEANR",
+    "name": "Antwerp",
+    "country": "Belgium",
+    "coordinates": {
+      "lat": 51.2194,
+      "lon": 4.4025
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "DEHAM",
+    "name": "Hamburg",
+    "country": "Germany",
+    "coordinates": {
+      "lat": 53.5511,
+      "lon": 9.9937
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "ESBCN",
+    "name": "Barcelona",
+    "country": "Spain",
+    "coordinates": {
+      "lat": 41.3851,
+      "lon": 2.1734
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  },
+  {
+    "port_code": "ESVLC",
+    "name": "Valencia",
+    "country": "Spain",
+    "coordinates": {
+      "lat": 39.4699,
+      "lon": -0.3763
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO"
+    ]
+  }
+]
