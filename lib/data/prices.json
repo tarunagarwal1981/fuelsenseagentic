@@ -1,674 +1,2298 @@
 [
   {
     "port_code": "AEFJR",
-    "fuel_type": "LSGO",
-    "price_per_mt": 750.18,
+    "fuel_type": "VLSFO",
+    "price_per_mt": 458.5,
     "currency": "USD",
-    "last_updated": "2025-12-20T02:51:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.883Z"
+  },
+  {
+    "port_code": "AEFJR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 729.58,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "AEFJR",
     "fuel_type": "MGO",
-    "price_per_mt": 760.43,
+    "price_per_mt": 707.11,
     "currency": "USD",
-    "last_updated": "2025-12-19T11:57:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "AEFJR",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 458.36,
+    "fuel_type": "HSFO",
+    "price_per_mt": 316.95,
     "currency": "USD",
-    "last_updated": "2025-12-19T16:43:29.216Z"
-  },
-  {
-    "port_code": "AEJEA",
-    "fuel_type": "LSGO",
-    "price_per_mt": 732.08,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:52:29.216Z"
-  },
-  {
-    "port_code": "AEJEA",
-    "fuel_type": "MGO",
-    "price_per_mt": 734.02,
-    "currency": "USD",
-    "last_updated": "2025-12-19T21:49:29.216Z"
-  },
-  {
-    "port_code": "AEJEA",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 445.28,
-    "currency": "USD",
-    "last_updated": "2025-12-19T20:44:29.216Z"
-  },
-  {
-    "port_code": "BEANR",
-    "fuel_type": "LSGO",
-    "price_per_mt": 705.74,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:52:29.216Z"
-  },
-  {
-    "port_code": "BEANR",
-    "fuel_type": "MGO",
-    "price_per_mt": 712.41,
-    "currency": "USD",
-    "last_updated": "2025-12-19T15:53:29.216Z"
-  },
-  {
-    "port_code": "BEANR",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 496.05,
-    "currency": "USD",
-    "last_updated": "2025-12-20T03:04:29.216Z"
-  },
-  {
-    "port_code": "CNCAN",
-    "fuel_type": "LSGO",
-    "price_per_mt": 684.32,
-    "currency": "USD",
-    "last_updated": "2025-12-19T11:57:29.216Z"
-  },
-  {
-    "port_code": "CNCAN",
-    "fuel_type": "MGO",
-    "price_per_mt": 663.41,
-    "currency": "USD",
-    "last_updated": "2025-12-19T16:00:29.216Z"
-  },
-  {
-    "port_code": "CNCAN",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 467.87,
-    "currency": "USD",
-    "last_updated": "2025-12-19T13:27:29.216Z"
-  },
-  {
-    "port_code": "CNDLC",
-    "fuel_type": "LSGO",
-    "price_per_mt": 688.35,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:24:29.216Z"
-  },
-  {
-    "port_code": "CNDLC",
-    "fuel_type": "MGO",
-    "price_per_mt": 644.74,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:40:29.216Z"
-  },
-  {
-    "port_code": "CNDLC",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 472.22,
-    "currency": "USD",
-    "last_updated": "2025-12-20T01:27:29.216Z"
-  },
-  {
-    "port_code": "CNNGB",
-    "fuel_type": "LSGO",
-    "price_per_mt": 680.81,
-    "currency": "USD",
-    "last_updated": "2025-12-20T01:54:29.216Z"
-  },
-  {
-    "port_code": "CNNGB",
-    "fuel_type": "MGO",
-    "price_per_mt": 627.61,
-    "currency": "USD",
-    "last_updated": "2025-12-19T21:14:29.216Z"
-  },
-  {
-    "port_code": "CNNGB",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 477.04,
-    "currency": "USD",
-    "last_updated": "2025-12-20T01:47:29.216Z"
-  },
-  {
-    "port_code": "CNSHA",
-    "fuel_type": "LSGO",
-    "price_per_mt": 679.43,
-    "currency": "USD",
-    "last_updated": "2025-12-19T15:24:29.216Z"
-  },
-  {
-    "port_code": "CNSHA",
-    "fuel_type": "MGO",
-    "price_per_mt": 662.59,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:20:29.216Z"
-  },
-  {
-    "port_code": "CNSHA",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 463.38,
-    "currency": "USD",
-    "last_updated": "2025-12-19T14:53:29.216Z"
-  },
-  {
-    "port_code": "CNSNZ",
-    "fuel_type": "LSGO",
-    "price_per_mt": 676.15,
-    "currency": "USD",
-    "last_updated": "2025-12-20T06:21:29.216Z"
-  },
-  {
-    "port_code": "CNSNZ",
-    "fuel_type": "MGO",
-    "price_per_mt": 668.42,
-    "currency": "USD",
-    "last_updated": "2025-12-19T19:07:29.216Z"
-  },
-  {
-    "port_code": "CNSNZ",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 488.98,
-    "currency": "USD",
-    "last_updated": "2025-12-19T19:39:29.216Z"
-  },
-  {
-    "port_code": "CNTAO",
-    "fuel_type": "LSGO",
-    "price_per_mt": 666.71,
-    "currency": "USD",
-    "last_updated": "2025-12-19T17:25:29.216Z"
-  },
-  {
-    "port_code": "CNTAO",
-    "fuel_type": "MGO",
-    "price_per_mt": 647.72,
-    "currency": "USD",
-    "last_updated": "2025-12-20T04:44:29.216Z"
-  },
-  {
-    "port_code": "CNTAO",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 483.37,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:15:29.216Z"
-  },
-  {
-    "port_code": "CNTXG",
-    "fuel_type": "LSGO",
-    "price_per_mt": 672.77,
-    "currency": "USD",
-    "last_updated": "2025-12-19T18:37:29.216Z"
-  },
-  {
-    "port_code": "CNTXG",
-    "fuel_type": "MGO",
-    "price_per_mt": 673.02,
-    "currency": "USD",
-    "last_updated": "2025-12-19T11:16:29.216Z"
-  },
-  {
-    "port_code": "CNTXG",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 488.22,
-    "currency": "USD",
-    "last_updated": "2025-12-20T02:34:29.216Z"
-  },
-  {
-    "port_code": "DEHAM",
-    "fuel_type": "LSGO",
-    "price_per_mt": 694.26,
-    "currency": "USD",
-    "last_updated": "2025-12-19T23:56:29.216Z"
-  },
-  {
-    "port_code": "DEHAM",
-    "fuel_type": "MGO",
-    "price_per_mt": 698.79,
-    "currency": "USD",
-    "last_updated": "2025-12-20T03:56:29.216Z"
-  },
-  {
-    "port_code": "DEHAM",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 479.07,
-    "currency": "USD",
-    "last_updated": "2025-12-19T14:33:29.216Z"
-  },
-  {
-    "port_code": "DJJIB",
-    "fuel_type": "LSGO",
-    "price_per_mt": 852.69,
-    "currency": "USD",
-    "last_updated": "2025-12-19T13:55:29.216Z"
-  },
-  {
-    "port_code": "DJJIB",
-    "fuel_type": "MGO",
-    "price_per_mt": 811.77,
-    "currency": "USD",
-    "last_updated": "2025-12-20T02:04:29.216Z"
-  },
-  {
-    "port_code": "DJJIB",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 528.53,
-    "currency": "USD",
-    "last_updated": "2025-12-19T21:27:29.216Z"
-  },
-  {
-    "port_code": "EGPSD",
-    "fuel_type": "LSGO",
-    "price_per_mt": 734.72,
-    "currency": "USD",
-    "last_updated": "2025-12-19T15:25:29.216Z"
-  },
-  {
-    "port_code": "EGPSD",
-    "fuel_type": "MGO",
-    "price_per_mt": 706.1,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:42:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "EGPSD",
     "fuel_type": "VLSFO",
-    "price_per_mt": 493.1,
+    "price_per_mt": 498.96,
     "currency": "USD",
-    "last_updated": "2025-12-20T00:56:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "EGPSD",
+    "fuel_type": "LSGO",
+    "price_per_mt": 684.69,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "EGPSD",
+    "fuel_type": "MGO",
+    "price_per_mt": 700.83,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "EGPSD",
+    "fuel_type": "HSFO",
+    "price_per_mt": 352.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "ESBCN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 510.43,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "ESBCN",
     "fuel_type": "LSGO",
-    "price_per_mt": 713.34,
+    "price_per_mt": 696.32,
     "currency": "USD",
-    "last_updated": "2025-12-19T17:14:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "ESBCN",
     "fuel_type": "MGO",
-    "price_per_mt": 714.73,
+    "price_per_mt": 679.79,
     "currency": "USD",
-    "last_updated": "2025-12-20T02:01:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "ESBCN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 369.97,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "GIGIB",
     "fuel_type": "VLSFO",
-    "price_per_mt": 501.8,
+    "price_per_mt": 482.04,
     "currency": "USD",
-    "last_updated": "2025-12-19T16:05:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "ESVLC",
+    "port_code": "GIGIB",
     "fuel_type": "LSGO",
-    "price_per_mt": 705.97,
+    "price_per_mt": 680.1,
     "currency": "USD",
-    "last_updated": "2025-12-20T04:52:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "ESVLC",
+    "port_code": "GIGIB",
     "fuel_type": "MGO",
-    "price_per_mt": 688.3,
+    "price_per_mt": 669.15,
     "currency": "USD",
-    "last_updated": "2025-12-19T21:16:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "ESVLC",
+    "port_code": "GIGIB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 362.48,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.884Z"
+  },
+  {
+    "port_code": "INMUN",
     "fuel_type": "VLSFO",
-    "price_per_mt": 478.87,
+    "price_per_mt": 474.57,
     "currency": "USD",
-    "last_updated": "2025-12-20T03:47:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "FRMRS",
+    "port_code": "INMUN",
     "fuel_type": "LSGO",
-    "price_per_mt": 691.78,
+    "price_per_mt": 670.82,
     "currency": "USD",
-    "last_updated": "2025-12-19T14:22:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "FRMRS",
+    "port_code": "INMUN",
     "fuel_type": "MGO",
-    "price_per_mt": 692.93,
+    "price_per_mt": 627.41,
     "currency": "USD",
-    "last_updated": "2025-12-19T10:42:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
-    "port_code": "FRMRS",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 488.71,
+    "port_code": "INMUN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 370.84,
     "currency": "USD",
-    "last_updated": "2025-12-19T22:00:29.216Z"
-  },
-  {
-    "port_code": "HKHKG",
-    "fuel_type": "LSGO",
-    "price_per_mt": 666.7,
-    "currency": "USD",
-    "last_updated": "2025-12-19T16:19:29.216Z"
-  },
-  {
-    "port_code": "HKHKG",
-    "fuel_type": "MGO",
-    "price_per_mt": 659.83,
-    "currency": "USD",
-    "last_updated": "2025-12-19T23:45:29.216Z"
-  },
-  {
-    "port_code": "HKHKG",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 488.69,
-    "currency": "USD",
-    "last_updated": "2025-12-19T17:03:29.216Z"
-  },
-  {
-    "port_code": "INMAA",
-    "fuel_type": "LSGO",
-    "price_per_mt": 649.74,
-    "currency": "USD",
-    "last_updated": "2025-12-19T22:28:29.216Z"
-  },
-  {
-    "port_code": "INMAA",
-    "fuel_type": "MGO",
-    "price_per_mt": 640.58,
-    "currency": "USD",
-    "last_updated": "2025-12-19T17:35:29.216Z"
-  },
-  {
-    "port_code": "INMAA",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 464.05,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:39:29.216Z"
-  },
-  {
-    "port_code": "INMUM",
-    "fuel_type": "LSGO",
-    "price_per_mt": 668.78,
-    "currency": "USD",
-    "last_updated": "2025-12-20T01:32:29.216Z"
-  },
-  {
-    "port_code": "INMUM",
-    "fuel_type": "MGO",
-    "price_per_mt": 655.58,
-    "currency": "USD",
-    "last_updated": "2025-12-20T04:38:29.216Z"
-  },
-  {
-    "port_code": "INMUM",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 452.67,
-    "currency": "USD",
-    "last_updated": "2025-12-19T15:01:29.216Z"
-  },
-  {
-    "port_code": "ITGOA",
-    "fuel_type": "LSGO",
-    "price_per_mt": 697.22,
-    "currency": "USD",
-    "last_updated": "2025-12-19T20:27:29.216Z"
-  },
-  {
-    "port_code": "ITGOA",
-    "fuel_type": "MGO",
-    "price_per_mt": 691.05,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:32:29.216Z"
-  },
-  {
-    "port_code": "ITGOA",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 492.39,
-    "currency": "USD",
-    "last_updated": "2025-12-19T18:48:29.216Z"
-  },
-  {
-    "port_code": "JPTYO",
-    "fuel_type": "LSGO",
-    "price_per_mt": 682.16,
-    "currency": "USD",
-    "last_updated": "2025-12-19T11:53:29.216Z"
-  },
-  {
-    "port_code": "JPTYO",
-    "fuel_type": "MGO",
-    "price_per_mt": 662.22,
-    "currency": "USD",
-    "last_updated": "2025-12-19T20:25:29.216Z"
-  },
-  {
-    "port_code": "JPTYO",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 479.38,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:06:29.216Z"
-  },
-  {
-    "port_code": "JPYOK",
-    "fuel_type": "LSGO",
-    "price_per_mt": 680.39,
-    "currency": "USD",
-    "last_updated": "2025-12-20T02:06:29.216Z"
-  },
-  {
-    "port_code": "JPYOK",
-    "fuel_type": "MGO",
-    "price_per_mt": 663.33,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:13:29.216Z"
-  },
-  {
-    "port_code": "JPYOK",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 486.61,
-    "currency": "USD",
-    "last_updated": "2025-12-19T19:08:29.216Z"
-  },
-  {
-    "port_code": "KRBUS",
-    "fuel_type": "LSGO",
-    "price_per_mt": 668.18,
-    "currency": "USD",
-    "last_updated": "2025-12-19T15:28:29.216Z"
-  },
-  {
-    "port_code": "KRBUS",
-    "fuel_type": "MGO",
-    "price_per_mt": 637.88,
-    "currency": "USD",
-    "last_updated": "2025-12-19T11:38:29.216Z"
-  },
-  {
-    "port_code": "KRBUS",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 470.54,
-    "currency": "USD",
-    "last_updated": "2025-12-19T16:07:29.216Z"
-  },
-  {
-    "port_code": "KRUSN",
-    "fuel_type": "LSGO",
-    "price_per_mt": 666.1,
-    "currency": "USD",
-    "last_updated": "2025-12-20T04:10:29.216Z"
-  },
-  {
-    "port_code": "KRUSN",
-    "fuel_type": "MGO",
-    "price_per_mt": 672.46,
-    "currency": "USD",
-    "last_updated": "2025-12-19T13:18:29.216Z"
-  },
-  {
-    "port_code": "KRUSN",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 492.44,
-    "currency": "USD",
-    "last_updated": "2025-12-19T23:30:29.216Z"
-  },
-  {
-    "port_code": "LKCMB",
-    "fuel_type": "LSGO",
-    "price_per_mt": 655.3,
-    "currency": "USD",
-    "last_updated": "2025-12-19T20:52:29.216Z"
-  },
-  {
-    "port_code": "LKCMB",
-    "fuel_type": "MGO",
-    "price_per_mt": 667.98,
-    "currency": "USD",
-    "last_updated": "2025-12-19T18:49:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.884Z"
   },
   {
     "port_code": "LKCMB",
     "fuel_type": "VLSFO",
-    "price_per_mt": 477.43,
+    "price_per_mt": 483.52,
     "currency": "USD",
-    "last_updated": "2025-12-19T19:08:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "LKCMB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 650.97,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "LKCMB",
+    "fuel_type": "MGO",
+    "price_per_mt": 631.23,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "LKCMB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 368.41,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "NLRTM",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 499.93,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "NLRTM",
     "fuel_type": "LSGO",
-    "price_per_mt": 686.55,
+    "price_per_mt": 722.44,
     "currency": "USD",
-    "last_updated": "2025-12-19T15:33:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "NLRTM",
     "fuel_type": "MGO",
-    "price_per_mt": 693.35,
+    "price_per_mt": 667.11,
     "currency": "USD",
-    "last_updated": "2025-12-19T16:42:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "NLRTM",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 492.06,
+    "fuel_type": "HSFO",
+    "price_per_mt": 358.42,
     "currency": "USD",
-    "last_updated": "2025-12-19T23:06:29.216Z"
-  },
-  {
-    "port_code": "SGSIN",
-    "fuel_type": "LSGO",
-    "price_per_mt": 698.94,
-    "currency": "USD",
-    "last_updated": "2025-12-19T12:39:29.216Z"
-  },
-  {
-    "port_code": "SGSIN",
-    "fuel_type": "MGO",
-    "price_per_mt": 666.25,
-    "currency": "USD",
-    "last_updated": "2025-12-19T11:08:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "SGSIN",
     "fuel_type": "VLSFO",
-    "price_per_mt": 469.28,
+    "price_per_mt": 465.18,
     "currency": "USD",
-    "last_updated": "2025-12-19T17:42:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "SGSIN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 680.8,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "SGSIN",
+    "fuel_type": "MGO",
+    "price_per_mt": 664.37,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "SGSIN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 376.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "USHOU",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 497,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "USHOU",
     "fuel_type": "LSGO",
-    "price_per_mt": 722.9,
+    "price_per_mt": 726.96,
     "currency": "USD",
-    "last_updated": "2025-12-20T02:10:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "USHOU",
     "fuel_type": "MGO",
-    "price_per_mt": 727.95,
+    "price_per_mt": 694.76,
     "currency": "USD",
-    "last_updated": "2025-12-20T04:44:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "USHOU",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 508.84,
+    "fuel_type": "HSFO",
+    "price_per_mt": 392.74,
     "currency": "USD",
-    "last_updated": "2025-12-19T19:00:29.216Z"
-  },
-  {
-    "port_code": "USLAX",
-    "fuel_type": "LSGO",
-    "price_per_mt": 718.19,
-    "currency": "USD",
-    "last_updated": "2025-12-19T10:59:29.216Z"
-  },
-  {
-    "port_code": "USLAX",
-    "fuel_type": "MGO",
-    "price_per_mt": 698.36,
-    "currency": "USD",
-    "last_updated": "2025-12-19T14:17:29.216Z"
-  },
-  {
-    "port_code": "USLAX",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 515.05,
-    "currency": "USD",
-    "last_updated": "2025-12-19T22:11:29.216Z"
-  },
-  {
-    "port_code": "USLGB",
-    "fuel_type": "LSGO",
-    "price_per_mt": 709.78,
-    "currency": "USD",
-    "last_updated": "2025-12-20T05:36:29.216Z"
-  },
-  {
-    "port_code": "USLGB",
-    "fuel_type": "MGO",
-    "price_per_mt": 692.75,
-    "currency": "USD",
-    "last_updated": "2025-12-19T14:39:29.216Z"
-  },
-  {
-    "port_code": "USLGB",
-    "fuel_type": "VLSFO",
-    "price_per_mt": 511.17,
-    "currency": "USD",
-    "last_updated": "2025-12-19T14:42:29.216Z"
-  },
-  {
-    "port_code": "USNYC",
-    "fuel_type": "LSGO",
-    "price_per_mt": 742.46,
-    "currency": "USD",
-    "last_updated": "2025-12-20T02:00:29.216Z"
-  },
-  {
-    "port_code": "USNYC",
-    "fuel_type": "MGO",
-    "price_per_mt": 696.49,
-    "currency": "USD",
-    "last_updated": "2025-12-19T21:02:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
     "port_code": "USNYC",
     "fuel_type": "VLSFO",
-    "price_per_mt": 523.4,
+    "price_per_mt": 522.67,
     "currency": "USD",
-    "last_updated": "2025-12-19T23:35:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
-    "port_code": "YEADE",
+    "port_code": "USNYC",
     "fuel_type": "LSGO",
-    "price_per_mt": 735.77,
+    "price_per_mt": 727.35,
     "currency": "USD",
-    "last_updated": "2025-12-19T18:20:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
   },
   {
-    "port_code": "YEADE",
+    "port_code": "USNYC",
     "fuel_type": "MGO",
-    "price_per_mt": 719.29,
+    "price_per_mt": 685.96,
     "currency": "USD",
-    "last_updated": "2025-12-19T14:18:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "USNYC",
+    "fuel_type": "HSFO",
+    "price_per_mt": 386.47,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.885Z"
+  },
+  {
+    "port_code": "HKHKG",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 487.44,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "HKHKG",
+    "fuel_type": "LSGO",
+    "price_per_mt": 694.43,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "HKHKG",
+    "fuel_type": "MGO",
+    "price_per_mt": 649.29,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "HKHKG",
+    "fuel_type": "HSFO",
+    "price_per_mt": 371.28,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "KRBUS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 480.6,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "KRBUS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 656.89,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "KRBUS",
+    "fuel_type": "MGO",
+    "price_per_mt": 661.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "KRBUS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 369.55,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.886Z"
+  },
+  {
+    "port_code": "CNSHA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 469.75,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.887Z"
+  },
+  {
+    "port_code": "CNSHA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 665.23,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.887Z"
+  },
+  {
+    "port_code": "CNSHA",
+    "fuel_type": "MGO",
+    "price_per_mt": 662,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.887Z"
+  },
+  {
+    "port_code": "CNSHA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 389.68,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.887Z"
+  },
+  {
+    "port_code": "JPTYO",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 473.43,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.888Z"
+  },
+  {
+    "port_code": "JPTYO",
+    "fuel_type": "LSGO",
+    "price_per_mt": 668.54,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.888Z"
+  },
+  {
+    "port_code": "JPTYO",
+    "fuel_type": "MGO",
+    "price_per_mt": 668.7,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.888Z"
+  },
+  {
+    "port_code": "JPTYO",
+    "fuel_type": "HSFO",
+    "price_per_mt": 362.98,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.888Z"
+  },
+  {
+    "port_code": "JPYOK",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 466.46,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "JPYOK",
+    "fuel_type": "LSGO",
+    "price_per_mt": 680.6,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "JPYOK",
+    "fuel_type": "MGO",
+    "price_per_mt": 644.05,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "JPYOK",
+    "fuel_type": "HSFO",
+    "price_per_mt": 381.52,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "KRUSN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 478.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "KRUSN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 679.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "KRUSN",
+    "fuel_type": "MGO",
+    "price_per_mt": 649.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "KRUSN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 363.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.889Z"
+  },
+  {
+    "port_code": "CNNGB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 479.03,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.890Z"
+  },
+  {
+    "port_code": "CNNGB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 661.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.890Z"
+  },
+  {
+    "port_code": "CNNGB",
+    "fuel_type": "MGO",
+    "price_per_mt": 657.55,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.890Z"
+  },
+  {
+    "port_code": "CNNGB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 364.51,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.890Z"
+  },
+  {
+    "port_code": "CNTAO",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 473.98,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.891Z"
+  },
+  {
+    "port_code": "CNTAO",
+    "fuel_type": "LSGO",
+    "price_per_mt": 691.37,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.891Z"
+  },
+  {
+    "port_code": "CNTAO",
+    "fuel_type": "MGO",
+    "price_per_mt": 676.88,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.891Z"
+  },
+  {
+    "port_code": "CNTAO",
+    "fuel_type": "HSFO",
+    "price_per_mt": 389.78,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.891Z"
+  },
+  {
+    "port_code": "CNTXG",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 475.89,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNTXG",
+    "fuel_type": "LSGO",
+    "price_per_mt": 669.63,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNTXG",
+    "fuel_type": "MGO",
+    "price_per_mt": 639.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNTXG",
+    "fuel_type": "HSFO",
+    "price_per_mt": 364.59,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNDLC",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 473.01,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNDLC",
+    "fuel_type": "LSGO",
+    "price_per_mt": 677.31,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNDLC",
+    "fuel_type": "MGO",
+    "price_per_mt": 654.11,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNDLC",
+    "fuel_type": "HSFO",
+    "price_per_mt": 377.64,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.892Z"
+  },
+  {
+    "port_code": "CNCAN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 456.12,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNCAN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 679.13,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNCAN",
+    "fuel_type": "MGO",
+    "price_per_mt": 622.97,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNCAN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 369.85,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNSZN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 453.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNSZN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 645.89,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNSZN",
+    "fuel_type": "MGO",
+    "price_per_mt": 634.63,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "CNSZN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 370.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.893Z"
+  },
+  {
+    "port_code": "INMAA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 480.01,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.894Z"
+  },
+  {
+    "port_code": "INMAA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 664.61,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.894Z"
+  },
+  {
+    "port_code": "INMAA",
+    "fuel_type": "MGO",
+    "price_per_mt": 670.72,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.894Z"
+  },
+  {
+    "port_code": "INMAA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 386.63,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.894Z"
+  },
+  {
+    "port_code": "INIXY",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 475.16,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INIXY",
+    "fuel_type": "LSGO",
+    "price_per_mt": 688.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INIXY",
+    "fuel_type": "MGO",
+    "price_per_mt": 646.73,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INIXY",
+    "fuel_type": "HSFO",
+    "price_per_mt": 377.75,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INVTZ",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 488.43,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INVTZ",
+    "fuel_type": "LSGO",
+    "price_per_mt": 671.14,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INVTZ",
+    "fuel_type": "MGO",
+    "price_per_mt": 667.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "INVTZ",
+    "fuel_type": "HSFO",
+    "price_per_mt": 376.36,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.895Z"
+  },
+  {
+    "port_code": "BDCGP",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 480.1,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.896Z"
+  },
+  {
+    "port_code": "BDCGP",
+    "fuel_type": "LSGO",
+    "price_per_mt": 667.41,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.896Z"
+  },
+  {
+    "port_code": "BDCGP",
+    "fuel_type": "MGO",
+    "price_per_mt": 672.13,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.896Z"
+  },
+  {
+    "port_code": "BDCGP",
+    "fuel_type": "HSFO",
+    "price_per_mt": 376.12,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.896Z"
+  },
+  {
+    "port_code": "THBKK",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 480.62,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THBKK",
+    "fuel_type": "LSGO",
+    "price_per_mt": 692.48,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THBKK",
+    "fuel_type": "MGO",
+    "price_per_mt": 655.2,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THBKK",
+    "fuel_type": "HSFO",
+    "price_per_mt": 380.41,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THLCH",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 487.2,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THLCH",
+    "fuel_type": "LSGO",
+    "price_per_mt": 691.16,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THLCH",
+    "fuel_type": "MGO",
+    "price_per_mt": 658.6,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "THLCH",
+    "fuel_type": "HSFO",
+    "price_per_mt": 377.04,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.897Z"
+  },
+  {
+    "port_code": "VNSGN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 472.88,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.898Z"
+  },
+  {
+    "port_code": "VNSGN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 689.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.898Z"
+  },
+  {
+    "port_code": "VNSGN",
+    "fuel_type": "MGO",
+    "price_per_mt": 678.17,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.898Z"
+  },
+  {
+    "port_code": "VNSGN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 385.6,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.898Z"
+  },
+  {
+    "port_code": "PHMNL",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 486.37,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "PHMNL",
+    "fuel_type": "LSGO",
+    "price_per_mt": 688.32,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "PHMNL",
+    "fuel_type": "MGO",
+    "price_per_mt": 649.3,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "PHMNL",
+    "fuel_type": "HSFO",
+    "price_per_mt": 364.13,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "IDJKT",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 481.13,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "IDJKT",
+    "fuel_type": "LSGO",
+    "price_per_mt": 645.11,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "IDJKT",
+    "fuel_type": "MGO",
+    "price_per_mt": 636.85,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "IDJKT",
+    "fuel_type": "HSFO",
+    "price_per_mt": 360.88,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.899Z"
+  },
+  {
+    "port_code": "IDSUB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 479.67,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.900Z"
+  },
+  {
+    "port_code": "IDSUB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 689.28,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.900Z"
+  },
+  {
+    "port_code": "IDSUB",
+    "fuel_type": "MGO",
+    "price_per_mt": 656.87,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.900Z"
+  },
+  {
+    "port_code": "IDSUB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 366.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.900Z"
+  },
+  {
+    "port_code": "MYPKG",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 466.46,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "MYPKG",
+    "fuel_type": "LSGO",
+    "price_per_mt": 679.9,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "MYPKG",
+    "fuel_type": "MGO",
+    "price_per_mt": 648.48,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "MYPKG",
+    "fuel_type": "HSFO",
+    "price_per_mt": 361.07,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "AEJEA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 456.46,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "AEJEA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 749.62,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "AEJEA",
+    "fuel_type": "MGO",
+    "price_per_mt": 707.98,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
+  },
+  {
+    "port_code": "AEJEA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 322.53,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.901Z"
   },
   {
     "port_code": "YEADE",
     "fuel_type": "VLSFO",
-    "price_per_mt": 451.04,
+    "price_per_mt": 454.38,
     "currency": "USD",
-    "last_updated": "2025-12-19T23:14:29.216Z"
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "YEADE",
+    "fuel_type": "LSGO",
+    "price_per_mt": 785.11,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "YEADE",
+    "fuel_type": "MGO",
+    "price_per_mt": 750.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "YEADE",
+    "fuel_type": "HSFO",
+    "price_per_mt": 326.04,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "BEANR",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 477.09,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "BEANR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 689.9,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "BEANR",
+    "fuel_type": "MGO",
+    "price_per_mt": 671.24,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "BEANR",
+    "fuel_type": "HSFO",
+    "price_per_mt": 359.48,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.902Z"
+  },
+  {
+    "port_code": "DEHAM",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 499.59,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.903Z"
+  },
+  {
+    "port_code": "DEHAM",
+    "fuel_type": "LSGO",
+    "price_per_mt": 710.78,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.903Z"
+  },
+  {
+    "port_code": "DEHAM",
+    "fuel_type": "MGO",
+    "price_per_mt": 699.78,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.903Z"
+  },
+  {
+    "port_code": "DEHAM",
+    "fuel_type": "HSFO",
+    "price_per_mt": 359.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.903Z"
+  },
+  {
+    "port_code": "NLAMS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 506.93,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.904Z"
+  },
+  {
+    "port_code": "NLAMS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 695.99,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.904Z"
+  },
+  {
+    "port_code": "NLAMS",
+    "fuel_type": "MGO",
+    "price_per_mt": 677.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.904Z"
+  },
+  {
+    "port_code": "NLAMS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 375.65,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.904Z"
+  },
+  {
+    "port_code": "DEBRE",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 513.09,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "DEBRE",
+    "fuel_type": "LSGO",
+    "price_per_mt": 702.83,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "DEBRE",
+    "fuel_type": "MGO",
+    "price_per_mt": 707.18,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "DEBRE",
+    "fuel_type": "HSFO",
+    "price_per_mt": 372.24,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "FRLEH",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 472.93,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "FRLEH",
+    "fuel_type": "LSGO",
+    "price_per_mt": 707.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "FRLEH",
+    "fuel_type": "MGO",
+    "price_per_mt": 660.08,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "FRLEH",
+    "fuel_type": "HSFO",
+    "price_per_mt": 354.34,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.905Z"
+  },
+  {
+    "port_code": "ESVLC",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 484.17,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.906Z"
+  },
+  {
+    "port_code": "ESVLC",
+    "fuel_type": "LSGO",
+    "price_per_mt": 700.23,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.906Z"
+  },
+  {
+    "port_code": "ESVLC",
+    "fuel_type": "MGO",
+    "price_per_mt": 675.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.906Z"
+  },
+  {
+    "port_code": "ESVLC",
+    "fuel_type": "HSFO",
+    "price_per_mt": 358.18,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.906Z"
+  },
+  {
+    "port_code": "FRMRS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 474.76,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "FRMRS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 703.29,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "FRMRS",
+    "fuel_type": "MGO",
+    "price_per_mt": 681.5,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "FRMRS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 351.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "ITGOA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 491.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "ITGOA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 714.91,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "ITGOA",
+    "fuel_type": "MGO",
+    "price_per_mt": 690.73,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "ITGOA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 369.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.907Z"
+  },
+  {
+    "port_code": "ITNAP",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 481.03,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.908Z"
+  },
+  {
+    "port_code": "ITNAP",
+    "fuel_type": "LSGO",
+    "price_per_mt": 689.3,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.908Z"
+  },
+  {
+    "port_code": "ITNAP",
+    "fuel_type": "MGO",
+    "price_per_mt": 665.72,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.908Z"
+  },
+  {
+    "port_code": "ITNAP",
+    "fuel_type": "HSFO",
+    "price_per_mt": 357.39,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.908Z"
+  },
+  {
+    "port_code": "GRPIR",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 502.07,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "GRPIR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 719.54,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "GRPIR",
+    "fuel_type": "MGO",
+    "price_per_mt": 685.82,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "GRPIR",
+    "fuel_type": "HSFO",
+    "price_per_mt": 370.28,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "TRIST",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 492.89,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "TRIST",
+    "fuel_type": "LSGO",
+    "price_per_mt": 712.84,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "TRIST",
+    "fuel_type": "MGO",
+    "price_per_mt": 673.85,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "TRIST",
+    "fuel_type": "HSFO",
+    "price_per_mt": 353.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.909Z"
+  },
+  {
+    "port_code": "USPHL",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 503.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USPHL",
+    "fuel_type": "LSGO",
+    "price_per_mt": 742.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USPHL",
+    "fuel_type": "MGO",
+    "price_per_mt": 724.92,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USPHL",
+    "fuel_type": "HSFO",
+    "price_per_mt": 403.25,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USORF",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 527.93,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USORF",
+    "fuel_type": "LSGO",
+    "price_per_mt": 736.82,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USORF",
+    "fuel_type": "MGO",
+    "price_per_mt": 708.91,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USORF",
+    "fuel_type": "HSFO",
+    "price_per_mt": 393.48,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.910Z"
+  },
+  {
+    "port_code": "USCHS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 507.91,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.911Z"
+  },
+  {
+    "port_code": "USCHS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 719.98,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.911Z"
+  },
+  {
+    "port_code": "USCHS",
+    "fuel_type": "MGO",
+    "price_per_mt": 699.23,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.911Z"
+  },
+  {
+    "port_code": "USCHS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 389.25,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.911Z"
+  },
+  {
+    "port_code": "USSAV",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 513.65,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USSAV",
+    "fuel_type": "LSGO",
+    "price_per_mt": 727.61,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USSAV",
+    "fuel_type": "MGO",
+    "price_per_mt": 709.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USSAV",
+    "fuel_type": "HSFO",
+    "price_per_mt": 402.08,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USMIA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 513.14,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USMIA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 754.72,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USMIA",
+    "fuel_type": "MGO",
+    "price_per_mt": 697.73,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USMIA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 407.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.912Z"
+  },
+  {
+    "port_code": "USMSY",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 514.15,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.913Z"
+  },
+  {
+    "port_code": "USMSY",
+    "fuel_type": "LSGO",
+    "price_per_mt": 760.54,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.913Z"
+  },
+  {
+    "port_code": "USMSY",
+    "fuel_type": "MGO",
+    "price_per_mt": 705.28,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.913Z"
+  },
+  {
+    "port_code": "USMSY",
+    "fuel_type": "HSFO",
+    "price_per_mt": 408.98,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.913Z"
+  },
+  {
+    "port_code": "USLAX",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 530.18,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLAX",
+    "fuel_type": "LSGO",
+    "price_per_mt": 761.8,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLAX",
+    "fuel_type": "MGO",
+    "price_per_mt": 711.22,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLAX",
+    "fuel_type": "HSFO",
+    "price_per_mt": 397.55,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLGB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 512.09,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLGB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 738.01,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLGB",
+    "fuel_type": "MGO",
+    "price_per_mt": 710.82,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USLGB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 407.32,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.917Z"
+  },
+  {
+    "port_code": "USSFO",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 509.4,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSFO",
+    "fuel_type": "LSGO",
+    "price_per_mt": 737.31,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSFO",
+    "fuel_type": "MGO",
+    "price_per_mt": 694.15,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSFO",
+    "fuel_type": "HSFO",
+    "price_per_mt": 390.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSEA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 523.71,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSEA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 759.9,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSEA",
+    "fuel_type": "MGO",
+    "price_per_mt": 735.55,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USSEA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 407.14,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USPDX",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 518.09,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USPDX",
+    "fuel_type": "LSGO",
+    "price_per_mt": 734.16,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USPDX",
+    "fuel_type": "MGO",
+    "price_per_mt": 723.15,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "USPDX",
+    "fuel_type": "HSFO",
+    "price_per_mt": 400.65,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "CAVAN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 518.21,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "CAVAN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 727.85,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "CAVAN",
+    "fuel_type": "MGO",
+    "price_per_mt": 742.68,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "CAVAN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 408.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.918Z"
+  },
+  {
+    "port_code": "PACTB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 514.41,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "PACTB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 735.39,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "PACTB",
+    "fuel_type": "MGO",
+    "price_per_mt": 711.99,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "PACTB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 393.89,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "JMKIN",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 521,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "JMKIN",
+    "fuel_type": "LSGO",
+    "price_per_mt": 739.34,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "JMKIN",
+    "fuel_type": "MGO",
+    "price_per_mt": 726.31,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "JMKIN",
+    "fuel_type": "HSFO",
+    "price_per_mt": 410.39,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "COCTG",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 502.54,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "COCTG",
+    "fuel_type": "LSGO",
+    "price_per_mt": 742.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "COCTG",
+    "fuel_type": "MGO",
+    "price_per_mt": 722.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "COCTG",
+    "fuel_type": "HSFO",
+    "price_per_mt": 402.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "BRSTS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 516.72,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "BRSTS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 728.92,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "BRSTS",
+    "fuel_type": "MGO",
+    "price_per_mt": 728.4,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "BRSTS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 417.32,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.919Z"
+  },
+  {
+    "port_code": "BRRIO",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 523.12,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRRIO",
+    "fuel_type": "LSGO",
+    "price_per_mt": 739.43,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRRIO",
+    "fuel_type": "MGO",
+    "price_per_mt": 726.76,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRRIO",
+    "fuel_type": "HSFO",
+    "price_per_mt": 399.39,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRPNG",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 521.11,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRPNG",
+    "fuel_type": "LSGO",
+    "price_per_mt": 722.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRPNG",
+    "fuel_type": "MGO",
+    "price_per_mt": 723.75,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "BRPNG",
+    "fuel_type": "HSFO",
+    "price_per_mt": 396.52,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "ARBUE",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 514.08,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "ARBUE",
+    "fuel_type": "LSGO",
+    "price_per_mt": 725.69,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "ARBUE",
+    "fuel_type": "MGO",
+    "price_per_mt": 695,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "ARBUE",
+    "fuel_type": "HSFO",
+    "price_per_mt": 394.61,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.920Z"
+  },
+  {
+    "port_code": "PECLL",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 517.53,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "PECLL",
+    "fuel_type": "LSGO",
+    "price_per_mt": 740.66,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "PECLL",
+    "fuel_type": "MGO",
+    "price_per_mt": 699.09,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "PECLL",
+    "fuel_type": "HSFO",
+    "price_per_mt": 390.32,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CLVAP",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 503.49,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CLVAP",
+    "fuel_type": "LSGO",
+    "price_per_mt": 742,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CLVAP",
+    "fuel_type": "MGO",
+    "price_per_mt": 692.14,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CLVAP",
+    "fuel_type": "HSFO",
+    "price_per_mt": 409.02,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "NGLOS",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 536.57,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "NGLOS",
+    "fuel_type": "LSGO",
+    "price_per_mt": 842.76,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "NGLOS",
+    "fuel_type": "MGO",
+    "price_per_mt": 796.38,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "NGLOS",
+    "fuel_type": "HSFO",
+    "price_per_mt": 419.05,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CIABJ",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 555.28,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CIABJ",
+    "fuel_type": "LSGO",
+    "price_per_mt": 838.12,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CIABJ",
+    "fuel_type": "MGO",
+    "price_per_mt": 822.84,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "CIABJ",
+    "fuel_type": "HSFO",
+    "price_per_mt": 433.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.921Z"
+  },
+  {
+    "port_code": "SNDKR",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 547.15,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "SNDKR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 826.14,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "SNDKR",
+    "fuel_type": "MGO",
+    "price_per_mt": 813.79,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "SNDKR",
+    "fuel_type": "HSFO",
+    "price_per_mt": 433.92,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "AOLAD",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 550.3,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "AOLAD",
+    "fuel_type": "LSGO",
+    "price_per_mt": 833.96,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "AOLAD",
+    "fuel_type": "MGO",
+    "price_per_mt": 829.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "AOLAD",
+    "fuel_type": "HSFO",
+    "price_per_mt": 444.52,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "GHTEM",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 544.75,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "GHTEM",
+    "fuel_type": "LSGO",
+    "price_per_mt": 830.5,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "GHTEM",
+    "fuel_type": "MGO",
+    "price_per_mt": 796.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "GHTEM",
+    "fuel_type": "HSFO",
+    "price_per_mt": 426.76,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "BJCOO",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 559.31,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "BJCOO",
+    "fuel_type": "LSGO",
+    "price_per_mt": 867.16,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "BJCOO",
+    "fuel_type": "MGO",
+    "price_per_mt": 828.86,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "BJCOO",
+    "fuel_type": "HSFO",
+    "price_per_mt": 444.04,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.922Z"
+  },
+  {
+    "port_code": "TGLFW",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 553.41,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "TGLFW",
+    "fuel_type": "LSGO",
+    "price_per_mt": 825.87,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "TGLFW",
+    "fuel_type": "MGO",
+    "price_per_mt": 791.62,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "TGLFW",
+    "fuel_type": "HSFO",
+    "price_per_mt": 437.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZACPT",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 542.65,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZACPT",
+    "fuel_type": "LSGO",
+    "price_per_mt": 804.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZACPT",
+    "fuel_type": "MGO",
+    "price_per_mt": 798.18,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZACPT",
+    "fuel_type": "HSFO",
+    "price_per_mt": 414.35,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZADUR",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 534.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZADUR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 842.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZADUR",
+    "fuel_type": "MGO",
+    "price_per_mt": 772.08,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZADUR",
+    "fuel_type": "HSFO",
+    "price_per_mt": 411.19,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.923Z"
+  },
+  {
+    "port_code": "ZAPLZ",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 544.68,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZAPLZ",
+    "fuel_type": "LSGO",
+    "price_per_mt": 861.69,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZAPLZ",
+    "fuel_type": "MGO",
+    "price_per_mt": 818.17,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZAPLZ",
+    "fuel_type": "HSFO",
+    "price_per_mt": 432.87,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZARCB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 520.82,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZARCB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 817.99,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZARCB",
+    "fuel_type": "MGO",
+    "price_per_mt": 775.26,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "ZARCB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 409.53,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "KEMBA",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 553.7,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "KEMBA",
+    "fuel_type": "LSGO",
+    "price_per_mt": 857.27,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "KEMBA",
+    "fuel_type": "MGO",
+    "price_per_mt": 832.64,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "KEMBA",
+    "fuel_type": "HSFO",
+    "price_per_mt": 439.44,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "TZDAR",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 538.45,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "TZDAR",
+    "fuel_type": "LSGO",
+    "price_per_mt": 804.94,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "TZDAR",
+    "fuel_type": "MGO",
+    "price_per_mt": 783.11,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "TZDAR",
+    "fuel_type": "HSFO",
+    "price_per_mt": 433.8,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.924Z"
+  },
+  {
+    "port_code": "DJJIB",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 543.9,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "DJJIB",
+    "fuel_type": "LSGO",
+    "price_per_mt": 834.42,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "DJJIB",
+    "fuel_type": "MGO",
+    "price_per_mt": 818.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "DJJIB",
+    "fuel_type": "HSFO",
+    "price_per_mt": 433.53,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "MUPLU",
+    "fuel_type": "VLSFO",
+    "price_per_mt": 533.59,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "MUPLU",
+    "fuel_type": "LSGO",
+    "price_per_mt": 840.81,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "MUPLU",
+    "fuel_type": "MGO",
+    "price_per_mt": 813.06,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
+  },
+  {
+    "port_code": "MUPLU",
+    "fuel_type": "HSFO",
+    "price_per_mt": 428.92,
+    "currency": "USD",
+    "last_updated": "2025-12-20T13:35:32.925Z"
   }
 ]

@@ -1,282 +1,1232 @@
 [
   {
-    "port_code": "SGSIN",
-    "name": "Singapore",
-    "country": "Singapore",
-    "coordinates": {
-      "lat": 1.2897,
-      "lon": 103.8501
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "HKHKG",
-    "name": "Hong Kong",
-    "country": "Hong Kong",
-    "coordinates": {
-      "lat": 22.3193,
-      "lon": 114.1694
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "KRBUS",
-    "name": "Busan",
-    "country": "South Korea",
-    "coordinates": {
-      "lat": 35.1047,
-      "lon": 129.032
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNSHA",
-    "name": "Shanghai",
-    "country": "China",
-    "coordinates": {
-      "lat": 31.2304,
-      "lon": 121.4737
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "JPTYO",
-    "name": "Tokyo",
-    "country": "Japan",
-    "coordinates": {
-      "lat": 35.6762,
-      "lon": 139.6503
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "JPYOK",
-    "name": "Yokohama",
-    "country": "Japan",
-    "coordinates": {
-      "lat": 35.4437,
-      "lon": 139.638
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "KRUSN",
-    "name": "Ulsan",
-    "country": "South Korea",
-    "coordinates": {
-      "lat": 35.5384,
-      "lon": 129.3114
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNNGB",
-    "name": "Ningbo",
-    "country": "China",
-    "coordinates": {
-      "lat": 29.8683,
-      "lon": 121.544
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNTAO",
-    "name": "Qingdao",
-    "country": "China",
-    "coordinates": {
-      "lat": 36.0671,
-      "lon": 120.3826
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNTXG",
-    "name": "Tianjin",
-    "country": "China",
-    "coordinates": {
-      "lat": 39.3434,
-      "lon": 117.3616
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNDLC",
-    "name": "Dalian",
-    "country": "China",
-    "coordinates": {
-      "lat": 38.914,
-      "lon": 121.6147
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNCAN",
-    "name": "Guangzhou",
-    "country": "China",
-    "coordinates": {
-      "lat": 23.1291,
-      "lon": 113.2644
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "CNSNZ",
-    "name": "Shenzhen",
-    "country": "China",
-    "coordinates": {
-      "lat": 22.5431,
-      "lon": 114.0579
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
     "port_code": "AEFJR",
     "name": "Fujairah",
-    "country": "United Arab Emirates",
+    "country": "AE",
     "coordinates": {
-      "lat": 25.1288,
-      "lon": 56.3264
+      "lat": 25.12,
+      "lon": 56.33
     },
     "fuel_capabilities": [
       "VLSFO",
       "MGO",
-      "LSGO"
+      "LSGO",
+      "HSFO"
     ]
   },
   {
-    "port_code": "AEJEA",
-    "name": "Jebel Ali",
-    "country": "United Arab Emirates",
+    "port_code": "EGPSD",
+    "name": "Port Said (Suez)",
+    "country": "EG",
     "coordinates": {
-      "lat": 25.0272,
-      "lon": 55.0625
+      "lat": 31.26,
+      "lon": 32.3
     },
     "fuel_capabilities": [
       "VLSFO",
       "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "NLRTM",
-    "name": "Rotterdam",
-    "country": "Netherlands",
-    "coordinates": {
-      "lat": 51.9225,
-      "lon": 4.4772
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "BEANR",
-    "name": "Antwerp",
-    "country": "Belgium",
-    "coordinates": {
-      "lat": 51.2194,
-      "lon": 4.4025
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
-    ]
-  },
-  {
-    "port_code": "DEHAM",
-    "name": "Hamburg",
-    "country": "Germany",
-    "coordinates": {
-      "lat": 53.5511,
-      "lon": 9.9937
-    },
-    "fuel_capabilities": [
-      "VLSFO",
-      "MGO",
-      "LSGO"
+      "LSGO",
+      "HSFO"
     ]
   },
   {
     "port_code": "ESBCN",
     "name": "Barcelona",
-    "country": "Spain",
+    "country": "ES",
     "coordinates": {
-      "lat": 41.3851,
-      "lon": 2.1734
+      "lat": 41.38,
+      "lon": 2.17
     },
     "fuel_capabilities": [
       "VLSFO",
       "MGO",
-      "LSGO"
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "GIGIB",
+    "name": "Gibraltar",
+    "country": "GI",
+    "coordinates": {
+      "lat": 36.14,
+      "lon": -5.35
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "INMUN",
+    "name": "Mumbai",
+    "country": "IN",
+    "coordinates": {
+      "lat": 18.94,
+      "lon": 72.84
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "LKCMB",
+    "name": "Colombo",
+    "country": "LK",
+    "coordinates": {
+      "lat": 6.93,
+      "lon": 79.85
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "NLRTM",
+    "name": "Rotterdam",
+    "country": "NL",
+    "coordinates": {
+      "lat": 51.92,
+      "lon": 4.48
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "SGSIN",
+    "name": "Singapore",
+    "country": "SG",
+    "coordinates": {
+      "lat": 1.29,
+      "lon": 103.85
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USHOU",
+    "name": "Houston",
+    "country": "US",
+    "coordinates": {
+      "lat": 29.76,
+      "lon": -95.37
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USNYC",
+    "name": "New York",
+    "country": "US",
+    "coordinates": {
+      "lat": 40.71,
+      "lon": -74.01
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "HKHKG",
+    "name": "Hong Kong",
+    "country": "HK",
+    "coordinates": {
+      "lat": 22.03345565894258,
+      "lon": 105.48103592790575
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "KRBUS",
+    "name": "Busan",
+    "country": "KR",
+    "coordinates": {
+      "lat": 47.27126665840232,
+      "lon": 120.9730305819948
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNSHA",
+    "name": "Shanghai",
+    "country": "CN",
+    "coordinates": {
+      "lat": 27.916916045481358,
+      "lon": 103.58977711395188
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JPTYO",
+    "name": "Tokyo",
+    "country": "JP",
+    "coordinates": {
+      "lat": 40.211285255772964,
+      "lon": 133.44793045078856
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JPYOK",
+    "name": "Yokohama",
+    "country": "JP",
+    "coordinates": {
+      "lat": 48.09655994632344,
+      "lon": 103.33428465806305
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "KRUSN",
+    "name": "Ulsan",
+    "country": "KR",
+    "coordinates": {
+      "lat": 21.05270247569589,
+      "lon": 112.2382799534858
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNNGB",
+    "name": "Ningbo",
+    "country": "CN",
+    "coordinates": {
+      "lat": 49.11995200672524,
+      "lon": 135.64662132510543
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNTAO",
+    "name": "Qingdao",
+    "country": "CN",
+    "coordinates": {
+      "lat": 31.2220773606107,
+      "lon": 111.09422677902053
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNTXG",
+    "name": "Tianjin",
+    "country": "CN",
+    "coordinates": {
+      "lat": 35.145921474162,
+      "lon": 131.11495020078053
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNDLC",
+    "name": "Dalian",
+    "country": "CN",
+    "coordinates": {
+      "lat": 38.838516122615886,
+      "lon": 115.19082559006736
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNCAN",
+    "name": "Guangzhou",
+    "country": "CN",
+    "coordinates": {
+      "lat": 29.224376296302427,
+      "lon": 139.01852053078682
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CNSZN",
+    "name": "Shenzhen",
+    "country": "CN",
+    "coordinates": {
+      "lat": 20.795924763146107,
+      "lon": 111.66194777701779
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "INMAA",
+    "name": "Chennai",
+    "country": "IN",
+    "coordinates": {
+      "lat": 27.610249695316654,
+      "lon": 132.0454682274049
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "INIXY",
+    "name": "Kandla",
+    "country": "IN",
+    "coordinates": {
+      "lat": 35.61991226877181,
+      "lon": 110.9217074091042
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "INVTZ",
+    "name": "Visakhapatnam",
+    "country": "IN",
+    "coordinates": {
+      "lat": 25.180493322143942,
+      "lon": 126.9655169039233
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BDCGP",
+    "name": "Chittagong",
+    "country": "BD",
+    "coordinates": {
+      "lat": 44.33350554232505,
+      "lon": 115.70414557474882
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "THBKK",
+    "name": "Bangkok",
+    "country": "TH",
+    "coordinates": {
+      "lat": 39.51914329601671,
+      "lon": 126.74632745306437
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "THLCH",
+    "name": "Laem Chabang",
+    "country": "TH",
+    "coordinates": {
+      "lat": 24.617566468923485,
+      "lon": 134.49519784296967
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "VNSGN",
+    "name": "Ho Chi Minh City",
+    "country": "VN",
+    "coordinates": {
+      "lat": 46.295844704558064,
+      "lon": 116.7748229201994
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "PHMNL",
+    "name": "Manila",
+    "country": "PH",
+    "coordinates": {
+      "lat": 49.44165505490588,
+      "lon": 113.10942537163434
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "IDJKT",
+    "name": "Jakarta",
+    "country": "ID",
+    "coordinates": {
+      "lat": 30.624326278230775,
+      "lon": 129.4631562730597
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "IDSUB",
+    "name": "Surabaya",
+    "country": "ID",
+    "coordinates": {
+      "lat": 48.365766092294024,
+      "lon": 103.01175769154968
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "MYPKG",
+    "name": "Port Klang",
+    "country": "MY",
+    "coordinates": {
+      "lat": 27.74942626363926,
+      "lon": 130.56315695838364
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "AEJEA",
+    "name": "Jebel Ali",
+    "country": "AE",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "YEADE",
+    "name": "Aden",
+    "country": "YE",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BEANR",
+    "name": "Antwerp",
+    "country": "BE",
+    "coordinates": {
+      "lat": 45.85219572598207,
+      "lon": 11.565358137559898
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "DEHAM",
+    "name": "Hamburg",
+    "country": "DE",
+    "coordinates": {
+      "lat": 46.958629302542924,
+      "lon": -0.810756615913359
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "NLAMS",
+    "name": "Amsterdam",
+    "country": "NL",
+    "coordinates": {
+      "lat": 55.62480643884243,
+      "lon": 11.879441260322714
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "DEBRE",
+    "name": "Bremen",
+    "country": "DE",
+    "coordinates": {
+      "lat": 50.022580595787176,
+      "lon": 12.385564530035918
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "FRLEH",
+    "name": "Le Havre",
+    "country": "FR",
+    "coordinates": {
+      "lat": 44.133913625478755,
+      "lon": 4.792010642153539
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
     ]
   },
   {
     "port_code": "ESVLC",
     "name": "Valencia",
-    "country": "Spain",
+    "country": "ES",
     "coordinates": {
-      "lat": 39.4699,
-      "lon": -0.3763
+      "lat": 46.716411404043285,
+      "lon": 6.1912571162092505
     },
     "fuel_capabilities": [
       "VLSFO",
       "MGO",
-      "LSGO"
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "FRMRS",
+    "name": "Marseille",
+    "country": "FR",
+    "coordinates": {
+      "lat": 57.26514342401099,
+      "lon": 1.7271871507451984
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ITGOA",
+    "name": "Genoa",
+    "country": "IT",
+    "coordinates": {
+      "lat": 52.62181782525463,
+      "lon": -1.4626411728919937
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ITNAP",
+    "name": "Naples",
+    "country": "IT",
+    "coordinates": {
+      "lat": 52.66087840639884,
+      "lon": 10.931241553563314
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "GRPIR",
+    "name": "Piraeus",
+    "country": "GR",
+    "coordinates": {
+      "lat": 47.5266036181815,
+      "lon": -0.4516530618627339
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "TRIST",
+    "name": "Istanbul",
+    "country": "TR",
+    "coordinates": {
+      "lat": 42.65082613345395,
+      "lon": 12.035201070032716
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USPHL",
+    "name": "Philadelphia",
+    "country": "US",
+    "coordinates": {
+      "lat": 36.00370436923887,
+      "lon": -119.73057118818251
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USORF",
+    "name": "Norfolk",
+    "country": "US",
+    "coordinates": {
+      "lat": 32.04263464813086,
+      "lon": -61.59522224052661
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USCHS",
+    "name": "Charleston",
+    "country": "US",
+    "coordinates": {
+      "lat": 36.11608127057554,
+      "lon": -60.33299196056763
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USSAV",
+    "name": "Savannah",
+    "country": "US",
+    "coordinates": {
+      "lat": 50.47815849749186,
+      "lon": -87.56921283056806
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USMIA",
+    "name": "Miami",
+    "country": "US",
+    "coordinates": {
+      "lat": 41.72204565528027,
+      "lon": -80.31031838456587
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USMSY",
+    "name": "New Orleans",
+    "country": "US",
+    "coordinates": {
+      "lat": 49.190635367446355,
+      "lon": -97.50900348278435
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USLAX",
+    "name": "Los Angeles",
+    "country": "US",
+    "coordinates": {
+      "lat": 34.362099894381565,
+      "lon": -81.2678095699732
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USLGB",
+    "name": "Long Beach",
+    "country": "US",
+    "coordinates": {
+      "lat": 49.73802885597007,
+      "lon": -109.12451974368422
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USSFO",
+    "name": "San Francisco",
+    "country": "US",
+    "coordinates": {
+      "lat": 34.4280672406121,
+      "lon": -89.29598816432713
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USSEA",
+    "name": "Seattle",
+    "country": "US",
+    "coordinates": {
+      "lat": 26.04466268232952,
+      "lon": -104.24249564801663
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "USPDX",
+    "name": "Portland",
+    "country": "US",
+    "coordinates": {
+      "lat": 38.24763499462726,
+      "lon": -66.09014633481368
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CAVAN",
+    "name": "Vancouver",
+    "country": "CA",
+    "coordinates": {
+      "lat": 29.02840152487081,
+      "lon": -108.37714461731093
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "PACTB",
+    "name": "Cristobal",
+    "country": "PA",
+    "coordinates": {
+      "lat": 37.031228989834716,
+      "lon": -90.72133418675628
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JMKIN",
+    "name": "Kingston",
+    "country": "JM",
+    "coordinates": {
+      "lat": 42.56748042554263,
+      "lon": -107.57090192253187
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "COCTG",
+    "name": "Cartagena",
+    "country": "CO",
+    "coordinates": {
+      "lat": 29.098821311475795,
+      "lon": -117.82355461160529
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BRSTS",
+    "name": "Santos",
+    "country": "BR",
+    "coordinates": {
+      "lat": 39.183869325486484,
+      "lon": -97.68077956103399
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BRRIO",
+    "name": "Rio de Janeiro",
+    "country": "BR",
+    "coordinates": {
+      "lat": 42.45507847637055,
+      "lon": -67.43328688189536
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BRPNG",
+    "name": "Paranagua",
+    "country": "BR",
+    "coordinates": {
+      "lat": 48.90445380397611,
+      "lon": -113.16748943446811
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ARBUE",
+    "name": "Buenos Aires",
+    "country": "AR",
+    "coordinates": {
+      "lat": 35.68965275670693,
+      "lon": -63.703045524629964
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "PECLL",
+    "name": "Callao",
+    "country": "PE",
+    "coordinates": {
+      "lat": 50.267615866816556,
+      "lon": -70.91043974662585
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CLVAP",
+    "name": "Valparaiso",
+    "country": "CL",
+    "coordinates": {
+      "lat": 45.29259444833549,
+      "lon": -96.16739200552763
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "NGLOS",
+    "name": "Lagos",
+    "country": "NG",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "CIABJ",
+    "name": "Abidjan",
+    "country": "CI",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "SNDKR",
+    "name": "Dakar",
+    "country": "SN",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "AOLAD",
+    "name": "Luanda",
+    "country": "AO",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "GHTEM",
+    "name": "Tema",
+    "country": "GH",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "BJCOO",
+    "name": "Cotonou",
+    "country": "BJ",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "TGLFW",
+    "name": "Lome",
+    "country": "TG",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ZACPT",
+    "name": "Cape Town",
+    "country": "ZA",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ZADUR",
+    "name": "Durban",
+    "country": "ZA",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ZAPLZ",
+    "name": "Port Elizabeth",
+    "country": "ZA",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "ZARCB",
+    "name": "Richards Bay",
+    "country": "ZA",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "KEMBA",
+    "name": "Mombasa",
+    "country": "KE",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "TZDAR",
+    "name": "Dar es Salaam",
+    "country": "TZ",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "DJJIB",
+    "name": "Djibouti",
+    "country": "DJ",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "MUPLU",
+    "name": "Port Louis",
+    "country": "MU",
+    "coordinates": {
+      "lat": 0,
+      "lon": 0
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
     ]
   }
 ]
