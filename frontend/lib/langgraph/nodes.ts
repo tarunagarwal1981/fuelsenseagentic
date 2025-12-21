@@ -63,8 +63,9 @@ export async function agentNode(state: BunkerState) {
       console.log(`🔧 Agent wants to call: ${response.tool_calls[0].name}`);
       
       // Safety: if we've called tools many times, check if we should force a final answer
+      const { AIMessage } = await import("@langchain/core/messages");
       const toolCallCount = state.messages.filter((msg: any) => 
-        msg instanceof (await import("@langchain/core/messages")).AIMessage && msg.tool_calls
+        msg instanceof AIMessage && msg.tool_calls
       ).length;
       
       if (toolCallCount > 10) {
