@@ -27,5 +27,13 @@
 # - LANGCHAIN_API_KEY (for LangSmith monitoring)
 # - LANGCHAIN_TRACING_V2=true
 # - LANGCHAIN_PROJECT=fuelsense-360
-# - LLM_MODEL (defaults to claude-haiku-4-5-20251001)
+# - LLM_MODEL (defaults to claude-sonnet-4-20250514)
+
+# API Routes Configuration
+# All API routes are automatically handled by Next.js
+# Available endpoints:
+# - /api/chat (legacy single-agent)
+# - /api/chat-langgraph (single-agent LangGraph)
+# - /api/chat-multi-agent (multi-agent system) [NEW]
+# - /api/test-* (testing endpoints, can be disabled in production)
 

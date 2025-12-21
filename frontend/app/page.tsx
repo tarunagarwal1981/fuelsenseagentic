@@ -14,7 +14,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-3 gap-6">
           {/* Manual Version */}
           <Card className="p-6 hover:shadow-lg transition-shadow">
             <div className="space-y-4">
@@ -66,11 +66,11 @@ export default function HomePage() {
                     🔷 LangGraph Version
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Enterprise-grade framework
+                    Single-agent framework
                   </p>
                 </div>
                 <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
-                  New!
+                  Stable
                 </span>
               </div>
 
@@ -100,41 +100,109 @@ export default function HomePage() {
               </Link>
             </div>
           </Card>
+
+          {/* Multi-Agent Version */}
+          <Card className="p-6 hover:shadow-lg transition-shadow border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50">
+            <div className="space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold mb-2">
+                    🤖 Multi-Agent System
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Specialized agent collaboration
+                  </p>
+                </div>
+                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+                  New!
+                </span>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-600">✓</span>
+                  <span>Route, Weather, Bunker agents</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-600">✓</span>
+                  <span>Weather forecasting</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-600">✓</span>
+                  <span>Performance monitoring</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-blue-600">✓</span>
+                  <span>A/B testing ready</span>
+                </div>
+              </div>
+
+              <Link href="/chat-multi-agent" className="block">
+                <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                  Use Multi-Agent System
+                </Button>
+              </Link>
+            </div>
+          </Card>
         </div>
 
-        {/* Comparison Link */}
-        <Card className="p-6 bg-gradient-to-r from-green-50 to-purple-50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold mb-1">
-                🔬 Side-by-Side Comparison
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Test both versions simultaneously and compare results
-              </p>
+        {/* Quick Links */}
+        <div className="grid md:grid-cols-2 gap-6">
+          <Card className="p-6 bg-gradient-to-r from-green-50 to-purple-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold mb-1">
+                  🔬 Side-by-Side Comparison
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Test both versions simultaneously and compare results
+                </p>
+              </div>
+              <Link href="/compare">
+                <Button variant="outline">Compare Both</Button>
+              </Link>
             </div>
-            <Link href="/compare">
-              <Button variant="outline">Compare Both</Button>
-            </Link>
-          </div>
-        </Card>
+          </Card>
+
+          <Card className="p-6 bg-gradient-to-r from-blue-50 to-cyan-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold mb-1">
+                  📊 A/B Testing Analytics
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  View performance metrics and compare single vs multi-agent
+                </p>
+              </div>
+              <Link href="/analytics">
+                <Button variant="outline">View Analytics</Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 text-center">
+        <div className="grid grid-cols-4 gap-4 text-center">
           <Card className="p-4">
-            <div className="text-2xl font-bold text-blue-600">4</div>
+            <div className="text-2xl font-bold text-blue-600">8</div>
             <div className="text-sm text-muted-foreground">Tools Available</div>
           </Card>
           <Card className="p-4">
-            <div className="text-2xl font-bold text-green-600">2</div>
+            <div className="text-2xl font-bold text-green-600">3</div>
             <div className="text-sm text-muted-foreground">
               Implementations
             </div>
           </Card>
           <Card className="p-4">
-            <div className="text-2xl font-bold text-purple-600">1</div>
+            <div className="text-2xl font-bold text-purple-600">4</div>
             <div className="text-sm text-muted-foreground">
-              Agentic Pattern
+              Specialized Agents
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-2xl font-bold text-cyan-600">1</div>
+            <div className="text-sm text-muted-foreground">
+              Multi-Agent System
             </div>
           </Card>
         </div>
