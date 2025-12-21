@@ -9,6 +9,7 @@
 
 export const runtime = 'nodejs';
 
+import { NextResponse } from 'next/server';
 import { multiAgentApp } from '@/lib/multi-agent/graph';
 import { MultiAgentStateAnnotation } from '@/lib/multi-agent/state';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
@@ -328,9 +329,9 @@ export async function POST(req: Request) {
         'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     const executionTime = Date.now() - startTime;
-    console.error('❌ [MULTI-AGENT-API] Error:', error);
+    console.error('❌ [MULTI-AGENT-API] Fatal error:', error);
     console.error(
       `❌ [MULTI-AGENT-API] Error details:`,
       error instanceof Error ? error.message : String(error)
@@ -350,16 +351,40 @@ export async function POST(req: Request) {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
 
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+    // Check if it's an Anthropic API error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage?.includes('credit balance') || errorMessage?.includes('insufficient credits')) {
+      return NextResponse.json(
+        {
+          error: 'Anthropic API credits exhausted. Please add credits to continue.',
+          type: 'credit_error',
+          details: errorMessage,
+          execution_time_ms: executionTime,
+          fallback_endpoint: '/api/chat-langgraph',
+        },
+        { 
+          status: 402, // Payment Required
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          },
+        }
+      );
+    }
+
+    // Generic error response
+    return NextResponse.json(
+      {
+        error: 'An error occurred processing your request',
+        type: 'internal_error',
+        details: errorMessage,
         execution_time_ms: executionTime,
         fallback_endpoint: '/api/chat-langgraph',
-      }),
-      {
+      },
+      { 
         status: 500,
         headers: {
-          'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type',

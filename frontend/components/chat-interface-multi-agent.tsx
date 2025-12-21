@@ -201,7 +201,23 @@ export function ChatInterfaceMultiAgent() {
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Try to parse error response as JSON
+        let errorMessage = `API error: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          console.error('❌ [MULTI-AGENT-FRONTEND] API Error:', errorData);
+          errorMessage = errorData.error || errorMessage;
+        } catch (parseError) {
+          // If JSON parsing fails, try to get text
+          try {
+            const errorText = await response.text();
+            console.error('❌ [MULTI-AGENT-FRONTEND] API Error (text):', errorText);
+            errorMessage = errorText || errorMessage;
+          } catch (textError) {
+            console.error('❌ [MULTI-AGENT-FRONTEND] Could not parse error response');
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       if (useMultiAgent) {
@@ -301,13 +317,17 @@ export function ChatInterfaceMultiAgent() {
     } catch (error) {
       console.error("❌ [MULTI-AGENT-FRONTEND] Error in chat submission:", error);
       setCurrentAgent(null);
+      
+      // Show user-friendly error message
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : "An error occurred. Please try again.";
+      
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `Error: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
+          content: `Sorry, I encountered an error: ${errorMessage}. Please try again or rephrase your question.`,
           timestamp: new Date(),
         },
       ]);
