@@ -105,31 +105,44 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
 
     // Add route polyline
     if (route.waypoints && route.waypoints.length > 0) {
-      const waypointCoords: [number, number][] = route.waypoints.map((wp: any) => [
-        wp.lat || wp[0],
-        wp.lon || wp[1],
-      ] as [number, number]);
+      const waypointCoords: [number, number][] = route.waypoints
+        .map((wp: any) => {
+          // Handle both { lat, lon } and [lat, lon] formats
+          const lat = wp.lat ?? wp[0];
+          const lon = wp.lon ?? wp[1];
+          // Validate coordinates
+          if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
+            console.warn('Invalid waypoint:', wp);
+            return null;
+          }
+          return [lat, lon] as [number, number];
+        })
+        .filter((coord: any): coord is [number, number] => coord !== null);
 
-      // Add waypoints to bounds
-      allCoords.push(...waypointCoords);
+      if (waypointCoords.length > 0) {
+        // Add waypoints to bounds
+        allCoords.push(...waypointCoords);
 
-      // Draw route polyline
-      const polyline = L.polyline(waypointCoords, {
-        color: '#3b82f6',
-        weight: 3,
-        opacity: 0.7,
-      }).addTo(map);
+        // Draw route polyline
+        const polyline = L.polyline(waypointCoords, {
+          color: '#3b82f6',
+          weight: 3,
+          opacity: 0.7,
+        }).addTo(map);
 
-      // Add route info to polyline
-      const distance = route.distance_nm ? `${route.distance_nm.toFixed(1)} nm` : 'N/A';
-      const time = route.estimated_hours ? `${route.estimated_hours.toFixed(1)} hours` : 'N/A';
-      
-      polyline.bindPopup(`
-        <div style="font-weight: bold; margin-bottom: 4px;">📍 Route</div>
-        <div style="font-size: 12px;">Distance: ${distance}</div>
-        <div style="font-size: 12px;">Time: ${time}</div>
-        <div style="font-size: 12px;">Waypoints: ${route.waypoints.length}</div>
-      `);
+        // Add route info to polyline
+        const distance = route.distance_nm ? `${route.distance_nm.toFixed(1)} nm` : 'N/A';
+        const time = route.estimated_hours ? `${route.estimated_hours.toFixed(1)} hours` : 'N/A';
+        
+        polyline.bindPopup(`
+          <div style="font-weight: bold; margin-bottom: 4px;">📍 Route</div>
+          <div style="font-size: 12px;">Distance: ${distance}</div>
+          <div style="font-size: 12px;">Time: ${time}</div>
+          <div style="font-size: 12px;">Waypoints: ${waypointCoords.length}</div>
+        `);
+      } else {
+        console.warn('No valid waypoints found in route:', route);
+      }
     }
 
     // Add bunker port markers (blue/gold)

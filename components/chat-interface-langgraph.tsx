@@ -120,90 +120,98 @@ export function ChatInterfaceLangGraph() {
 
             if (data === "[DONE]") {
               setCurrentThinking(null);
-              if (assistantMessage) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    content: assistantMessage,
-                    timestamp: new Date(),
-                  },
-                ]);
-              }
+              // Don't add message here if we already added it when "text" event was received
+              // The message was already added in the "text" case above
               setIsLoading(false);
-              continue;
+              break; // Exit the loop when done
             }
 
             try {
               const parsed = JSON.parse(data);
 
-              if (parsed.type === "error") {
-                console.error("Error:", parsed.error);
-                setCurrentThinking(`Error: ${parsed.error}`);
-                setIsLoading(false);
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    content: `Error: ${parsed.error}`,
-                    timestamp: new Date(),
-                  },
-                ]);
-                continue;
-              }
+              switch (parsed.type) {
+                case "error": {
+                  console.error("Error:", parsed.error);
+                  setCurrentThinking(null);
+                  setIsLoading(false);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      role: "assistant",
+                      content: `Error: ${parsed.error}`,
+                      timestamp: new Date(),
+                    },
+                  ]);
+                  break;
+                }
 
-              if (parsed.type === "graph_event") {
-                // Debug logging
-                console.log("📊 Received graph_event:", {
-                  hasRoute: !!parsed.route,
-                  hasPorts: !!parsed.ports,
-                  hasPrices: !!parsed.prices,
-                  hasAnalysis: !!parsed.analysis,
-                  routeKeys: parsed.route ? Object.keys(parsed.route) : [],
-                  analysisKeys: parsed.analysis ? Object.keys(parsed.analysis) : [],
-                });
-                
-                // Update analysis data if present - merge with existing data
-                if (parsed.route || parsed.ports || parsed.prices || parsed.analysis) {
-                  const newData = {
+                case "thinking":
+                  setCurrentThinking(parsed.message || "Processing...");
+                  break;
+
+                case "text":
+                  assistantMessage = parsed.content || "";
+                  setCurrentThinking(null);
+                  // Display the message immediately if it has content
+                  if (assistantMessage.trim()) {
+                    setMessages((prev) => {
+                      // Check if we already have this message (avoid duplicates)
+                      const lastMsg = prev[prev.length - 1];
+                      if (lastMsg && lastMsg.role === "assistant" && lastMsg.content === assistantMessage) {
+                        return prev;
+                      }
+                      // Remove any existing incomplete assistant message
+                      const filtered = prev.filter((m, idx) => !(idx === prev.length - 1 && m.role === "assistant" && !m.content.trim()));
+                      return [...filtered, {
+                        role: "assistant",
+                        content: assistantMessage,
+                        timestamp: new Date(),
+                      }];
+                    });
+                  }
+                  break;
+
+                case "analysis":
+                  // This is the key event that triggers map/table display (like manual version)
+                  console.log("📊 Received analysis event:", {
+                    hasRoute: !!parsed.route,
+                    hasPorts: !!parsed.ports,
+                    hasPrices: !!parsed.prices,
+                    hasAnalysis: !!parsed.analysis,
+                  });
+                  
+                  setAnalysisData({
                     route: parsed.route || null,
                     ports: parsed.ports || null,
                     prices: parsed.prices || null,
                     analysis: parsed.analysis || null,
-                  };
-                  
-                  // Only update if we have new data (don't overwrite with null)
-                  setAnalysisData((prev) => ({
-                    route: newData.route || prev?.route || null,
-                    ports: newData.ports || prev?.ports || null,
-                    prices: newData.prices || prev?.prices || null,
-                    analysis: newData.analysis || prev?.analysis || null,
-                  }));
-                  
-                  console.log("✅ Updated analysisData:", {
-                    hasRoute: !!newData.route,
-                    hasAnalysis: !!newData.analysis,
-                    recommendationsCount: newData.analysis?.recommendations?.length || 0,
                   });
-                }
+                  break;
 
-                // Handle tool calls
-                if (parsed.tool_calls && parsed.tool_calls.length > 0) {
-                  const toolName = parsed.tool_calls[0].name;
-                  const toolLabels: Record<string, string> = {
-                    calculate_route: "Calculating Route",
-                    find_bunker_ports: "Finding Bunker Ports",
-                    get_fuel_prices: "Fetching Fuel Prices",
-                    analyze_bunker_options: "Analyzing Bunker Options",
-                  };
-                  setCurrentThinking(
-                    `Executing: ${toolLabels[toolName] || toolName}...`
-                  );
-                } else if (parsed.message) {
-                  // Final answer
-                  assistantMessage = parsed.message;
-                  setCurrentThinking("Generating response...");
-                }
+                case "graph_event":
+                  // Legacy support - still handle graph_event for backwards compatibility
+                  if (parsed.route || parsed.ports || parsed.prices || parsed.analysis) {
+                    setAnalysisData((prev) => ({
+                      route: parsed.route || prev?.route || null,
+                      ports: parsed.ports || prev?.ports || null,
+                      prices: parsed.prices || prev?.prices || null,
+                      analysis: parsed.analysis || prev?.analysis || null,
+                    }));
+                  }
+                  
+                  if (parsed.tool_calls && parsed.tool_calls.length > 0) {
+                    const toolName = parsed.tool_calls[0].name;
+                    const toolLabels: Record<string, string> = {
+                      calculate_route: "Calculating Route",
+                      find_bunker_ports: "Finding Bunker Ports",
+                      get_fuel_prices: "Fetching Fuel Prices",
+                      analyze_bunker_options: "Analyzing Bunker Options",
+                    };
+                    setCurrentThinking(
+                      `Executing: ${toolLabels[toolName] || toolName}...`
+                    );
+                  }
+                  break;
               }
             } catch (parseError) {
               console.error("Parse error:", parseError);
@@ -307,52 +315,54 @@ export function ChatInterfaceLangGraph() {
           </div>
         </Card>
 
-        {/* Full Analysis Results */}
-        {analysisData?.analysis && (
+        {/* Full Analysis Results - Show if we have route OR analysis */}
+        {(analysisData?.route || analysisData?.analysis) && (
           <div className="space-y-4 mb-4">
-          {/* Quick Stats */}
-          <Card className="p-4">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Ship className="h-5 w-5" />
-              Analysis Summary
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Best Port</p>
-                <p className="font-semibold text-lg">
-                  {analysisData.analysis.best_option?.port_name || "N/A"}
-                </p>
+          {/* Quick Stats - Only show if we have analysis */}
+          {analysisData?.analysis?.recommendations && analysisData.analysis.recommendations.length > 0 && (
+            <Card className="p-4">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Ship className="h-5 w-5" />
+                Analysis Summary
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Best Port</p>
+                  <p className="font-semibold text-lg">
+                    {analysisData.analysis.best_option?.port_name || "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Total Cost</p>
+                  <p className="font-semibold text-lg">
+                    $
+                    {(
+                      analysisData.analysis.best_option?.total_cost_usd ||
+                      analysisData.analysis.best_option?.total_cost ||
+                      0
+                    ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Savings</p>
+                  <p className="font-semibold text-lg text-green-600">
+                    $
+                    {(
+                      analysisData.analysis.max_savings_usd ||
+                      analysisData.analysis.max_savings ||
+                      0
+                    ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Options Found</p>
+                  <p className="font-semibold text-lg">
+                    {analysisData.analysis.recommendations.length}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-muted-foreground">Total Cost</p>
-                <p className="font-semibold text-lg">
-                  $
-                  {(
-                    analysisData.analysis.best_option?.total_cost_usd ||
-                    analysisData.analysis.best_option?.total_cost ||
-                    0
-                  ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Savings</p>
-                <p className="font-semibold text-lg text-green-600">
-                  $
-                  {(
-                    analysisData.analysis.max_savings_usd ||
-                    analysisData.analysis.max_savings ||
-                    0
-                  ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Options Found</p>
-                <p className="font-semibold text-lg">
-                  {analysisData.analysis.recommendations?.length || 0}
-                </p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
           {/* Map */}
           {analysisData.route && (() => {
@@ -396,31 +406,130 @@ export function ChatInterfaceLangGraph() {
                   originPort={originPort}
                   destinationPort={destinationPort}
                   bunkerPorts={
-                    analysisData.analysis.recommendations
+                    // Use analysis recommendations if available, otherwise use ports from port finder
+                    (analysisData.analysis?.recommendations
                       ?.map((rec: any) => {
                         const portDetails = getPortDetails(rec.port_code);
-                        return portDetails ? { ...portDetails, ...rec } : null;
+                        if (!portDetails) return null;
+                        // Ensure coordinates are in correct format
+                        return {
+                          ...portDetails,
+                          ...rec,
+                          coordinates: portDetails.coordinates || {
+                            lat: rec.latitude || portDetails.latitude,
+                            lon: rec.longitude || portDetails.longitude,
+                          },
+                        };
                       })
-                      .filter((p: any) => p !== null) || []
+                      .filter((p: any) => p !== null)) ||
+                    // Fallback to ports array if no analysis
+                    (analysisData.ports?.map((p: any) => {
+                      const portCode = p.code || p.port_code;
+                      const portDetails = getPortDetails(portCode);
+                      if (!portDetails) return null;
+                      // Ensure coordinates are in correct format - use portDetails coordinates or construct from lat/lon
+                      return {
+                        ...portDetails,
+                        ...p,
+                        port_code: portCode,
+                        port_name: p.name || portDetails.name,
+                        coordinates: portDetails.coordinates || {
+                          lat: p.latitude || portDetails.latitude,
+                          lon: p.longitude || portDetails.longitude,
+                        },
+                      };
+                    }).filter((p: any) => p !== null)) ||
+                    []
                   }
                 />
               </Card>
             );
           })()}
 
-          {/* Results Table */}
-          {analysisData.analysis.recommendations && (
+          {/* Results Table - Show if we have analysis recommendations OR ports with prices */}
+          {(analysisData.analysis?.recommendations || (analysisData.ports && analysisData.prices)) && (
             <ResultsTable
-              recommendations={analysisData.analysis.recommendations.map((rec: any) => ({
-                ...rec,
-                // Ensure total_cost exists (use total_cost_usd if total_cost doesn't exist)
-                total_cost: rec.total_cost || rec.total_cost_usd || 0,
-                // Map other fields if needed
-                fuel_price_per_mt: rec.fuel_price_per_mt || rec.fuel_cost_usd / (rec.fuel_quantity_mt || 1000),
-                fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
-                deviation_fuel_cost: rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
-                savings_vs_most_expensive: rec.savings_vs_most_expensive || rec.savings_vs_worst_usd || 0,
-              }))}
+              recommendations={
+                analysisData.analysis?.recommendations
+                  ? analysisData.analysis.recommendations.map((rec: any) => ({
+                      port_code: rec.port_code,
+                      port_name: rec.port_name || rec.port_code,
+                      rank: rec.rank || 0,
+                      fuel_price_per_mt: rec.fuel_price_per_mt || (rec.fuel_cost_usd || rec.fuel_cost || 0) / (rec.fuel_quantity_mt || 1000),
+                      fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
+                      deviation_nm: rec.deviation_nm || rec.distance_from_route_nm || 0,
+                      deviation_hours: rec.deviation_hours || 0,
+                      deviation_days: rec.deviation_days || 0,
+                      deviation_fuel_consumption_mt: rec.deviation_fuel_consumption_mt || 0,
+                      deviation_fuel_cost: rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
+                      total_cost: rec.total_cost || rec.total_cost_usd || 0,
+                      savings_vs_most_expensive: rec.savings_vs_most_expensive || rec.savings_vs_worst_usd || 0,
+                      savings_percentage: rec.savings_percentage || 0,
+                      data_freshness_hours: rec.data_freshness_hours || 0,
+                      is_price_stale: rec.is_price_stale || false,
+                    }))
+                  : // Fallback: create recommendations from ports and prices
+                    (() => {
+                      const fuelQuantity = 1000; // Default
+                      const vesselSpeed = 14; // Default knots
+                      const vesselConsumption = 35; // Default MT/day
+                      
+                      const recommendations = (analysisData.ports || []).map((port: any, index: number) => {
+                        const portCode = port.code || port.port_code;
+                        const priceData = analysisData.prices?.find((p: any) => (p.port_code || p.code) === portCode);
+                        const vlsfoPrice = priceData?.prices?.VLSFO || 0;
+                        const distanceFromRoute = port.distance_from_route_nm || 0;
+                        
+                        // Calculate deviation metrics
+                        const deviationNm = distanceFromRoute * 2; // Round trip
+                        const deviationHours = deviationNm / vesselSpeed;
+                        const deviationDays = deviationHours / 24;
+                        const deviationFuelConsumption = deviationDays * vesselConsumption;
+                        const deviationFuelCost = deviationFuelConsumption * vlsfoPrice;
+                        
+                        // Calculate costs
+                        const fuelCost = vlsfoPrice * fuelQuantity;
+                        const totalCost = fuelCost + deviationFuelCost;
+                        
+                        return {
+                          port_code: portCode,
+                          port_name: port.name || port.port_name || portCode,
+                          rank: index + 1,
+                          fuel_price_per_mt: vlsfoPrice,
+                          fuel_cost: fuelCost,
+                          deviation_nm: deviationNm,
+                          deviation_hours: deviationHours,
+                          deviation_days: deviationDays,
+                          deviation_fuel_consumption_mt: deviationFuelConsumption,
+                          deviation_fuel_cost: deviationFuelCost,
+                          total_cost: totalCost,
+                          savings_vs_most_expensive: 0, // Will calculate below
+                          savings_percentage: 0, // Will calculate below
+                          data_freshness_hours: 0,
+                          is_price_stale: false,
+                        };
+                      });
+                      
+                      // Calculate savings
+                      if (recommendations.length > 0) {
+                        const sortedByCost = [...recommendations].sort((a, b) => b.total_cost - a.total_cost);
+                        const mostExpensive = sortedByCost[0].total_cost;
+                        
+                        recommendations.forEach((rec) => {
+                          rec.savings_vs_most_expensive = mostExpensive - rec.total_cost;
+                          rec.savings_percentage = mostExpensive > 0 ? (rec.savings_vs_most_expensive / mostExpensive) * 100 : 0;
+                        });
+                        
+                        // Re-rank by total cost
+                        recommendations.sort((a, b) => a.total_cost - b.total_cost);
+                        recommendations.forEach((rec, idx) => {
+                          rec.rank = idx + 1;
+                        });
+                      }
+                      
+                      return recommendations;
+                    })()
+              }
               fuelQuantity={1000}
               fuelType="VLSFO"
             />

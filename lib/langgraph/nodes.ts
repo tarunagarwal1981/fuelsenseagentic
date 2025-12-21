@@ -108,6 +108,12 @@ export async function reducerNode(state: BunkerState) {
       // Parse tool result - handle both string and object formats
       let toolResult: any;
       if (typeof toolMessage.content === 'string') {
+        // Check if this is an error message first
+        if (toolMessage.content.startsWith('Error:') || toolMessage.content.includes('Error:')) {
+          console.warn(`⚠️ Skipping error tool result: ${toolMessage.content.substring(0, 100)}`);
+          continue; // Skip error messages
+        }
+        
         try {
           toolResult = JSON.parse(toolMessage.content);
           console.log(`✅ Parsed JSON tool result`);
@@ -121,17 +127,23 @@ export async function reducerNode(state: BunkerState) {
               toolResult = JSON.parse(jsonMatch[0]);
               console.log(`✅ Extracted and parsed JSON from string`);
             } catch {
-              console.warn(`⚠️ Failed to extract JSON, using raw content`);
-              toolResult = toolMessage.content;
+              console.warn(`⚠️ Failed to extract JSON, skipping this tool result`);
+              continue; // Skip if we can't parse it
             }
           } else {
-            console.warn(`⚠️ No JSON found in content, using raw`);
-            toolResult = toolMessage.content;
+            console.warn(`⚠️ No JSON found in content, skipping this tool result`);
+            continue; // Skip if no JSON found
           }
         }
       } else {
         toolResult = toolMessage.content;
         console.log(`✅ Using tool result as object directly`);
+      }
+      
+      // Skip if result is an error
+      if (typeof toolResult === 'string' && (toolResult.startsWith('Error:') || toolResult.includes('Error:'))) {
+        console.warn(`⚠️ Skipping error tool result`);
+        continue;
       }
       
       console.log(`📦 Tool result type: ${typeof toolResult}`);
