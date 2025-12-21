@@ -175,12 +175,25 @@ export async function POST(req: Request) {
                 
               case 'analyze_bunker_options':
                 console.log("📊 [MANUAL-API] Executing analyze_bunker_options tool...");
+                // Ensure we use the actual fetchedPrices we stored, not what LLM might pass
                 const analyzerInput = {
                   ...(toolUseBlock.input as any),
+                  port_prices: fetchedPrices || (toolUseBlock.input as any).port_prices, // Use stored prices if available
                   fuel_quantity_mt: (toolUseBlock.input as any).fuel_quantity_mt || fuelQuantityMT,
                   vessel_speed_knots: (toolUseBlock.input as any).vessel_speed_knots || vesselSpeed,
                   vessel_consumption_mt_per_day: (toolUseBlock.input as any).vessel_consumption_mt_per_day || vesselConsumption,
                 };
+                
+                // Validate port_prices structure before calling
+                if (!analyzerInput.port_prices || !analyzerInput.port_prices.prices_by_port) {
+                  console.error("❌ [MANUAL-API] Invalid port_prices in analyzer input:", {
+                    hasPortPrices: !!analyzerInput.port_prices,
+                    hasPricesByPort: !!analyzerInput.port_prices?.prices_by_port,
+                    fetchedPricesHasPricesByPort: !!fetchedPrices?.prices_by_port,
+                  });
+                  throw new Error("Port prices data is missing or invalid. Please fetch fuel prices first.");
+                }
+                
                 toolResult = await executeBunkerAnalyzerTool(analyzerInput);
                 analysisResult = toolResult;
                 const recCount = toolResult?.recommendations?.length || 0;
