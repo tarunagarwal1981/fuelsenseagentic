@@ -191,6 +191,29 @@ export async function analyzeBunkerOptions(
   console.log(`   Vessel consumption: ${vessel_consumption_mt_per_day} MT/day`);
   console.log(`   Vessel speed: ${vessel_speed_knots} knots`);
   console.log(`   Ports to analyze: ${bunker_ports.length}`);
+  
+  // Validate port_prices structure
+  if (!port_prices) {
+    throw new BunkerAnalyzerError(
+      'Port prices data is missing',
+      'MISSING_PRICE_DATA'
+    );
+  }
+  
+  if (!port_prices.prices_by_port || typeof port_prices.prices_by_port !== 'object') {
+    console.error('❌ Invalid port_prices structure:', {
+      hasPortPrices: !!port_prices,
+      hasPricesByPort: !!port_prices.prices_by_port,
+      portPricesType: typeof port_prices,
+      portPricesKeys: port_prices ? Object.keys(port_prices) : 'N/A',
+    });
+    throw new BunkerAnalyzerError(
+      `Invalid port prices structure. Expected prices_by_port object, got: ${typeof port_prices.prices_by_port}`,
+      'INVALID_PRICE_STRUCTURE'
+    );
+  }
+  
+  console.log(`   Price data available for ${Object.keys(port_prices.prices_by_port).length} port(s)`);
 
   const recommendations: BunkerRecommendation[] = [];
 
