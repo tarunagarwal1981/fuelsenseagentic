@@ -1,6 +1,6 @@
 // lib/langgraph/nodes.ts
 import { ChatAnthropic } from "@langchain/anthropic";
-import { ToolMessage } from "@langchain/core/messages";
+import { ToolMessage, SystemMessage } from "@langchain/core/messages";
 import type { BunkerState } from "./state";
 import { tools } from "./tools";
 
@@ -40,12 +40,12 @@ const llmWithTools = llm.bindTools(tools);
 
 // Agent Node - LLM makes decisions here
 export async function agentNode(state: BunkerState) {
-  console.log("🧠 Agent Node: LLM making decision...");
-  console.log(`📊 Current state: ${state.messages.length} messages`);
+  console.log("🧠 [AGENT] Node: LLM making decision...");
+  console.log(`📊 [AGENT] Current state: ${state.messages.length} messages`);
 
   // Safety check: prevent infinite loops
   if (state.messages.length > 50) {
-    console.warn("⚠️ Too many messages, forcing final response");
+    console.warn("⚠️ [AGENT] Too many messages, forcing final response");
     const finalMessage = new (await import("@langchain/core/messages")).AIMessage({
       content: "I've completed the analysis. Please check the results below.",
     });
@@ -53,14 +53,55 @@ export async function agentNode(state: BunkerState) {
   }
 
   try {
-    // Messages are already BaseMessage[] types, pass them directly
-    const response = await llmWithTools.invoke(state.messages);
+    // Build messages with context about available state data
+    const messagesToSend = [...state.messages];
     
-    console.log("✅ Agent Node: LLM responded");
+    // If we have route data but the LLM hasn't used it yet, add a helpful system message
+    if (state.route && state.route.waypoints && state.route.waypoints.length > 0) {
+      // Check if the last few messages mention waypoints or if we've already called find_bunker_ports
+      const hasCalledFindPorts = state.messages.some((msg: any) => {
+        if (msg.tool_calls) {
+          return msg.tool_calls.some((tc: any) => tc.name === 'find_bunker_ports');
+        }
+        return false;
+      });
+      
+      if (!hasCalledFindPorts) {
+        // Add a helpful context message about the route waypoints
+        const waypointsContext = `You have calculated a route with ${state.route.waypoints.length} waypoints. 
+To find bunker ports, use the find_bunker_ports tool with the waypoints array from the route calculation result.
+The waypoints are: ${JSON.stringify(state.route.waypoints.slice(0, 3))}... (showing first 3 of ${state.route.waypoints.length})`;
+        
+        // Only add if we haven't already added this context
+        const hasContext = messagesToSend.some((msg: any) => {
+          if (msg instanceof SystemMessage) {
+            const content = typeof msg.content === 'string' ? msg.content : String(msg.content || '');
+            return content.includes('waypoints');
+          }
+          return false;
+        });
+        
+        if (!hasContext) {
+          messagesToSend.unshift(new SystemMessage(waypointsContext));
+          console.log("📌 [AGENT] Added route waypoints context to help LLM");
+        }
+      }
+    }
+    
+    // Messages are already BaseMessage[] types, pass them directly
+    const response = await llmWithTools.invoke(messagesToSend);
+    
+    console.log("✅ [AGENT] Node: LLM responded");
     
     // Check if LLM called a tool
     if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`🔧 Agent wants to call: ${response.tool_calls[0].name}`);
+      const toolCall = response.tool_calls[0];
+      console.log(`🔧 [AGENT] Agent wants to call: ${toolCall.name}`);
+      
+      // Log tool input for debugging
+      if (toolCall.args) {
+        console.log(`📥 [AGENT] Tool input preview:`, JSON.stringify(toolCall.args).substring(0, 200));
+      }
       
       // Safety: if we've called tools many times, check if we should force a final answer
       const { AIMessage } = await import("@langchain/core/messages");
@@ -69,10 +110,10 @@ export async function agentNode(state: BunkerState) {
       ).length;
       
       if (toolCallCount > 10) {
-        console.warn("⚠️ Many tool calls detected, agent should provide final answer soon");
+        console.warn("⚠️ [AGENT] Many tool calls detected, agent should provide final answer soon");
       }
     } else {
-      console.log("✅ Agent is done, providing final answer");
+      console.log("✅ [AGENT] Agent is done, providing final answer");
     }
 
     return { messages: [response] };

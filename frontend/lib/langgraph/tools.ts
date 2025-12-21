@@ -22,11 +22,32 @@ export const calculateRouteTool = tool(
 export const findPortsTool = tool(
   async (input) => {
     console.log("⚓ LangGraph: Executing find_bunker_ports");
-    return await executePortFinderTool(input);
+    console.log("⚓ LangGraph: Input received:", JSON.stringify(input).substring(0, 200));
+    try {
+      return await executePortFinderTool(input);
+    } catch (error: any) {
+      console.error("❌ LangGraph: Port finder error:", error.message);
+      // Return error as string so reducer can skip it
+      return `Error: ${error.message}`;
+    }
   },
   {
     name: "find_bunker_ports",
-    description: "Find bunker ports along a maritime route within a specified deviation distance. Uses Haversine formula to calculate distances.",
+    description: `Find bunker ports along a maritime route within a specified deviation distance. 
+    
+IMPORTANT: This tool requires the route waypoints from the calculate_route tool result. 
+The waypoints are in the format: [{"lat": 1.1, "lon": 103.6}, {"lat": 2.0, "lon": 102.0}, ...]
+
+Example input:
+{
+  "route_waypoints": [
+    {"lat": 1.1, "lon": 103.6},
+    {"lat": 2.0, "lon": 102.0}
+  ],
+  "max_deviation_nm": 150
+}
+
+Extract the "waypoints" array from the calculate_route tool result and pass it as "route_waypoints".`,
     schema: portFinderInputSchema,
   }
 );
