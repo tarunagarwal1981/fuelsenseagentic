@@ -109,42 +109,114 @@ export function ChatInterfaceLangGraph() {
         throw new Error("No reader available");
       }
 
+      // Declare variables - they're already in the try block scope, which is fine
       let assistantMessage = "";
       let buffer = ""; // Buffer for incomplete lines
       let chunkCount = 0;
       let eventCount = 0;
+      let analysisDataForLogging: any = null; // Track analysis data for logging
 
       console.log("📥 [FRONTEND] Starting to read stream...");
       while (true) {
+        const readStartTime = Date.now();
         const { done, value } = await reader.read();
+        const readDuration = Date.now() - readStartTime;
         chunkCount++;
-        console.log(`📦 [FRONTEND] Chunk #${chunkCount}, done=${done}`);
+        
+        console.log(`📦 [FRONTEND] Chunk #${chunkCount}, done=${done}, readDuration=${readDuration}ms`);
+        
+        if (value) {
+          const chunkSize = value.byteLength;
+          console.log(`📏 [FRONTEND] Chunk size: ${chunkSize} bytes`);
+        }
         
         if (done) {
+          console.log("🛑 [FRONTEND] Stream marked as done!");
+          console.log(`📊 [FRONTEND] Final stats: chunks=${chunkCount}, events=${eventCount}, bufferLength=${buffer.length}`);
+          
+          // Process any remaining data in buffer
+          if (buffer.trim()) {
+            console.log(`📦 [FRONTEND] Processing remaining buffer on done (${buffer.length} chars)`);
+            console.log(`📝 [FRONTEND] Buffer content preview:`, buffer.substring(0, 200));
+            const lines = buffer.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim();
+                if (dataStr && dataStr !== '[DONE]') {
+                  try {
+                    const data = JSON.parse(dataStr);
+                    console.log(`📨 [FRONTEND] Final event from buffer, type: ${data.type}`);
+                    // Process this event (same switch statement below)
+                    if (data.type === 'text') {
+                      assistantMessage = data.content;
+                      setCurrentThinking(null);
+                    } else if (data.type === 'analysis') {
+                      setAnalysisData({
+                        route: data.route,
+                        ports: data.ports,
+                        prices: data.prices,
+                        analysis: data.analysis,
+                      });
+                    }
+                  } catch (e) {
+                    console.error('❌ [FRONTEND] Parse error on buffer:', e);
+                  }
+                }
+              }
+            }
+          }
+          
           console.log("✅ [FRONTEND] Stream reading complete. Total chunks:", chunkCount, "Total events:", eventCount);
+          console.log(`📊 [FRONTEND] Final state: assistantMessage=${!!assistantMessage}, hasAnalysisData=${!!analysisData}`);
           break;
         }
 
+        if (!value) {
+          console.warn("⚠️ [FRONTEND] Received chunk with no value but done=false");
+          continue;
+        }
+
         const chunk = decoder.decode(value, { stream: true });
+        console.log(`📝 [FRONTEND] Decoded chunk length: ${chunk.length} chars`);
+        console.log(`📝 [FRONTEND] Chunk preview (first 200 chars):`, chunk.substring(0, 200));
+        
         buffer += chunk;
+        console.log(`📊 [FRONTEND] Buffer length after adding chunk: ${buffer.length} chars`);
+        
         const lines = buffer.split("\n");
+        console.log(`📊 [FRONTEND] Buffer split into ${lines.length} lines`);
         
         // Keep the last incomplete line in buffer
-        buffer = lines.pop() || "";
+        const lastLine = lines.pop() || '';
+        buffer = lastLine;
+        console.log(`📊 [FRONTEND] Kept last line in buffer (${lastLine.length} chars), processing ${lines.length} complete lines`);
 
-        for (const line of lines) {
-          if (!line.trim()) continue; // Skip empty lines
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.trim()) {
+            console.log(`⏭️ [FRONTEND] Skipping empty line ${i + 1}`);
+            continue; // Skip empty lines
+          }
+          
+          // Handle keep-alive comments (lines starting with :)
+          if (line.startsWith(':')) {
+            console.log(`💚 [FRONTEND] Keep-alive comment received`);
+            continue;
+          }
           
           if (line.startsWith("data: ")) {
             eventCount++;
             const data = line.slice(6).trim();
-            console.log(`📨 [FRONTEND] Event #${eventCount}, data preview:`, data.substring(0, 100));
+            console.log(`🔍 [FRONTEND] Processing line ${i + 1}, dataStr length: ${data.length}`);
+            console.log(`🔍 [FRONTEND] Data preview:`, data.substring(0, 150));
 
             if (data === "[DONE]") {
-              console.log("🏁 [FRONTEND] Received [DONE] signal, stopping...");
+              console.log("🏁 [FRONTEND] Received [DONE] signal");
               setCurrentThinking(null);
               setIsLoading(false);
-              break; // Exit the loop when done
+              // Don't break - continue reading to get any remaining data
+              // The stream will close naturally when done=true
+              continue;
             }
 
             if (!data) {
@@ -178,11 +250,12 @@ export function ChatInterfaceLangGraph() {
 
                 case "text":
                   console.log("📝 [FRONTEND] Received text event, content length:", parsed.content?.length || 0);
+                  console.log("📝 [FRONTEND] Text preview:", parsed.content?.substring(0, 200));
                   assistantMessage = parsed.content || "";
                   setCurrentThinking(null);
                   // Display the message immediately if it has content
                   if (assistantMessage.trim()) {
-                    console.log("💬 [FRONTEND] Adding assistant message to UI");
+                    console.log("💬 [FRONTEND] Adding assistant message to UI, length:", assistantMessage.length);
                     setMessages((prev) => {
                       // Check if we already have this message (avoid duplicates)
                       const lastMsg = prev[prev.length - 1];
@@ -198,8 +271,9 @@ export function ChatInterfaceLangGraph() {
                         timestamp: new Date(),
                       }];
                     });
+                    console.log(`✅ [FRONTEND] Assistant message added to UI`);
                   } else {
-                    console.log("⚠️ [FRONTEND] Text event has no content");
+                    console.warn("⚠️ [FRONTEND] Text event received but content is empty");
                   }
                   break;
 
@@ -212,6 +286,8 @@ export function ChatInterfaceLangGraph() {
                     hasAnalysis: !!parsed.analysis,
                   });
                   
+                  // Store analysis data for logging
+                  analysisDataForLogging = parsed;
                   setAnalysisData({
                     route: parsed.route || null,
                     ports: parsed.ports || null,
