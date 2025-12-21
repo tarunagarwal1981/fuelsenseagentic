@@ -123,6 +123,7 @@ export async function POST(req: Request) {
           const llmDuration = Date.now() - llmStartTime;
           console.log(`⏱️ [MANUAL-API] LLM responded in ${llmDuration}ms`);
           console.log(`📊 [MANUAL-API] LLM response - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+          console.log(`📊 [MANUAL-API] Current state before processing: route=${!!calculatedRoute}, ports=${foundPorts.length}, prices=${!!fetchedPrices}, analysis=${!!analysisResult}`);
           
           if (response.stop_reason === 'tool_use') {
             const toolUseBlock = response.content.find(
