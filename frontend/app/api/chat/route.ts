@@ -83,45 +83,64 @@ export async function POST(req: Request) {
           
           console.log(`🤖 [MANUAL-API] Calling LLM with model: ${MODEL}, message count: ${anthropicMessages.length}`);
           const llmStartTime = Date.now();
-          const response = await anthropic.messages.create({
-            model: MODEL,
-            max_tokens: 4096,
-            tools: [
-              {
-                name: routeCalculatorToolSchema.name,
-                description: routeCalculatorToolSchema.description,
-                input_schema: {
-                  ...routeCalculatorToolSchema.input_schema,
-                  required: [...routeCalculatorToolSchema.input_schema.required],
+          
+          // Set up keep-alive interval during LLM call to prevent Netlify from closing connection
+          const llmKeepAliveInterval = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(': keep-alive\n\n'));
+              console.log(`💚 [MANUAL-API] Sent keep-alive during LLM call`);
+            } catch (e) {
+              console.warn('⚠️ [MANUAL-API] Error sending keep-alive during LLM:', e);
+              clearInterval(llmKeepAliveInterval);
+            }
+          }, 2000); // Send keep-alive every 2 seconds during LLM call
+          
+          let response;
+          try {
+            response = await anthropic.messages.create({
+              model: MODEL,
+              max_tokens: 4096,
+              tools: [
+                {
+                  name: routeCalculatorToolSchema.name,
+                  description: routeCalculatorToolSchema.description,
+                  input_schema: {
+                    ...routeCalculatorToolSchema.input_schema,
+                    required: [...routeCalculatorToolSchema.input_schema.required],
+                  },
                 },
-              },
-              {
-                name: portFinderToolSchema.name,
-                description: portFinderToolSchema.description,
-                input_schema: {
-                  ...portFinderToolSchema.input_schema,
-                  required: [...portFinderToolSchema.input_schema.required],
+                {
+                  name: portFinderToolSchema.name,
+                  description: portFinderToolSchema.description,
+                  input_schema: {
+                    ...portFinderToolSchema.input_schema,
+                    required: [...portFinderToolSchema.input_schema.required],
+                  },
                 },
-              },
-              {
-                name: priceFetcherToolSchema.name,
-                description: priceFetcherToolSchema.description,
-                input_schema: {
-                  ...priceFetcherToolSchema.input_schema,
-                  required: [...priceFetcherToolSchema.input_schema.required],
+                {
+                  name: priceFetcherToolSchema.name,
+                  description: priceFetcherToolSchema.description,
+                  input_schema: {
+                    ...priceFetcherToolSchema.input_schema,
+                    required: [...priceFetcherToolSchema.input_schema.required],
+                  },
                 },
-              },
-              {
-                name: bunkerAnalyzerToolSchema.name,
-                description: bunkerAnalyzerToolSchema.description,
-                input_schema: {
-                  ...bunkerAnalyzerToolSchema.input_schema,
-                  required: [...bunkerAnalyzerToolSchema.input_schema.required],
+                {
+                  name: bunkerAnalyzerToolSchema.name,
+                  description: bunkerAnalyzerToolSchema.description,
+                  input_schema: {
+                    ...bunkerAnalyzerToolSchema.input_schema,
+                    required: [...bunkerAnalyzerToolSchema.input_schema.required],
+                  },
                 },
-              },
-            ],
-            messages: anthropicMessages,
-          });
+              ],
+              messages: anthropicMessages,
+            });
+          } finally {
+            // Always clear the keep-alive interval when LLM call completes
+            clearInterval(llmKeepAliveInterval);
+            console.log(`🛑 [MANUAL-API] Cleared keep-alive interval after LLM call`);
+          }
           
           const llmDuration = Date.now() - llmStartTime;
           console.log(`⏱️ [MANUAL-API] LLM responded in ${llmDuration}ms`);
@@ -387,13 +406,27 @@ export async function POST(req: Request) {
         
         // Stream done signal
         console.log("🏁 [MANUAL-API] Sending done signal");
+        
+        // Send a keep-alive right before done to ensure connection is still open
+        try {
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          console.log("✅ [MANUAL-API] Keep-alive sent before done event");
+        } catch (e) {
+          console.warn('⚠️ [MANUAL-API] Error sending keep-alive before done:', e);
+        }
+        
         const doneEvent = `data: ${JSON.stringify({ type: 'done' })}\n\n`;
         try {
           controller.enqueue(encoder.encode(doneEvent));
           console.log("✅ [MANUAL-API] Done event enqueued");
+          
+          // Send another keep-alive after done to ensure it's transmitted
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          console.log("✅ [MANUAL-API] Keep-alive sent after done event");
+          
           // Longer delay to ensure all events are sent before closing
           // This gives Netlify time to flush the stream
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 1000));
           controller.close();
           console.log("✅ [MANUAL-API] Stream closed successfully");
         } catch (closeError) {
