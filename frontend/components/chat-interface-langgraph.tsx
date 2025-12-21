@@ -106,25 +106,32 @@ export function ChatInterfaceLangGraph() {
       }
 
       let assistantMessage = "";
+      let buffer = ""; // Buffer for incomplete lines
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
+          if (!line.trim()) continue; // Skip empty lines
+          
           if (line.startsWith("data: ")) {
-            const data = line.slice(6);
+            const data = line.slice(6).trim();
 
             if (data === "[DONE]") {
               setCurrentThinking(null);
-              // Don't add message here if we already added it when "text" event was received
-              // The message was already added in the "text" case above
               setIsLoading(false);
               break; // Exit the loop when done
             }
+
+            if (!data) continue; // Skip empty data
 
             try {
               const parsed = JSON.parse(data);
