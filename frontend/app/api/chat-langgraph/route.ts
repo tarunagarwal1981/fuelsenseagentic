@@ -7,23 +7,58 @@ import { HumanMessage, AIMessage } from "@langchain/core/messages";
 // Helper function to clean markdown formatting
 function cleanMarkdown(text: string): string {
   if (!text) return text;
-  return text
-    // Remove bold/italic markers
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_]+)_/g, '$1')
-    // Remove headers
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove list markers but keep content
-    .replace(/^[-*+]\s+/gm, '')
-    .replace(/^\d+\.\s+/gm, '')
-    // Remove code blocks but keep content
-    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, '').trim())
-    .replace(/`([^`]+)`/g, '$1')
-    // Clean up extra whitespace
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  
+  let cleaned = text;
+  
+  // Remove code blocks first (to avoid processing markdown inside code)
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, (match) => {
+    return match.replace(/```[\w]*\n?/g, '').replace(/```/g, '').trim();
+  });
+  
+  // Remove inline code
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+  
+  // Remove bold markers - handle both **text** and __text__
+  // Process multiple times to catch nested or edge cases
+  for (let i = 0; i < 3; i++) {
+    cleaned = cleaned.replace(/\*\*([^*]+?)\*\*/g, '$1');
+    cleaned = cleaned.replace(/__([^_]+?)__/g, '$1');
+  }
+  // Remove any remaining ** or __ pairs
+  cleaned = cleaned.replace(/\*\*/g, '');
+  cleaned = cleaned.replace(/__/g, '');
+  
+  // Remove italic markers - handle both *text* and _text_
+  // Process multiple times to catch all cases
+  for (let i = 0; i < 3; i++) {
+    cleaned = cleaned.replace(/\*([^*\n]+?)\*/g, '$1');
+    cleaned = cleaned.replace(/_([^_\n]+?)_/g, '$1');
+  }
+  
+  // Remove headers (# Header)
+  cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
+  
+  // Remove horizontal rules
+  cleaned = cleaned.replace(/^[-*_]{3,}$/gm, '');
+  
+  // Remove links but keep text [text](url) -> text
+  cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+  
+  // Remove images ![alt](url) -> alt
+  cleaned = cleaned.replace(/!\[([^\]]*)\]\([^\)]+\)/g, '$1');
+  
+  // Remove strikethrough
+  cleaned = cleaned.replace(/~~([^~]+)~~/g, '$1');
+  
+  // Remove list markers but keep content
+  cleaned = cleaned.replace(/^[-*+]\s+/gm, '');
+  cleaned = cleaned.replace(/^\d+\.\s+/gm, '');
+  
+  // Clean up extra whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  cleaned = cleaned.replace(/[ \t]{2,}/g, ' '); // Multiple spaces/tabs to single space
+  
+  return cleaned.trim();
 }
 
 export async function POST(req: Request) {
