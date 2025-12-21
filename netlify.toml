@@ -16,7 +16,7 @@
 
 # Build environment variables
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "20"
   # Next.js specific
   NEXT_TELEMETRY_DISABLED = "1"
 
