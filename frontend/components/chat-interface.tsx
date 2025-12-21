@@ -249,6 +249,7 @@ export function ChatInterface() {
                   break;
               }
             } catch (e) {
+              console.error('❌ [MANUAL-FRONTEND] Parse error:', e);
               // Skip invalid JSON
             }
           }
@@ -256,7 +257,7 @@ export function ChatInterface() {
       }
       
     } catch (error: any) {
-      console.error('Chat error:', error);
+      console.error('❌ [MANUAL-FRONTEND] Error in chat submission:', error);
       setThinkingState(null);
       setIsLoading(false);
       setMessages(prev => [...prev, {
@@ -264,6 +265,10 @@ export function ChatInterface() {
         content: `Sorry, I encountered an error: ${error.message}`,
         timestamp: new Date(),
       }]);
+    } finally {
+      console.log("🏁 [MANUAL-FRONTEND] Chat submission finished, cleaning up...");
+      setIsLoading(false);
+      setThinkingState(null);
     }
   };
   
