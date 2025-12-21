@@ -19,7 +19,7 @@ import { Coordinates } from '@/lib/types';
 import { getCachedWeather, cacheWeather } from '@/lib/multi-agent/optimizations';
 
 // Circuit breaker constants
-const MAX_CONSECUTIVE_FAILURES = 15;
+const MAX_CONSECUTIVE_FAILURES = 5;
 const CIRCUIT_BREAKER_THRESHOLD = 0.5; // 50% failure rate
 
 /**
@@ -569,8 +569,7 @@ export async function fetchMarineWeather(
     };
   }
 
-  // Circuit breaker tracking variables
-  let consecutiveFailures = 0;
+  // Circuit breaker tracking variables (global across all batches)
   let totalAttempts = 0;
   let successfulFetches = 0;
   let circuitBreakerTriggered = false;
@@ -604,6 +603,9 @@ export async function fetchMarineWeather(
     if (circuitBreakerTriggered) {
       break;
     }
+
+    // Reset consecutive failures counter for each batch group
+    let consecutiveFailures = 0;
 
     const concurrentBatches = batches.slice(i, i + CONCURRENT_BATCHES);
     const batchStart = Date.now();

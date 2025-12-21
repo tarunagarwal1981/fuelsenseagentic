@@ -153,7 +153,7 @@ export const fetchMarineWeatherTool = tool(
     console.log('🌊 [WEATHER-AGENT] Executing fetch_marine_weather');
     try {
       const result = await executeMarineWeatherTool(input);
-      return JSON.stringify(result);
+      return result;
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
@@ -161,11 +161,11 @@ export const fetchMarineWeatherTool = tool(
       if (isTimeout) {
         console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
         // Return empty array to allow supervisor to proceed with partial data
-        return JSON.stringify([]);
+        return [];
       }
       
       console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
-      return JSON.stringify({ error: errorMessage });
+      return { error: errorMessage };
     }
   },
   {
@@ -216,10 +216,10 @@ export const calculateWeatherConsumptionTool = tool(
     console.log('⛽ [WEATHER-AGENT] Executing calculate_weather_consumption');
     try {
       const result = await executeWeatherConsumptionTool(input);
-      return JSON.stringify(result);
+      return result;
     } catch (error: any) {
       console.error('❌ [WEATHER-AGENT] Weather consumption error:', error.message);
-      return JSON.stringify({ error: error.message });
+      return { error: error.message };
     }
   },
   {
@@ -276,10 +276,10 @@ export const checkPortWeatherTool = tool(
     console.log('⚓ [WEATHER-AGENT] Executing check_bunker_port_weather');
     try {
       const result = await executePortWeatherTool(input);
-      return JSON.stringify(result);
+      return result;
     } catch (error: any) {
       console.error('❌ [WEATHER-AGENT] Port weather error:', error.message);
-      return JSON.stringify({ error: error.message });
+      return { error: error.message };
     }
   },
   {

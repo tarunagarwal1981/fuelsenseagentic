@@ -300,6 +300,14 @@ export async function supervisorAgentNode(state: MultiAgentState) {
   console.log(`   - Port prices: ${state.port_prices ? '✅' : '❌'}`);
   console.log(`   - Bunker analysis: ${state.bunker_analysis ? '✅' : '❌'}`);
 
+  // Validate weather state data
+  if (state.weather_forecast) {
+    console.log(`✅ [SUPERVISOR] Weather forecast available: ${state.weather_forecast.length} points`);
+  }
+  if (state.weather_consumption) {
+    console.log(`✅ [SUPERVISOR] Weather consumption available: ${state.weather_consumption.consumption_increase_percent.toFixed(2)}% increase`);
+  }
+
   // Check agent status for errors
   const agentStatus = state.agent_status || {};
   const agentErrors = state.agent_errors || {};
@@ -587,6 +595,58 @@ You MUST call these tools. Do not explain - just call the tools.`;
 }
 
 /**
+ * Extract weather data from tool results
+ */
+function extractWeatherDataFromMessages(messages: any[]): { 
+  weather_forecast?: any; 
+  weather_consumption?: any; 
+  port_weather_status?: any 
+} {
+  const result: { 
+    weather_forecast?: any; 
+    weather_consumption?: any; 
+    port_weather_status?: any 
+  } = {};
+
+  // Look for ToolMessages with weather data
+  for (const msg of messages) {
+    if (msg instanceof ToolMessage) {
+      try {
+        // Handle both string and object content (LangGraph may serialize automatically)
+        let toolResult: any;
+        if (typeof msg.content === 'string') {
+          toolResult = JSON.parse(msg.content);
+        } else {
+          toolResult = msg.content;
+        }
+        
+        // Check if this is weather forecast (array with forecast_confidence)
+        if (Array.isArray(toolResult) && toolResult.length > 0 && toolResult[0].forecast_confidence) {
+          result.weather_forecast = toolResult;
+          console.log('📦 [WEATHER-AGENT] Extracted weather_forecast from tool result');
+        }
+        
+        // Check if this is weather consumption (object with consumption_increase_percent)
+        if (toolResult && typeof toolResult === 'object' && !Array.isArray(toolResult) && 'consumption_increase_percent' in toolResult) {
+          result.weather_consumption = toolResult;
+          console.log('📦 [WEATHER-AGENT] Extracted weather_consumption from tool result');
+        }
+        
+        // Check if this is port weather status (array with bunkering_feasible)
+        if (Array.isArray(toolResult) && toolResult.length > 0 && 'bunkering_feasible' in toolResult[0]) {
+          result.port_weather_status = toolResult;
+          console.log('📦 [WEATHER-AGENT] Extracted port_weather_status from tool result');
+        }
+      } catch (e) {
+        // Not JSON or parse error, skip
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Weather Agent Node
  * 
  * Analyzes weather impact using marine weather, consumption, and port weather tools.
@@ -595,6 +655,25 @@ export async function weatherAgentNode(state: MultiAgentState) {
   console.log('🌊 [WEATHER-AGENT] Node: Starting weather analysis...');
   const agentStartTime = Date.now();
 
+  // First, check if we have tool results to extract
+  const extractedData = extractWeatherDataFromMessages(state.messages);
+  const stateUpdates: any = {};
+
+  if (extractedData.weather_forecast && !state.weather_forecast) {
+    stateUpdates.weather_forecast = extractedData.weather_forecast;
+    console.log('✅ [WEATHER-AGENT] Extracted weather_forecast from tool results');
+  }
+
+  if (extractedData.weather_consumption && !state.weather_consumption) {
+    stateUpdates.weather_consumption = extractedData.weather_consumption;
+    console.log('✅ [WEATHER-AGENT] Extracted weather_consumption from tool results');
+  }
+
+  if (extractedData.port_weather_status && !state.port_weather_status) {
+    stateUpdates.port_weather_status = extractedData.port_weather_status;
+    console.log('✅ [WEATHER-AGENT] Extracted port_weather_status from tool results');
+  }
+
   const weatherTools = [
     fetchMarineWeatherTool,
     calculateWeatherConsumptionTool,
@@ -602,16 +681,19 @@ export async function weatherAgentNode(state: MultiAgentState) {
   ];
   const llmWithTools = baseLLM.bindTools(weatherTools);
 
-  const systemPrompt = `You are the Weather Agent. Your role is to:
-1. Fetch marine weather forecasts for vessel positions from the timeline
-2. Calculate weather-adjusted fuel consumption based on conditions
-3. Check bunker port weather conditions for safe bunkering
+  const systemPrompt = `You are the Weather Analysis Agent. Your job is to:
+1. FIRST: Call fetch_marine_weather with the vessel_timeline positions
+2. THEN: Call calculate_weather_consumption with the weather data
+3. FINALLY: Call check_bunker_port_weather if bunker ports are available
+4. After all tools complete, summarize the weather analysis
 
-Use fetch_marine_weather with vessel positions from the timeline.
-Then use calculate_weather_consumption with the weather data.
-Finally, use check_bunker_port_weather for any identified bunker ports.
+IMPORTANT: Do not return to supervisor until ALL THREE tools have been called.
 
-Be thorough and ensure you complete all weather analysis steps.`;
+You must call all tools in sequence:
+- Start with fetch_marine_weather using positions from vessel_timeline
+- Use the weather forecast results in calculate_weather_consumption
+- If bunker ports exist, check their weather with check_bunker_port_weather
+- Only after completing all tool calls should you provide a summary`;
 
   try {
     // Build messages with system prompt and trimmed conversation history
@@ -642,7 +724,12 @@ Be thorough and ensure you complete all weather analysis steps.`;
       fullSystemPrompt += `\n\nAvailable data:
 - Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}
 - Vessel timeline: ${state.vessel_timeline.length} positions
-- Use vessel_timeline positions for weather forecast`;
+- Use vessel_timeline positions for fetch_marine_weather tool`;
+      
+      // Add bunker ports info if available
+      if (state.bunker_ports && state.bunker_ports.length > 0) {
+        fullSystemPrompt += `\n- Bunker ports available: ${state.bunker_ports.length} ports - use check_bunker_port_weather tool`;
+      }
     }
     
     const messages = [
@@ -650,11 +737,13 @@ Be thorough and ensure you complete all weather analysis steps.`;
       ...filteredMessages,
     ];
 
-    const response = await withTimeout(
+    // Use Promise.race to handle timeout gracefully
+    const response = await Promise.race([
       llmWithTools.invoke(messages),
-      TIMEOUTS.WEATHER_AGENT,
-      'Weather agent timed out'
-    );
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Weather agent timeout')), TIMEOUTS.WEATHER_API * 3)
+      )
+    ]) as any;
 
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('weather_agent', agentDuration);
@@ -665,47 +754,74 @@ Be thorough and ensure you complete all weather analysis steps.`;
       console.log(`🔧 [WEATHER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
     }
 
-    // Mark as successful
-    return {
+    // Check for tool results in the updated messages (after tools node execution)
+    // The tools node adds ToolMessages to state.messages, so check again
+    const updatedExtractedData = extractWeatherDataFromMessages(state.messages);
+    
+    if (updatedExtractedData.weather_forecast && !stateUpdates.weather_forecast) {
+      stateUpdates.weather_forecast = updatedExtractedData.weather_forecast;
+      console.log('✅ [WEATHER-AGENT] Extracted weather_forecast from updated tool results');
+    }
+
+    if (updatedExtractedData.weather_consumption && !stateUpdates.weather_consumption) {
+      stateUpdates.weather_consumption = updatedExtractedData.weather_consumption;
+      console.log('✅ [WEATHER-AGENT] Extracted weather_consumption from updated tool results');
+    }
+
+    if (updatedExtractedData.port_weather_status && !stateUpdates.port_weather_status) {
+      stateUpdates.port_weather_status = updatedExtractedData.port_weather_status;
+      console.log('✅ [WEATHER-AGENT] Extracted port_weather_status from updated tool results');
+    }
+
+    // Mark as successful and return extracted data
+    const returnData = {
+      ...stateUpdates,
       messages: [response],
       agent_status: { weather_agent: 'success' },
     };
+
+    console.log('✅ [WEATHER-AGENT] Returning state updates:', {
+      weather_forecast: returnData.weather_forecast ? `${returnData.weather_forecast.length} points` : 'null',
+      weather_consumption: returnData.weather_consumption ? 'updated' : 'null',
+      port_weather_status: returnData.port_weather_status ? `${returnData.port_weather_status.length} ports` : 'null'
+    });
+
+    return returnData;
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('weather_agent', agentDuration);
     recordAgentExecution('weather_agent', agentDuration, false);
     
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    console.error('❌ [WEATHER-AGENT] Error:', errorMessage);
     
-    if (isTimeout) {
-      console.warn(`⚠️ [WEATHER-AGENT] Weather agent timed out - setting partial flag and allowing supervisor to proceed`);
-      
-      // Set partial flag and allow supervisor to proceed to bunker_agent
+    // Check if we got ANY weather data before timeout
+    if (state.weather_forecast && state.weather_forecast.length > 0) {
+      console.warn('⚠️ [WEATHER-AGENT] Partial data available, marking as partial');
       return {
-        agent_status: { weather_agent: 'success' }, // Mark as success to allow proceeding
+        ...stateUpdates,
         weather_agent_partial: true,
+        agent_status: { ...(state.agent_status || {}), weather_agent: 'partial' },
         agent_errors: {
+          ...(state.agent_errors || {}),
           weather_agent: {
-            error: 'Weather agent timed out - partial data available',
+            error: errorMessage,
             timestamp: Date.now(),
           },
         },
         messages: [
           new SystemMessage(
-            `Weather agent timed out but partial data may be available. The system will continue with available data.`
+            `Weather agent encountered an error but partial data is available. The system will continue with available data.`
           ),
         ],
       };
     }
     
-    console.error(`❌ [WEATHER-AGENT] Node error: ${errorMessage}`);
-    console.warn(`⚠️ [WEATHER-AGENT] Marking weather agent as failed, supervisor will skip to next step`);
-    
-    // Mark as failed and return error info - don't throw, let supervisor handle it
+    // No partial data available - mark as failed
     return {
-      agent_status: { weather_agent: 'failed' },
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
       agent_errors: {
+        ...(state.agent_errors || {}),
         weather_agent: {
           error: errorMessage,
           timestamp: Date.now(),
