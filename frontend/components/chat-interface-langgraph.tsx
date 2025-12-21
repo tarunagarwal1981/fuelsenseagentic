@@ -221,7 +221,17 @@ export function ChatInterfaceLangGraph() {
                   break;
               }
             } catch (parseError) {
-              console.error("Parse error:", parseError);
+              // Handle JSON parse errors gracefully
+              if (parseError instanceof SyntaxError) {
+                // If it's an unterminated string, the JSON might be split across chunks
+                // The buffer will handle it in the next iteration
+                if (parseError.message.includes("Unterminated") || parseError.message.includes("JSON")) {
+                  console.warn("⚠️ Incomplete JSON chunk, will retry with buffer:", data.substring(0, 100));
+                  // Don't throw - just skip this chunk, buffer will handle it
+                  continue;
+                }
+              }
+              console.error("Parse error:", parseError, "Data preview:", data.substring(0, 200));
             }
           }
         }
