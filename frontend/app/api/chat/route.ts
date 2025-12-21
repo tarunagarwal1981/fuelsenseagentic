@@ -219,40 +219,83 @@ export async function POST(req: Request) {
             
             // Check if we have complete data
             const hasCompleteData = analysisResult && analysisResult.recommendations && analysisResult.recommendations.length > 0;
-            const hasPartialData = calculatedRoute && (foundPorts.length > 0 || fetchedPrices);
+            const hasRouteOnly = calculatedRoute && foundPorts.length === 0 && !fetchedPrices && !analysisResult;
+            const hasRouteAndPorts = calculatedRoute && foundPorts.length > 0 && !fetchedPrices && !analysisResult;
+            const hasRoutePortsAndPrices = calculatedRoute && foundPorts.length > 0 && fetchedPrices && !analysisResult;
             
             console.log(`📊 [MANUAL-API] Data completeness check:`, {
               hasCompleteData,
-              hasPartialData,
+              hasRouteOnly,
+              hasRouteAndPorts,
+              hasRoutePortsAndPrices,
               hasRoute: !!calculatedRoute,
               portsCount: foundPorts.length,
               hasPrices: !!fetchedPrices,
               hasAnalysis: !!analysisResult,
             });
             
-            // If we don't have complete analysis, check if the LLM is prematurely ending
-            if (!hasCompleteData && textBlock) {
-              const textLower = textBlock.text.toLowerCase();
-              const isPrematureEnd = !textLower.includes("analysis") && 
-                                    !textLower.includes("recommendation") && 
-                                    !textLower.includes("option") &&
-                                    !textLower.includes("bunker") &&
-                                    (textLower.includes("calculated") || textLower.includes("route") || textLower.includes("found"));
-              
-              if (isPrematureEnd && hasPartialData) {
-                console.warn("⚠️ [MANUAL-API] LLM ended prematurely - we have partial data but no analysis");
-                // Add a follow-up message to encourage continuation
+            // If we don't have complete analysis, force continuation
+            if (!hasCompleteData) {
+              if (hasRouteOnly) {
+                // Only have route - need to find ports
+                console.warn("⚠️ [MANUAL-API] Only have route data - forcing continuation to find ports");
                 anthropicMessages.push({
                   role: 'assistant',
                   content: response.content,
                 });
                 anthropicMessages.push({
                   role: 'user',
-                  content: "Please continue with the full analysis. I need you to find bunker ports, fetch fuel prices, and provide ranked recommendations with cost analysis. Don't stop after just calculating the route.",
+                  content: "Good, you've calculated the route. Now please find bunker ports near this route, fetch their fuel prices, and then analyze the options to provide ranked recommendations with cost analysis.",
                 });
-                console.log("🔄 [MANUAL-API] Added follow-up message to continue analysis");
-                // Don't end the loop - continue to next iteration
-                continue;
+                console.log("🔄 [MANUAL-API] Added follow-up message to find ports");
+                continue; // Continue loop
+              } else if (hasRouteAndPorts) {
+                // Have route and ports - need to fetch prices
+                console.warn("⚠️ [MANUAL-API] Have route and ports but no prices - forcing continuation to fetch prices");
+                anthropicMessages.push({
+                  role: 'assistant',
+                  content: response.content,
+                });
+                anthropicMessages.push({
+                  role: 'user',
+                  content: "Good, you've found the ports. Now please fetch the current fuel prices for these ports, and then analyze the options to provide ranked recommendations with cost analysis.",
+                });
+                console.log("🔄 [MANUAL-API] Added follow-up message to fetch prices");
+                continue; // Continue loop
+              } else if (hasRoutePortsAndPrices) {
+                // Have route, ports, and prices - need to analyze
+                console.warn("⚠️ [MANUAL-API] Have route, ports, and prices but no analysis - forcing continuation to analyze");
+                anthropicMessages.push({
+                  role: 'assistant',
+                  content: response.content,
+                });
+                anthropicMessages.push({
+                  role: 'user',
+                  content: "Good, you have the route, ports, and prices. Now please analyze the bunker options and provide ranked recommendations with cost analysis including total cost, deviation cost, and savings.",
+                });
+                console.log("🔄 [MANUAL-API] Added follow-up message to analyze");
+                continue; // Continue loop
+              } else if (textBlock) {
+                // Check if text suggests premature ending
+                const textLower = textBlock.text.toLowerCase();
+                const isPrematureEnd = !textLower.includes("analysis") && 
+                                      !textLower.includes("recommendation") && 
+                                      !textLower.includes("option") &&
+                                      !textLower.includes("bunker");
+                
+                if (isPrematureEnd) {
+                  console.warn("⚠️ [MANUAL-API] LLM ended prematurely - text doesn't mention analysis");
+                  anthropicMessages.push({
+                    role: 'assistant',
+                    content: response.content,
+                  });
+                  anthropicMessages.push({
+                    role: 'user',
+                    content: "Please continue with the full analysis. I need you to complete all steps: find bunker ports, fetch fuel prices, and provide ranked recommendations with cost analysis.",
+                  });
+                  console.log("🔄 [MANUAL-API] Added follow-up message to continue");
+                  continue; // Continue loop
+                }
               }
             }
             
