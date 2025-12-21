@@ -163,6 +163,7 @@ export function ChatInterface() {
       let assistantMessage = '';
       let chunkCount = 0;
       let eventCount = 0;
+      let buffer = ''; // Buffer for incomplete lines
       
       console.log("📥 [MANUAL-FRONTEND] Starting to read stream...");
       while (true) {
@@ -171,18 +172,56 @@ export function ChatInterface() {
         console.log(`📦 [MANUAL-FRONTEND] Chunk #${chunkCount}, done=${done}`);
         
         if (done) {
+          // Process any remaining data in buffer
+          if (buffer.trim()) {
+            console.log("📦 [MANUAL-FRONTEND] Processing remaining buffer on done");
+            const lines = buffer.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  console.log(`📨 [MANUAL-FRONTEND] Final event from buffer, type: ${data.type}`);
+                  // Process this event (same switch statement below)
+                  if (data.type === 'text') {
+                    assistantMessage = data.content;
+                    setThinkingState(null);
+                  } else if (data.type === 'analysis') {
+                    setAnalysisData({
+                      route: data.route,
+                      ports: data.ports,
+                      prices: data.prices,
+                      analysis: data.analysis,
+                    });
+                  } else if (data.type === 'done') {
+                    setIsLoading(false);
+                  }
+                } catch (e) {
+                  console.error('❌ [MANUAL-FRONTEND] Parse error on buffer:', e);
+                }
+              }
+            }
+          }
           console.log("✅ [MANUAL-FRONTEND] Stream reading complete. Total chunks:", chunkCount, "Total events:", eventCount);
           break;
         }
         
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || '';
         
         for (const line of lines) {
+          if (!line.trim()) continue; // Skip empty lines
+          
           if (line.startsWith('data: ')) {
             eventCount++;
+            const dataStr = line.slice(6).trim();
+            if (!dataStr) continue; // Skip empty data
+            
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = JSON.parse(dataStr);
               console.log(`📨 [MANUAL-FRONTEND] Event #${eventCount}, type: ${data.type}`);
               
               switch (data.type) {
