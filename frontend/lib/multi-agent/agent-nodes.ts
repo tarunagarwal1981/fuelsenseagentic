@@ -249,94 +249,208 @@ export async function supervisorAgentNode(
       messages: [],
     };
   }
-
-  // NEW LOGIC: Check if weather agent is stuck (called 3+ times with no progress)
-  const recentMessages = state.messages.slice(-6); // Last 6 messages
-  const weatherAgentCalls = recentMessages.filter(m => 
-    m.content?.toString().includes('[WEATHER-AGENT]') || 
-    m.content?.toString().includes('weather_agent')
-  ).length;
   
-  if (weatherAgentCalls >= 3 && !state.weather_forecast && !state.weather_consumption) {
-    console.log("⚠️ [SUPERVISOR] Weather agent stuck (3+ calls, no progress) - skipping to bunker");
-    return {
-      next_agent: state.bunker_ports ? "finalize" : "bunker_agent",
-      messages: [],
-    };
+  // Early detection: If we have 10+ messages and weather is needed but missing, likely stuck
+  // (This catches stuck weather agent earlier)
+  if (messageCount >= 10 && state.route_data && !state.weather_forecast && !state.weather_consumption) {
+    // Get intent first to decide what to do
+    const userMsg = state.messages.find((msg) => msg instanceof HumanMessage);
+    const query = userMsg 
+      ? (typeof userMsg.content === 'string' ? userMsg.content : String(userMsg.content))
+      : '';
+    const queryLower = query.toLowerCase();
+    const needsWeather = ['weather', 'forecast', 'consumption', 'conditions', 'wind', 'wave'].some(k => queryLower.includes(k));
+    const needsBunker = ['bunker', 'fuel', 'port', 'price', 'cheapest'].some(k => queryLower.includes(k));
+    
+    if (needsWeather && !needsBunker) {
+      console.log("⚠️ [SUPERVISOR] Early detection: Weather stuck (10+ messages, no weather data) - finalizing");
+      return {
+        next_agent: "finalize",
+        messages: [],
+      };
+    }
   }
 
-  // Get original user query
+  // Get user query to analyze intent FIRST (before checking stuck agents)
   const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
   const userQuery = userMessage 
     ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
     : state.messages[0]?.content?.toString() || 'Plan bunker route';
-
-  // ORIGINAL DECISION LOGIC (keep this)
-  const systemPrompt = `You are the Supervisor Agent coordinating bunker planning.
-
-Available specialized agents:
-- route_agent: Calculate routes and vessel timelines
-- weather_agent: Get weather forecasts and consumption adjustments
-- bunker_agent: Find ports, prices, and recommend best option
-
-Current state:
-- Route data: ${state.route_data ? '✓ Complete' : '✗ Missing'}
-- Weather data: ${state.weather_forecast ? '✓ Complete' : '✗ Missing'}
-- Bunker data: ${state.bunker_analysis ? '✓ Complete' : '✗ Missing'}
-
-User Query: "${userQuery}"
-
-DECISION RULES:
-1. If NO route data → DELEGATE_ROUTE
-2. If route complete AND user query mentions "weather", "forecast", "consumption", or "conditions" → DELEGATE_WEATHER
-3. If route complete AND user query mentions "bunker", "port", "fuel", "price", or "cheapest" → DELEGATE_BUNKER
-4. If route complete AND no specific request → DELEGATE_BUNKER (skip weather)
-5. If route AND bunker complete → FINALIZE
-
-IMPORTANT: Weather is OPTIONAL. Only delegate to weather_agent if user explicitly asks for it.
-
-Respond with ONLY ONE of:
-- "DELEGATE_ROUTE" - if route not calculated
-- "DELEGATE_WEATHER" - ONLY if user specifically asked for weather analysis
-- "DELEGATE_BUNKER" - if route done and user wants bunker planning
-- "FINALIZE" - if all requested work is complete`;
-
-  const messages = [
-    new SystemMessage(systemPrompt),
-    new HumanMessage(userQuery), // Original user query
-  ];
   
-  const response = await baseLLM.invoke(messages);
-  const decision = response.content.toString().trim();
+  const userQueryLower = userQuery.toLowerCase();
   
-  console.log(`🎯 [SUPERVISOR] Decision: ${decision}`);
+  // Analyze user intent - what do they actually need?
+  const needsRoute = !state.route_data || !state.vessel_timeline;
   
-  let next_agent = "";
+  const needsWeather = [
+    'weather', 'forecast', 'consumption', 'conditions', 'wind', 'wave', 
+    'storm', 'gale', 'seas', 'swell', 'meteorological', 'climate'
+  ].some(keyword => userQueryLower.includes(keyword));
   
-  if (decision.includes("DELEGATE_ROUTE")) {
-    next_agent = "route_agent";
-  } else if (decision.includes("DELEGATE_WEATHER")) {
-    next_agent = "weather_agent";
-  } else if (decision.includes("DELEGATE_BUNKER")) {
-    next_agent = "bunker_agent";
-  } else if (decision.includes("FINALIZE")) {
-    next_agent = "finalize";
-  } else {
-    // Default fallback
-    if (!state.route_data) {
-      next_agent = "route_agent";
-    } else if (!state.bunker_analysis) {
-      next_agent = "bunker_agent";
+  const needsBunker = [
+    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
+    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
+    'best option', 'recommendation', 'compare', 'savings'
+  ].some(keyword => userQueryLower.includes(keyword));
+
+  // NEW LOGIC: Check if weather agent is stuck
+  // Better detection: If route is complete, weather is needed, but weather data doesn't exist
+  // AND we've been through supervisor multiple times, we're likely stuck
+  const routeComplete = state.route_data && state.vessel_timeline;
+  const weatherNeededButMissing = needsWeather && !state.weather_forecast && !state.weather_consumption;
+  
+  // Count how many times we've likely tried weather_agent by checking message patterns
+  // Look for AIMessages from weather_agent (they'll have tool_calls or empty content)
+  const weatherAgentAttempts = state.messages.filter(m => {
+    if (m instanceof AIMessage) {
+      // Check if this looks like a weather agent response (has tool_calls or is empty)
+      const hasToolCalls = m.tool_calls && m.tool_calls.length > 0;
+      const isEmpty = !m.content || (Array.isArray(m.content) && m.content.length === 0) || m.content === '[]';
+      // If it's an AIMessage with tool_calls for weather tools, or empty response, likely weather_agent
+      if (hasToolCalls && m.tool_calls) {
+        const toolNames = m.tool_calls.map((tc: any) => tc.name || '').join(',');
+        return toolNames.includes('fetch_marine_weather') || toolNames.includes('calculate_weather_consumption');
+      }
+      // Empty responses after route is complete are likely failed weather_agent attempts
+      if (isEmpty && routeComplete) {
+        return true;
+      }
+    }
+    return false;
+  }).length;
+  
+  // Also check agent_status for weather_agent failures
+  const weatherAgentFailed = state.agent_status?.weather_agent === 'failed';
+  const weatherAgentPartial = state.weather_agent_partial === true;
+  
+  // If weather is needed but we've tried multiple times with no progress, or agent failed
+  if (routeComplete && weatherNeededButMissing && (weatherAgentAttempts >= 3 || weatherAgentFailed)) {
+    // If weather was needed but agent is stuck, check if we should skip or finalize
+    if (needsWeather && !needsBunker) {
+      // User only asked for weather, not bunker - finalize with what we have
+      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - finalizing with route data only`);
+      return {
+        next_agent: "finalize",
+        messages: [],
+      };
+    } else if (needsBunker) {
+      // User asked for bunker too - skip weather and go to bunker
+      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - skipping to bunker`);
+      return {
+        next_agent: "bunker_agent",
+        messages: [],
+      };
     } else {
-      next_agent = "finalize";
+      // Neither weather nor bunker needed - shouldn't happen, but finalize
+      console.log("⚠️ [SUPERVISOR] Weather agent stuck but not needed - finalizing");
+      return {
+        next_agent: "finalize",
+        messages: [],
+      };
     }
   }
   
-  console.log(`🎯 [SUPERVISOR] Routing to: ${next_agent}`);
+  // If weather agent has partial data, we can proceed
+  if (weatherAgentPartial && needsWeather && state.weather_forecast) {
+    // Weather agent has partial data, continue to next step if needed
+    if (needsBunker && !state.bunker_analysis) {
+      console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
+      return {
+        next_agent: "bunker_agent",
+        messages: [],
+      };
+    } else {
+      console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
+      return {
+        next_agent: "finalize",
+        messages: [],
+      };
+    }
+  }
   
+  // Log intent analysis
+  console.log('🔍 [SUPERVISOR] Query intent analysis:');
+  console.log(`   - Needs route: ${needsRoute}`);
+  console.log(`   - Needs weather: ${needsWeather}`);
+  console.log(`   - Needs bunker: ${needsBunker}`);
+  console.log(`   - Query: "${userQuery.substring(0, 100)}"`);
+  
+  // DETERMINISTIC DECISION LOGIC - Based on actual needs, not fixed sequence
+  
+  // 1. If route is needed and not available, get route first
+  if (needsRoute && (!state.route_data || !state.vessel_timeline)) {
+    console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent');
+    return {
+      next_agent: "route_agent",
+      messages: [],
+    };
+  }
+  
+  // 2. If route is complete, check what else is needed based on query intent
+  if (state.route_data && state.vessel_timeline) {
+    // Priority 1: Weather is needed and not done
+    if (needsWeather && !state.weather_forecast && !state.weather_consumption) {
+      console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent');
+      return {
+        next_agent: "weather_agent",
+        messages: [],
+      };
+    }
+    
+    // Priority 2: Weather is complete, now check if bunker is needed
+    if (needsWeather && state.weather_forecast && state.weather_consumption) {
+      if (needsBunker && !state.bunker_analysis) {
+        console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent');
+        return {
+          next_agent: "bunker_agent",
+          messages: [],
+        };
+      }
+    }
+    
+    // Priority 3: Bunker is needed (and weather was not needed or is complete)
+    if (needsBunker && !state.bunker_analysis) {
+      // Only delegate to bunker if weather was not needed, or weather is complete
+      const weatherNotNeeded = !needsWeather;
+      const weatherComplete = needsWeather && state.weather_forecast && state.weather_consumption;
+      
+      if (weatherNotNeeded || weatherComplete) {
+        console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent');
+        return {
+          next_agent: "bunker_agent",
+          messages: [],
+        };
+      }
+    }
+    
+    // Priority 4: Check if all requested work is complete
+    // If weather was not needed, consider it "complete"
+    // If bunker was not needed, consider it "complete"
+    const weatherComplete = !needsWeather || (state.weather_forecast && state.weather_consumption);
+    const bunkerComplete = !needsBunker || state.bunker_analysis;
+    
+    if (weatherComplete && bunkerComplete) {
+      console.log('🎯 [SUPERVISOR] Decision: All requested work complete → finalize');
+      return {
+        next_agent: "finalize",
+        messages: [],
+      };
+    }
+    
+    // If we reach here, route exists but something is still needed
+    // This shouldn't happen, but if it does, finalize with what we have
+    console.log('🎯 [SUPERVISOR] Decision: Route complete, finalizing with available data');
+    return {
+      next_agent: "finalize",
+      messages: [],
+    };
+  }
+  
+  // 4. Ultimate fallback: Get route
+  console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
   return {
-    next_agent,
-    messages: [response],
+    next_agent: "route_agent",
+    messages: [],
   };
 }
 
@@ -862,13 +976,44 @@ export async function finalizeNode(state: MultiAgentState) {
     errorContext = `\n\n⚠️ Note: Some agents encountered errors:\n${errorList}\nPlease acknowledge these limitations in your recommendation.`;
   }
 
+  // Build state context summary first
+  const stateContext: string[] = [];
+
+  if (state.route_data) {
+    stateContext.push(
+      `Route: ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h, ${state.route_data.route_type}`
+    );
+  }
+
+  if (state.weather_consumption) {
+    stateContext.push(
+      `Weather Impact: +${state.weather_consumption.consumption_increase_percent.toFixed(2)}% consumption, ${state.weather_consumption.additional_fuel_needed_mt.toFixed(2)}MT additional fuel`
+    );
+  }
+
+  if (state.bunker_analysis) {
+    const best = state.bunker_analysis.best_option;
+    stateContext.push(
+      `Best Option: ${best.port_name} - Total cost: $${best.total_cost_usd.toFixed(2)}, Savings: $${state.bunker_analysis.max_savings_usd.toFixed(2)}`
+    );
+  }
+
+  if (state.port_weather_status && state.port_weather_status.length > 0) {
+    const portWeather = state.port_weather_status[0];
+    stateContext.push(
+      `Port Weather: ${portWeather.port_name} - ${portWeather.bunkering_feasible ? 'Feasible' : 'Not feasible'}, ${portWeather.weather_risk} risk`
+    );
+  }
+
+  const stateSummary = stateContext.length > 0 ? `\n\nState Summary:\n${stateContext.join('\n')}` : '';
+
   const systemPrompt = `You are the Finalization Agent. Your role is to create a comprehensive bunker recommendation from all the collected data.
 
 Available data:
 - Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}` : 'Not available'}
 - Weather impact: ${state.weather_consumption ? `${state.weather_consumption.consumption_increase_percent.toFixed(2)}% increase` : 'Not available'}
 - Bunker analysis: ${state.bunker_analysis ? `${state.bunker_analysis.recommendations.length} options analyzed` : 'Not available'}
-- Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}${errorContext}
+- Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}${errorContext}${stateSummary}
 
 Create a comprehensive, well-structured recommendation that includes:
 1. Route summary${state.route_data ? '' : ' (if available)'}
@@ -905,43 +1050,11 @@ Be clear, concise, and actionable.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
+    // CRITICAL: Only ONE SystemMessage allowed, and it must be first
     const messages = [
       new SystemMessage(systemPrompt),
       ...filteredMessages,
     ];
-
-    // Add detailed state information
-    const stateContext: string[] = [];
-
-    if (state.route_data) {
-      stateContext.push(
-        `Route: ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h, ${state.route_data.route_type}`
-      );
-    }
-
-    if (state.weather_consumption) {
-      stateContext.push(
-        `Weather Impact: +${state.weather_consumption.consumption_increase_percent.toFixed(2)}% consumption, ${state.weather_consumption.additional_fuel_needed_mt.toFixed(2)}MT additional fuel`
-      );
-    }
-
-    if (state.bunker_analysis) {
-      const best = state.bunker_analysis.best_option;
-      stateContext.push(
-        `Best Option: ${best.port_name} - Total cost: $${best.total_cost_usd.toFixed(2)}, Savings: $${state.bunker_analysis.max_savings_usd.toFixed(2)}`
-      );
-    }
-
-    if (state.port_weather_status && state.port_weather_status.length > 0) {
-      const portWeather = state.port_weather_status[0];
-      stateContext.push(
-        `Port Weather: ${portWeather.port_name} - ${portWeather.bunkering_feasible ? 'Feasible' : 'Not feasible'}, ${portWeather.weather_risk} risk`
-      );
-    }
-
-    if (stateContext.length > 0) {
-      messages.push(new SystemMessage(`State Summary:\n${stateContext.join('\n')}`));
-    }
 
     const response = await withTimeout(
       baseLLM.invoke(messages),

@@ -221,72 +221,118 @@ export function ChatInterfaceMultiAgent() {
       }
 
       if (useMultiAgent) {
-        // Multi-agent returns JSON directly
-        const data = await response.json();
-        const executionTime = Date.now() - startTime;
-
-        console.log("📊 [MULTI-AGENT-FRONTEND] Received response:", {
-          hasRecommendation: !!data.recommendation,
-          hasRoute: !!data.route_data,
-          hasWeather: !!data.weather_data,
-          hasBunker: !!data.bunker_data,
-        });
-
-        // Update agent activities based on metadata
-        if (data.metadata) {
-          const activities: AgentActivity[] = [];
-          const agentsCalled = data.metadata.agents_called || [];
-
-          // Track which agents were called
-          if (data.route_data) {
-            activities.push({
-              agent: "route_agent",
-              status: "completed",
-              toolCalls: agentsCalled.includes("route_agent") ? 2 : 0,
-            });
-          }
-          if (data.weather_data) {
-            activities.push({
-              agent: "weather_agent",
-              status: "completed",
-              toolCalls: agentsCalled.includes("weather_agent") ? 3 : 0,
-            });
-          }
-          if (data.bunker_data) {
-            activities.push({
-              agent: "bunker_agent",
-              status: "completed",
-              toolCalls: agentsCalled.includes("bunker_agent") ? 3 : 0,
-            });
-          }
-
-          setAgentActivities(activities);
-
-          // Set performance metrics
-          setPerformanceMetrics({
-            totalExecutionTime: data.metadata.execution_time_ms || executionTime,
-            agentTimes: {}, // Would need to track this in the API
-            totalToolCalls: data.metadata.total_tool_calls || 0,
-            agentsCalled: agentsCalled,
-          });
+        // Multi-agent returns SSE stream
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response body reader available");
         }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assistantMessage = "";
+        let routeData: any = null;
+        let weatherData: any = null;
+        let bunkerData: any = null;
+        const activities: AgentActivity[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              
+              if (dataStr === "[DONE]") {
+                continue;
+              }
+
+              try {
+                const data = JSON.parse(dataStr);
+                console.log(`📨 [MULTI-AGENT-FRONTEND] Event type: ${data.type}`);
+
+                switch (data.type) {
+                  case "route_complete":
+                    routeData = data.data;
+                    activities.push({
+                      agent: "route_agent",
+                      status: "completed",
+                      toolCalls: 2,
+                    });
+                    setCurrentAgent("route_agent");
+                    setAgentActivities([...activities]);
+                    break;
+
+                  case "weather_complete":
+                    weatherData = data.data;
+                    activities.push({
+                      agent: "weather_agent",
+                      status: "completed",
+                      toolCalls: 3,
+                    });
+                    setCurrentAgent("weather_agent");
+                    setAgentActivities([...activities]);
+                    break;
+
+                  case "bunker_complete":
+                    bunkerData = data.data;
+                    activities.push({
+                      agent: "bunker_agent",
+                      status: "completed",
+                      toolCalls: 3,
+                    });
+                    setCurrentAgent("bunker_agent");
+                    setAgentActivities([...activities]);
+                    break;
+
+                  case "final_complete":
+                    assistantMessage = data.recommendation || "Analysis completed.";
+                    setCurrentAgent(null);
+                    break;
+
+                  case "error":
+                    throw new Error(data.error || "Unknown error");
+                }
+              } catch (parseError) {
+                console.error("❌ [MULTI-AGENT-FRONTEND] Parse error:", parseError, "Data:", dataStr.substring(0, 200));
+                // Continue processing other events
+              }
+            }
+          }
+        }
+
+        const executionTime = Date.now() - startTime;
 
         // Set analysis data
         setAnalysisData({
-          route: data.route_data,
-          ports: data.bunker_data?.recommendations?.map((r: any) => ({
+          route: routeData,
+          ports: bunkerData?.recommendations?.map((r: any) => ({
             code: r.port_code,
             name: r.port_name,
             distance_from_route_nm: r.distance_from_route_nm,
           })),
-          prices: data.bunker_data?.recommendations?.map((r: any) => ({
+          prices: bunkerData?.recommendations?.map((r: any) => ({
             port_code: r.port_code,
             prices: {
               VLSFO: r.fuel_cost_usd / 1000, // Approximate
             },
           })),
-          analysis: data.bunker_data,
-          weather_data: data.weather_data,
+          analysis: bunkerData,
+          weather_data: weatherData,
+        });
+
+        // Set performance metrics
+        setPerformanceMetrics({
+          totalExecutionTime: executionTime,
+          agentTimes: {},
+          totalToolCalls: activities.reduce((sum, a) => sum + (a.toolCalls || 0), 0),
+          agentsCalled: activities.map((a) => a.agent),
         });
 
         // Add assistant message
@@ -294,7 +340,7 @@ export function ChatInterfaceMultiAgent() {
           ...prev,
           {
             role: "assistant",
-            content: data.recommendation || "Analysis completed.",
+            content: assistantMessage || "Analysis completed.",
             timestamp: new Date(),
           },
         ]);
