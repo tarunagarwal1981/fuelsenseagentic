@@ -11,13 +11,32 @@ function routeAgentDecision(state: BunkerState): "tools" | typeof END {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
 
+  // Safety check: prevent infinite loops
+  if (messages.length > 50) {
+    console.warn("⚠️ Router: Too many messages (" + messages.length + "), forcing END to prevent infinite loop");
+    return END;
+  }
+
   // Check if LLM called a tool (only AIMessage has tool_calls)
   if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
     console.log("🔀 Router: Going to tools node");
     return "tools";
   }
 
-  // LLM is done
+  // Check if we have a final answer (AIMessage with content but no tool calls)
+  if (lastMessage instanceof AIMessage) {
+    const content = typeof lastMessage.content === 'string' 
+      ? lastMessage.content 
+      : String(lastMessage.content || '');
+    
+    // If there's content and no tool calls, we're done
+    if (content.trim() && (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
+      console.log("🔀 Router: LLM provided final answer, going to END");
+      return END;
+    }
+  }
+
+  // LLM is done (no tool calls, or not an AIMessage)
   console.log("🔀 Router: Going to END");
   return END;
 }
