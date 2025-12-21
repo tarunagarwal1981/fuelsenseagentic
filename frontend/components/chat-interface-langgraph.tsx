@@ -263,7 +263,7 @@ export function ChatInterfaceLangGraph() {
         }
       }
     } catch (error) {
-      console.error("Error:", error);
+      console.error("❌ [FRONTEND] Error in chat submission:", error);
       setCurrentThinking(null);
       setIsLoading(false);
       setMessages((prev) => [
@@ -276,6 +276,10 @@ export function ChatInterfaceLangGraph() {
           timestamp: new Date(),
         },
       ]);
+    } finally {
+      console.log("🏁 [FRONTEND] Chat submission finished, cleaning up...");
+      setIsLoading(false);
+      setCurrentThinking(null);
     }
   };
 
