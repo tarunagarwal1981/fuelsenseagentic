@@ -389,7 +389,12 @@ export async function supervisorAgentNode(
   // 2. If route is complete, check what else is needed based on query intent
   if (state.route_data && state.vessel_timeline) {
     // Priority 1: Weather is needed and not done
-    if (needsWeather && !state.weather_forecast && !state.weather_consumption) {
+    // For simple route weather queries, we only need weather_forecast (not consumption)
+    // Consumption is only needed for bunker planning
+    const needsWeatherForecast = needsWeather && !state.weather_forecast;
+    const needsWeatherConsumption = needsBunker && needsWeather && !state.weather_consumption && state.weather_forecast;
+    
+    if (needsWeatherForecast || needsWeatherConsumption) {
       console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent');
       return {
         next_agent: "weather_agent",
@@ -397,9 +402,29 @@ export async function supervisorAgentNode(
       };
     }
     
-    // Priority 2: Weather is complete, now check if bunker is needed
-    if (needsWeather && state.weather_forecast && state.weather_consumption) {
-      if (needsBunker && !state.bunker_analysis) {
+    // Priority 2: Weather forecast is complete - check if we need consumption or can finalize
+    if (needsWeather && state.weather_forecast) {
+      // If only weather was requested (no bunker), we're done - finalize
+      if (!needsBunker) {
+        console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, no bunker needed → finalize');
+        return {
+          next_agent: "finalize",
+          messages: [],
+        };
+      }
+      
+      // If bunker is also needed, check if consumption is needed
+      if (needsBunker && !state.weather_consumption) {
+        // Consumption is needed for bunker planning
+        console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
+        return {
+          next_agent: "weather_agent",
+          messages: [],
+        };
+      }
+      
+      // Weather and consumption complete, bunker needed
+      if (needsBunker && state.weather_consumption && !state.bunker_analysis) {
         console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent');
         return {
           next_agent: "bunker_agent",
@@ -412,7 +437,8 @@ export async function supervisorAgentNode(
     if (needsBunker && !state.bunker_analysis) {
       // Only delegate to bunker if weather was not needed, or weather is complete
       const weatherNotNeeded = !needsWeather;
-      const weatherComplete = needsWeather && state.weather_forecast && state.weather_consumption;
+      // For bunker planning, we need both forecast and consumption
+      const weatherComplete = !needsWeather || (state.weather_forecast && state.weather_consumption);
       
       if (weatherNotNeeded || weatherComplete) {
         console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent');
@@ -424,9 +450,10 @@ export async function supervisorAgentNode(
     }
     
     // Priority 4: Check if all requested work is complete
-    // If weather was not needed, consider it "complete"
-    // If bunker was not needed, consider it "complete"
-    const weatherComplete = !needsWeather || (state.weather_forecast && state.weather_consumption);
+    // For simple weather queries, weather_forecast is enough (no consumption needed)
+    // For bunker queries, we need both weather_forecast and weather_consumption
+    const weatherComplete = !needsWeather || 
+      (needsBunker ? (state.weather_forecast && state.weather_consumption) : state.weather_forecast);
     const bunkerComplete = !needsBunker || state.bunker_analysis;
     
     if (weatherComplete && bunkerComplete) {
@@ -516,9 +543,6 @@ export async function routeAgentNode(state: MultiAgentState) {
     return { ...stateUpdates, agent_status: { route_agent: 'success' } };
   }
 
-  const routeTools = [calculateRouteTool, calculateWeatherTimelineTool];
-  const llmWithTools = baseLLM.bindTools(routeTools);
-
   // Get user's original message to understand what they want
   const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
   const userQuery = userMessage ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content)) : '';
@@ -545,6 +569,64 @@ export async function routeAgentNode(state: MultiAgentState) {
   } else {
     departureDate = '2024-12-25T08:00:00Z'; // Default
   }
+
+  // DIRECT APPROACH: If we can extract ports from query, directly call tools (bypass LLM)
+  if (originPort && destinationPort && !state.route_data) {
+    console.log(`🚀 [ROUTE-AGENT] Directly calling calculate_route: ${originPort} → ${destinationPort} (bypassing LLM)`);
+    try {
+      // Directly call route calculator
+      const routeResult = await withTimeout(
+        executeRouteCalculatorTool({
+          origin_port_code: originPort,
+          destination_port_code: destinationPort,
+          vessel_speed_knots: 14
+        }),
+        TIMEOUTS.ROUTE_CALCULATION,
+        'Route calculation timed out'
+      );
+      
+      console.log(`✅ [ROUTE-AGENT] Direct route calculation successful`);
+      
+      // Now directly call weather timeline if we have route data
+      if (routeResult.waypoints && routeResult.waypoints.length > 0 && !state.vessel_timeline) {
+        console.log(`🚀 [ROUTE-AGENT] Directly calling calculate_weather_timeline with ${routeResult.waypoints.length} waypoints`);
+        const timelineResult = await withTimeout(
+          executeWeatherTimelineTool({
+            waypoints: routeResult.waypoints,
+            vessel_speed_knots: 14,
+            departure_datetime: departureDate,
+            sampling_interval_hours: 12
+          }),
+          TIMEOUTS.ROUTE_CALCULATION,
+          'Weather timeline calculation timed out'
+        );
+        
+        console.log(`✅ [ROUTE-AGENT] Direct weather timeline calculation successful, got ${timelineResult.length} positions`);
+        
+        // Return both results directly in state
+        return {
+          route_data: routeResult,
+          vessel_timeline: timelineResult,
+          agent_status: { route_agent: 'success' },
+          messages: [new AIMessage('[ROUTE-AGENT] Route and timeline calculated directly')]
+        };
+      }
+      
+      // If we already have vessel timeline, just return route data
+      return {
+        route_data: routeResult,
+        agent_status: { route_agent: 'success' },
+        messages: [new AIMessage('[ROUTE-AGENT] Route calculated directly')]
+      };
+    } catch (error: any) {
+      console.error(`❌ [ROUTE-AGENT] Direct tool call failed: ${error.message}`);
+      // Fall through to LLM approach
+    }
+  }
+
+  // Fallback to LLM approach if we can't extract ports or direct call failed
+  const routeTools = [calculateRouteTool, calculateWeatherTimelineTool];
+  const llmWithTools = baseLLM.bindTools(routeTools);
 
   const systemPrompt = `You are the Route Planning Agent. Your ONLY job is to call tools to calculate routes.
 
@@ -666,37 +748,87 @@ function extractWeatherDataFromMessages(messages: any[]): {
     port_weather_status?: any 
   } = {};
 
-  // Look for ToolMessages with weather data
+  // First, find all AIMessages with weather tool calls to get their tool_call_ids
+  const weatherToolCallIds = new Set<string>();
   for (const msg of messages) {
+    if (msg instanceof AIMessage && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        if (tc.name === 'fetch_marine_weather' || tc.name === 'calculate_weather_consumption' || tc.name === 'check_bunker_port_weather') {
+          if (tc.id) {
+            weatherToolCallIds.add(tc.id);
+            console.log(`🔍 [WEATHER-AGENT] Found weather tool call: ${tc.name} with id: ${tc.id}`);
+          }
+        }
+      }
+    }
+  }
+  
+  // Look for ToolMessages with weather data
+  // Check messages in reverse order (most recent first) to find weather tool results quickly
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
     if (msg instanceof ToolMessage) {
       try {
+        // Check tool name to identify which tool this result is from
+        // ToolMessage has a tool_call_id that matches the AIMessage's tool_use id
+        const toolCallId = (msg as any).tool_call_id || (msg as any).name || 'unknown';
+        const isWeatherTool = weatherToolCallIds.has(toolCallId);
+        console.log(`🔍 [WEATHER-AGENT] Found ToolMessage at index ${i}, tool_call_id: ${toolCallId}, is_weather_tool: ${isWeatherTool}, content type: ${typeof msg.content}`);
+        
         // Handle both string and object content (LangGraph may serialize automatically)
         let toolResult: any;
         if (typeof msg.content === 'string') {
-          toolResult = JSON.parse(msg.content);
+          try {
+            toolResult = JSON.parse(msg.content);
+          } catch (e) {
+            // If parsing fails, might be a plain string - check if it's an error message
+            if (msg.content.includes('error') || msg.content.includes('Error')) {
+              console.warn(`⚠️ [WEATHER-AGENT] Tool returned error: ${msg.content}`);
+              continue;
+            }
+            console.warn(`⚠️ [WEATHER-AGENT] Failed to parse ToolMessage content as JSON: ${e}`);
+            continue;
+          }
         } else {
           toolResult = msg.content;
         }
         
+        // Log structure for debugging (only for arrays or objects, skip if already found)
+        if (!result.weather_forecast && Array.isArray(toolResult) && toolResult.length > 0) {
+          console.log(`🔍 [WEATHER-AGENT] Tool result is array with ${toolResult.length} elements`);
+          if (toolResult.length > 0) {
+            const first = toolResult[0];
+            console.log(`🔍 [WEATHER-AGENT] First element keys: ${Object.keys(first || {}).join(', ')}`);
+            console.log(`🔍 [WEATHER-AGENT] First element has forecast_confidence: ${'forecast_confidence' in (first || {})}`);
+          }
+        } else if (!result.weather_consumption && toolResult && typeof toolResult === 'object' && !Array.isArray(toolResult)) {
+          console.log(`🔍 [WEATHER-AGENT] Tool result is object with keys: ${Object.keys(toolResult).join(', ')}`);
+        }
+        
         // Check if this is weather forecast (array with forecast_confidence)
-        if (Array.isArray(toolResult) && toolResult.length > 0 && toolResult[0].forecast_confidence) {
-          result.weather_forecast = toolResult;
-          console.log('📦 [WEATHER-AGENT] Extracted weather_forecast from tool result');
+        // This is the PRIMARY check - weather forecast is an array of objects with forecast_confidence
+        if (Array.isArray(toolResult) && toolResult.length > 0) {
+          const first = toolResult[0];
+          if (first && typeof first === 'object' && 'forecast_confidence' in first) {
+            result.weather_forecast = toolResult;
+            console.log(`✅ [WEATHER-AGENT] Extracted weather_forecast from tool result (${toolResult.length} points)`);
+            // Don't continue - keep checking for other weather data
+          }
         }
         
         // Check if this is weather consumption (object with consumption_increase_percent)
         if (toolResult && typeof toolResult === 'object' && !Array.isArray(toolResult) && 'consumption_increase_percent' in toolResult) {
           result.weather_consumption = toolResult;
-          console.log('📦 [WEATHER-AGENT] Extracted weather_consumption from tool result');
+          console.log('✅ [WEATHER-AGENT] Extracted weather_consumption from tool result');
         }
         
         // Check if this is port weather status (array with bunkering_feasible)
         if (Array.isArray(toolResult) && toolResult.length > 0 && 'bunkering_feasible' in toolResult[0]) {
           result.port_weather_status = toolResult;
-          console.log('📦 [WEATHER-AGENT] Extracted port_weather_status from tool result');
+          console.log('✅ [WEATHER-AGENT] Extracted port_weather_status from tool result');
         }
       } catch (e) {
-        // Not JSON or parse error, skip
+        console.warn(`⚠️ [WEATHER-AGENT] Error processing ToolMessage at index ${i}: ${e}`);
       }
     }
   }
@@ -714,6 +846,52 @@ export async function weatherAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
   console.log("\n🌊 [WEATHER-AGENT] Node: Starting weather analysis...");
+  const agentStartTime = Date.now();
+  
+  // FIRST: Check if we have tool results to extract (like route agent does)
+  console.log(`🔍 [WEATHER-AGENT] Checking for tool results in ${state.messages.length} messages`);
+  const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
+  console.log(`🔍 [WEATHER-AGENT] Found ${toolMessages.length} ToolMessages`);
+  
+  // Also check for AIMessages with weather tool calls to find corresponding ToolMessages
+  const weatherToolCalls = state.messages
+    .filter(m => m instanceof AIMessage && m.tool_calls && m.tool_calls.length > 0)
+    .flatMap(m => (m as AIMessage).tool_calls || [])
+    .filter((tc: any) => tc.name === 'fetch_marine_weather' || tc.name === 'calculate_weather_consumption');
+  
+  if (weatherToolCalls.length > 0) {
+    console.log(`🔍 [WEATHER-AGENT] Found ${weatherToolCalls.length} weather tool calls in AIMessages`);
+    weatherToolCalls.forEach((tc: any, idx: number) => {
+      console.log(`🔍 [WEATHER-AGENT] Tool call ${idx + 1}: ${tc.name}, id: ${tc.id}`);
+    });
+  }
+  
+  const extractedData = extractWeatherDataFromMessages(state.messages);
+  const stateUpdates: any = {};
+  
+  if (extractedData.weather_forecast && !state.weather_forecast) {
+    stateUpdates.weather_forecast = extractedData.weather_forecast;
+    console.log(`✅ [WEATHER-AGENT] Extracted weather_forecast from tool results (${extractedData.weather_forecast.length} points)`);
+  }
+  
+  if (extractedData.weather_consumption && !state.weather_consumption) {
+    stateUpdates.weather_consumption = extractedData.weather_consumption;
+    console.log('✅ [WEATHER-AGENT] Extracted weather_consumption from tool results');
+  }
+  
+  if (extractedData.port_weather_status && !state.port_weather_status) {
+    stateUpdates.port_weather_status = extractedData.port_weather_status;
+    console.log('✅ [WEATHER-AGENT] Extracted port_weather_status from tool results');
+  }
+  
+  // If we got weather forecast from tool results, we're done with this step
+  if (extractedData.weather_forecast) {
+    console.log('✅ [WEATHER-AGENT] Weather forecast extracted, returning state update');
+    return { 
+      ...stateUpdates, 
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'success' } 
+    };
+  }
   
   // Count how many times we've been called
   const weatherAgentMessages = state.messages.filter(m => 
@@ -730,19 +908,36 @@ export async function weatherAgentNode(
     };
   }
   
+  // Determine if bunker planning is needed (check user query)
+  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+  const userQuery = userMessage 
+    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+    : '';
+  const userQueryLower = userQuery.toLowerCase();
+  const needsBunker = [
+    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
+    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
+    'best option', 'recommendation', 'compare', 'savings'
+  ].some(keyword => userQueryLower.includes(keyword));
+  
   // Use imported tools from tools.ts
+  // For simple route weather queries, only fetch_marine_weather is needed
+  // For bunker planning queries, we also need calculate_weather_consumption
   const weatherTools = [
     fetchMarineWeatherTool,
-    calculateWeatherConsumptionTool,
-    checkPortWeatherTool,
+    // Only include consumption tool if bunker planning is needed
+    ...(needsBunker ? [calculateWeatherConsumptionTool] : []),
+    // Only include port weather check if bunker ports are available
+    ...(state.bunker_ports && state.bunker_ports.length > 0 ? [checkPortWeatherTool] : []),
   ];
   
+  console.log(`🔧 [WEATHER-AGENT] Tool selection: ${weatherTools.length} tools`);
+  console.log(`🔧 [WEATHER-AGENT] - fetch_marine_weather: included`);
+  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsBunker ? 'included (bunker needed)' : 'excluded (route weather only)'}`);
+  console.log(`🔧 [WEATHER-AGENT] - check_bunker_port_weather: ${state.bunker_ports && state.bunker_ports.length > 0 ? 'included' : 'excluded'}`);
+  
   // Check what data is available
-  console.log("🔧 [WEATHER-AGENT] Tools available:", [
-    'fetch_marine_weather',
-    'calculate_weather_consumption',
-    'check_bunker_port_weather'
-  ]);
+  console.log("🔧 [WEATHER-AGENT] Tools available:", weatherTools.map(t => t.name));
   
   console.log("📊 [WEATHER-AGENT] State available:", {
     vessel_timeline: !!state.vessel_timeline,
@@ -759,45 +954,141 @@ export async function weatherAgentNode(
     };
   }
   
+  // If we already have weather forecast, check if we need to calculate consumption
+  if (state.weather_forecast && !state.weather_consumption) {
+    // Only calculate consumption if bunker planning is needed
+    if (needsBunker) {
+      console.log("✅ [WEATHER-AGENT] Weather forecast exists, need to calculate consumption for bunker planning");
+      // Continue to LLM call to calculate consumption
+    } else {
+      console.log("✅ [WEATHER-AGENT] Weather forecast exists, consumption not needed (route weather only) - done");
+      return {
+        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
+      };
+    }
+  } else if (state.weather_forecast && state.weather_consumption) {
+    console.log("✅ [WEATHER-AGENT] Weather data already complete, skipping");
+    return {
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
+    };
+  }
+  
+  // DIRECT APPROACH: If we have vessel timeline and no weather forecast yet, directly call the tool
+  // This avoids LLM confusion and timeouts - we bypass the LLM and call the tool directly
+  if (state.vessel_timeline && state.vessel_timeline.length > 0 && !state.weather_forecast) {
+    console.log(`🚀 [WEATHER-AGENT] Directly calling fetch_marine_weather with ${state.vessel_timeline.length} positions (bypassing LLM)`);
+    try {
+      const vesselTimelineForTool = state.vessel_timeline.map((pos: any) => ({
+        lat: pos.lat,
+        lon: pos.lon,
+        datetime: pos.datetime
+      }));
+      
+      // Import the actual tool execution function
+      const { executeMarineWeatherTool } = await import('@/lib/tools/marine-weather');
+      
+      const weatherResult = await withTimeout(
+        executeMarineWeatherTool({ positions: vesselTimelineForTool }),
+        TIMEOUTS.WEATHER_API * 3, // 90 seconds for weather processing
+        'Marine weather tool timed out'
+      );
+      
+      console.log(`✅ [WEATHER-AGENT] Direct tool call successful, got ${Array.isArray(weatherResult) ? weatherResult.length : 0} weather points`);
+      
+      // Return the weather forecast directly in state - bypass tools node
+      return {
+        weather_forecast: weatherResult,
+        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' },
+        messages: [new AIMessage('[WEATHER-AGENT] Weather forecast fetched directly')]
+      };
+    } catch (error: any) {
+      console.error(`❌ [WEATHER-AGENT] Direct tool call failed: ${error.message}`);
+      // Fall through to LLM approach as fallback
+    }
+  }
+  
   const llmWithTools = baseLLM.bindTools(weatherTools);
   
-  // MUCH MORE DIRECTIVE SYSTEM PROMPT
-  const systemPrompt = `You are the Weather Agent. You have vessel timeline data.
+  // MUCH MORE DIRECTIVE SYSTEM PROMPT - Be extremely explicit
+  // Show first 2 positions as example format only
+  const samplePositions = state.vessel_timeline.slice(0, 2).map((pos: any) => ({
+    lat: pos.lat,
+    lon: pos.lon,
+    datetime: pos.datetime
+  }));
+  
+  // Build system prompt - be extremely explicit and directive
+  let systemPrompt = `You are the Weather Analysis Agent. Your ONLY job is to call the fetch_marine_weather tool.
 
-IMMEDIATE ACTION REQUIRED:
-${!state.weather_forecast 
-  ? `1. Call fetch_marine_weather with ${state.vessel_timeline.length} vessel positions
-     Use this EXACT format:
-     {
-       "positions": [the vessel_timeline array from state]
-     }`
-  : `1. ✅ Weather forecast already fetched`
+CRITICAL: You MUST call fetch_marine_weather tool. Do NOT write text. Do NOT explain. ONLY call the tool.
+
+You have ${state.vessel_timeline.length} vessel positions available in the vessel_timeline.
+
+Example format (first 2 positions - use ALL ${state.vessel_timeline.length} positions):
+${JSON.stringify(samplePositions, null, 2)}
+
+Call fetch_marine_weather with this structure:
+{
+  "positions": [array of ${state.vessel_timeline.length} position objects, each with lat, lon, datetime]
 }
 
-${state.weather_forecast && !state.weather_consumption
-  ? `2. Call calculate_weather_consumption with weather data
-     Use base_consumption_mt: 750 MT (estimate)
-     Use vessel_heading_deg: 45 (estimate)`
-  : state.weather_consumption
-    ? `2. ✅ Weather consumption already calculated`
-    : `2. ⏸️ Waiting for weather forecast first`
-}
+The vessel_timeline data will be provided in the next message. Use ALL positions from it.
 
-DO NOT RESPOND WITH TEXT. CALL THE REQUIRED TOOL NOW.`;
+CALL fetch_marine_weather NOW. NO TEXT.`;
 
-  const messages = [
-    new SystemMessage(systemPrompt),
-    ...state.messages.slice(-3), // Last 3 messages for context
-  ];
-  
-  console.log("🔧 [WEATHER-AGENT] Available tools before invoke:", 
-    weatherTools.map(t => ({ name: t.name, description: (t.description || '').substring(0, 100) + '...' }))
-  );
-  
+  // Only mention consumption if bunker planning is needed
+  if (needsBunker && weatherTools.includes(calculateWeatherConsumptionTool)) {
+    systemPrompt += `
+
+AFTER getting weather data, you may also call calculate_weather_consumption tool.`;
+  }
+
   try {
+    // Build messages with system prompt and trimmed conversation history
+    // CRITICAL: Start fresh - only include user query and route agent results
+    // Exclude previous weather agent attempts to avoid message corruption
+    const trimmedMessages = trimMessageHistory(state.messages);
+    
+    // Find the last HumanMessage (user query) - this is our starting point
+    const lastHumanMessageIndex = trimmedMessages.findLastIndex(
+      (msg) => msg instanceof HumanMessage
+    );
+    
+    // SIMPLIFIED: Only include user query and vessel timeline - nothing else
+    // This gives the LLM a clean context without confusing route agent responses
+    const userMessage = trimmedMessages[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
+    
+    // Don't include full vessel timeline in message - it's too large and causes timeouts
+    // Only include a small sample (3 positions) to show the format
+    const sampleForMessage = state.vessel_timeline.slice(0, 3).map((pos: any) => ({
+      lat: pos.lat,
+      lon: pos.lon,
+      datetime: pos.datetime
+    }));
+    
+    const vesselTimelineMessage = new HumanMessage(
+      `Vessel timeline data (${state.vessel_timeline.length} total positions). Sample format (first 3):\n` +
+      JSON.stringify(sampleForMessage, null, 2) +
+      `\n\nCall fetch_marine_weather with ALL ${state.vessel_timeline.length} positions. The full data is in vessel_timeline state.`
+    );
+    
+    // Minimal message context: system prompt + user query + vessel timeline sample
+    const messages = [
+      new SystemMessage(systemPrompt),
+      userMessage instanceof HumanMessage ? userMessage : new HumanMessage(userQuery || 'Get weather for route'),
+      vesselTimelineMessage,
+    ];
+  
+    console.log("🔧 [WEATHER-AGENT] Available tools before invoke:", 
+      weatherTools.map(t => ({ name: t.name, description: (t.description || '').substring(0, 100) + '...' }))
+    );
+    console.log(`📝 [WEATHER-AGENT] Message count: ${messages.length}, Last message type: ${messages[messages.length - 1]?.constructor?.name}`);
+    console.log(`📝 [WEATHER-AGENT] Message types: ${messages.map(m => m.constructor.name).join(' -> ')}`);
+    
+    // Use longer timeout for weather agent since it processes many positions
     const response = await withTimeout(
       llmWithTools.invoke(messages),
-      TIMEOUTS.AGENT,
+      TIMEOUTS.WEATHER_AGENT || TIMEOUTS.AGENT * 2, // 90 seconds for weather agent
       'Weather agent timed out'
     );
     
@@ -963,6 +1254,26 @@ export async function finalizeNode(state: MultiAgentState) {
   console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
   const agentStartTime = Date.now();
 
+  // Determine what the user actually asked for
+  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+  const userQuery = userMessage 
+    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+    : '';
+  const userQueryLower = userQuery.toLowerCase();
+  
+  const needsWeather = [
+    'weather', 'forecast', 'conditions', 'wind', 'wave', 
+    'storm', 'gale', 'seas', 'swell', 'meteorological', 'climate'
+  ].some(keyword => userQueryLower.includes(keyword));
+  
+  const needsBunker = [
+    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
+    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
+    'best option', 'recommendation', 'compare', 'savings'
+  ].some(keyword => userQueryLower.includes(keyword));
+
+  console.log(`📝 [FINALIZE] User query analysis: weather=${needsWeather}, bunker=${needsBunker}`);
+
   // Check for errors and build context
   const agentErrors = state.agent_errors || {};
   const agentStatus = state.agent_status || {};
@@ -973,15 +1284,21 @@ export async function finalizeNode(state: MultiAgentState) {
     const errorList = Object.entries(agentErrors)
       .map(([agent, err]) => `- ${agent}: ${err.error}`)
       .join('\n');
-    errorContext = `\n\n⚠️ Note: Some agents encountered errors:\n${errorList}\nPlease acknowledge these limitations in your recommendation.`;
+    errorContext = `\n\n⚠️ Note: Some agents encountered errors:\n${errorList}\nPlease acknowledge these limitations in your response.`;
   }
 
-  // Build state context summary first
+  // Build state context summary
   const stateContext: string[] = [];
 
   if (state.route_data) {
     stateContext.push(
       `Route: ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h, ${state.route_data.route_type}`
+    );
+  }
+
+  if (state.weather_forecast) {
+    stateContext.push(
+      `Weather Forecast: ${state.weather_forecast.length} data points available`
     );
   }
 
@@ -1005,9 +1322,65 @@ export async function finalizeNode(state: MultiAgentState) {
     );
   }
 
-  const stateSummary = stateContext.length > 0 ? `\n\nState Summary:\n${stateContext.join('\n')}` : '';
+  const stateSummary = stateContext.length > 0 ? `\n\nAvailable Data:\n${stateContext.join('\n')}` : '';
 
-  const systemPrompt = `You are the Finalization Agent. Your role is to create a comprehensive bunker recommendation from all the collected data.
+  // Build system prompt based on what user asked for
+  let systemPrompt = '';
+  
+  if (needsWeather && !needsBunker) {
+    // Weather-only query - focus on weather information
+    // Build weather forecast summary
+    let weatherDetails = '';
+    if (state.weather_forecast && state.weather_forecast.length > 0) {
+      // Sample first, middle, and last weather points
+      const samplePoints = [
+        state.weather_forecast[0],
+        state.weather_forecast[Math.floor(state.weather_forecast.length / 2)],
+        state.weather_forecast[state.weather_forecast.length - 1]
+      ];
+      
+      weatherDetails = `\n\nWeather Forecast Sample (showing first, middle, and last points):
+${samplePoints.map((wp, i) => {
+  const pos = wp.position || {};
+  return `Point ${i === 0 ? 'Start' : i === 1 ? 'Mid' : 'End'}: 
+  - Location: ${pos.lat?.toFixed(2)}, ${pos.lon?.toFixed(2)}
+  - Datetime: ${wp.datetime}
+  - Wave Height: ${wp.weather?.wave_height_m?.toFixed(2)}m
+  - Wind Speed: ${wp.weather?.wind_speed_knots?.toFixed(1)} knots
+  - Wind Direction: ${wp.weather?.wind_direction_deg?.toFixed(0)}°
+  - Sea State: ${wp.weather?.sea_state}
+  - Confidence: ${wp.forecast_confidence}`;
+}).join('\n\n')}
+
+Total weather data points: ${state.weather_forecast.length}`;
+    }
+    
+    systemPrompt = `You are the Weather Analysis Agent. The user asked about weather conditions for their route.
+
+User Query: "${userQuery}"
+
+Available data:
+- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}, ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)} hours` : 'Not available'}
+- Weather Forecast: ${state.weather_forecast ? `${state.weather_forecast.length} data points along the route` : 'Not available'}${weatherDetails}${errorContext}${stateSummary}
+
+Create a comprehensive weather analysis that includes:
+1. Route Overview: Distance, estimated transit time, route type, departure date
+2. Weather Conditions Along Route: 
+   - Wave heights, wind speeds, and sea states by segment
+   - Weather patterns by region/geographic area
+   - Forecast confidence levels
+3. Weather Timeline: Key weather events and conditions at different stages of the voyage
+4. Weather Alerts: Any severe conditions, storms, or warnings
+5. Recommendations: Weather-related planning advice
+
+${state.weather_forecast ? 'Use the weather forecast data to provide detailed weather information. Analyze the weather patterns across the route and identify any challenging conditions.' : 'Note: Weather forecast data is not available.'}
+
+IMPORTANT: Focus ONLY on weather information. Do NOT include bunker port recommendations, fuel cost analysis, or bunkering advice.`;
+  } else if (needsBunker) {
+    // Bunker query - include bunker analysis
+    systemPrompt = `You are the Finalization Agent. Your role is to create a comprehensive bunker recommendation from all the collected data.
+
+User Query: "${userQuery}"
 
 Available data:
 - Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}` : 'Not available'}
@@ -1026,6 +1399,17 @@ Create a comprehensive, well-structured recommendation that includes:
 ${hasErrors ? 'IMPORTANT: Clearly indicate which data is missing and how it affects the recommendation. Be transparent about limitations.' : ''}
 
 Be clear, concise, and actionable.`;
+  } else {
+    // Route-only query or general query
+    systemPrompt = `You are the Route Planning Agent. Provide information about the requested route.
+
+User Query: "${userQuery}"
+
+Available data:
+- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}, ${state.route_data.distance_nm.toFixed(2)}nm` : 'Not available'}${errorContext}${stateSummary}
+
+Provide a clear summary of the route information.`;
+  }
 
   try {
     // Build comprehensive context for final synthesis with trimmed history
