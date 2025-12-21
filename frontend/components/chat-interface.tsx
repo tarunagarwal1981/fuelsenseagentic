@@ -223,17 +223,22 @@ export function ChatInterface() {
                   break;
                   
                 case 'done':
+                  console.log("🏁 [MANUAL-FRONTEND] Received done signal");
                   setIsLoading(false);
                   if (assistantMessage) {
+                    console.log("💬 [MANUAL-FRONTEND] Adding assistant message to UI, length:", assistantMessage.length);
                     setMessages(prev => [...prev, {
                       role: 'assistant',
                       content: assistantMessage,
                       timestamp: new Date(),
                     }]);
+                  } else {
+                    console.warn("⚠️ [MANUAL-FRONTEND] Done signal received but no assistant message");
                   }
                   break;
                   
                 case 'error':
+                  console.error("❌ [MANUAL-FRONTEND] Error event:", data.error);
                   setThinkingState(null);
                   setIsLoading(false);
                   setMessages(prev => [...prev, {

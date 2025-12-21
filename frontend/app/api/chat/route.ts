@@ -120,6 +120,8 @@ export async function POST(req: Request) {
             messages: anthropicMessages,
           });
           
+          const llmDuration = Date.now() - llmStartTime;
+          console.log(`⏱️ [MANUAL-API] LLM responded in ${llmDuration}ms`);
           console.log(`📊 [MANUAL-API] LLM response - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
           
           if (response.stop_reason === 'tool_use') {
