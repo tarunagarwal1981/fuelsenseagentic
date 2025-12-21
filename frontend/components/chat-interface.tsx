@@ -293,7 +293,7 @@ export function ChatInterface() {
   };
   
   return (
-    <div className="flex flex-col h-screen max-w-6xl mx-auto p-4">
+    <div className="flex flex-col h-full max-w-6xl mx-auto p-4 overflow-hidden">
       {/* Header */}
       <div className="mb-4 flex-shrink-0">
         <div className="flex items-center gap-3 mb-2">
@@ -312,11 +312,13 @@ export function ChatInterface() {
         }} />
       )}
       
-      {/* Messages Area */}
-      <Card className="flex-1 mb-4 flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-4">
-            {messages.map((message, index) => (
+      {/* Scrollable Content Area - Messages and Analysis */}
+      <div className="flex-1 overflow-y-auto mb-4 min-h-0">
+        {/* Messages Area */}
+        <Card className="mb-4">
+          <div className="p-4">
+            <div className="space-y-4">
+              {messages.map((message, index) => (
               <div
                 key={index}
                 className={`flex gap-3 ${
@@ -469,11 +471,12 @@ export function ChatInterface() {
             fuelQuantity={1000}
             fuelType="VLSFO"
           />
-        </div>
-      )}
+          </div>
+        )}
+      </div>
       
       {/* Input Area */}
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} className="flex gap-2 flex-shrink-0">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
