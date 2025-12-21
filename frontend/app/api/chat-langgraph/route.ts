@@ -29,6 +29,17 @@ function cleanMarkdown(text: string): string {
 export async function POST(req: Request) {
   console.log("📨 LangGraph API: Received request");
 
+  // Check for API key
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("❌ ANTHROPIC_API_KEY is not set");
+    return new Response(
+      JSON.stringify({
+        error: "Server configuration error: ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const { messages } = await req.json();
 

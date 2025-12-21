@@ -8,11 +8,26 @@ import { bunkerAnalyzerToolSchema, executeBunkerAnalyzerTool } from '@/lib/tools
 // Edge runtime for fast responses
 export const runtime = 'edge';
 
+// Validate API key
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
 export async function POST(req: Request) {
+  // Double-check API key at request time
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(
+      JSON.stringify({
+        error: "Server configuration error: ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const { messages, options = {} } = await req.json();
     
