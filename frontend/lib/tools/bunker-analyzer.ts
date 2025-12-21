@@ -245,6 +245,17 @@ export async function analyzeBunkerOptions(
     }
 
     // Find price data for this port
+    // Ensure prices_by_port exists and is an object
+    if (!port_prices.prices_by_port) {
+      console.error(`   ❌ port_prices.prices_by_port is undefined for port ${port.port_code}`);
+      console.error(`   ❌ port_prices structure:`, {
+        hasPricesByPort: !!port_prices.prices_by_port,
+        portPricesType: typeof port_prices,
+        portPricesKeys: port_prices ? Object.keys(port_prices) : 'N/A',
+      });
+      continue;
+    }
+    
     const portPriceData = port_prices.prices_by_port[port.port_code];
 
     if (!portPriceData || portPriceData.length === 0) {
