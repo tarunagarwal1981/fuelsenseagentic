@@ -195,9 +195,31 @@ export async function analyzeBunkerOptions(
   const recommendations: BunkerRecommendation[] = [];
 
   // Analyze each port
-  for (const portWithDistance of bunker_ports as FoundPort[]) {
-    const port = portWithDistance.port;
-    const distanceFromRoute = portWithDistance.distance_from_route_nm;
+  for (const portWithDistance of bunker_ports as any[]) {
+    // Handle both formats:
+    // 1. FoundPort format: { port: { port_code, name, ... }, distance_from_route_nm, ... }
+    // 2. Flat format: { port_code, name, distance_from_route_nm, ... }
+    let port: any;
+    let distanceFromRoute: number;
+    
+    if (portWithDistance.port) {
+      // FoundPort format
+      port = portWithDistance.port;
+      distanceFromRoute = portWithDistance.distance_from_route_nm;
+    } else {
+      // Flat format - LLM sometimes passes this
+      port = {
+        port_code: portWithDistance.port_code,
+        name: portWithDistance.name || portWithDistance.port_name,
+      };
+      distanceFromRoute = portWithDistance.distance_from_route_nm;
+    }
+
+    // Validate port has port_code
+    if (!port || !port.port_code) {
+      console.log(`   ⚠️  Invalid port data, skipping:`, portWithDistance);
+      continue;
+    }
 
     // Find price data for this port
     const portPriceData = port_prices.prices_by_port[port.port_code];
