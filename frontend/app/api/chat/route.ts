@@ -46,6 +46,9 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          // Send initial keep-alive comment to establish connection
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          
           const anthropicMessages: Anthropic.MessageParam[] = messages;
         
         let continueLoop = true;
@@ -65,6 +68,11 @@ export async function POST(req: Request) {
           // Stream thinking indicator
           const thinkingEvent = `data: ${JSON.stringify({ type: 'thinking', loop: loopCount })}\n\n`;
           controller.enqueue(encoder.encode(thinkingEvent));
+          
+          // Send keep-alive comment periodically to prevent connection timeout
+          if (loopCount % 2 === 0) {
+            controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          }
           
           // Model selection - can be overridden via env var
           // Available models (cheapest to most expensive):
@@ -316,6 +324,10 @@ export async function POST(req: Request) {
                 content: textBlock.text 
               })}\n\n`;
               controller.enqueue(encoder.encode(textEvent));
+              console.log("✅ [MANUAL-API] Text event enqueued, length:", textBlock.text.length);
+              
+              // Small delay to ensure text event is sent
+              await new Promise(resolve => setTimeout(resolve, 50));
               
               // Stream structured data for UI - send even if incomplete
               if (calculatedRoute || foundPorts.length > 0 || fetchedPrices || analysisResult) {
@@ -334,6 +346,10 @@ export async function POST(req: Request) {
                   analysis: analysisResult,
                 })}\n\n`;
                 controller.enqueue(encoder.encode(analysisEvent));
+                console.log("✅ [MANUAL-API] Analysis event enqueued");
+                
+                // Small delay to ensure analysis event is sent
+                await new Promise(resolve => setTimeout(resolve, 50));
               } else {
                 console.log("⚠️ [MANUAL-API] No data to send");
               }
@@ -355,17 +371,29 @@ export async function POST(req: Request) {
         // Stream done signal
         console.log("🏁 [MANUAL-API] Sending done signal");
         const doneEvent = `data: ${JSON.stringify({ type: 'done' })}\n\n`;
-        controller.enqueue(encoder.encode(doneEvent));
-        controller.close();
+        try {
+          controller.enqueue(encoder.encode(doneEvent));
+          // Small delay to ensure done event is sent before closing
+          await new Promise(resolve => setTimeout(resolve, 100));
+          controller.close();
+          console.log("✅ [MANUAL-API] Stream closed successfully");
+        } catch (closeError) {
+          console.error('❌ [MANUAL-API] Error closing stream:', closeError);
+        }
         
       } catch (error: any) {
         console.error('❌ [MANUAL-API] Agent error:', error);
-        const errorEvent = `data: ${JSON.stringify({ 
-          type: 'error', 
-          error: error.message 
-        })}\n\n`;
-        controller.enqueue(encoder.encode(errorEvent));
-        controller.close();
+        try {
+          const errorEvent = `data: ${JSON.stringify({ 
+            type: 'error', 
+            error: error.message 
+          })}\n\n`;
+          controller.enqueue(encoder.encode(errorEvent));
+          await new Promise(resolve => setTimeout(resolve, 100));
+          controller.close();
+        } catch (closeError) {
+          console.error('❌ [MANUAL-API] Error closing stream after error:', closeError);
+        }
       }
       },
     });
@@ -373,8 +401,9 @@ export async function POST(req: Request) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no', // Disable nginx/proxy buffering
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
