@@ -155,8 +155,17 @@ export const fetchMarineWeatherTool = tool(
       const result = await executeMarineWeatherTool(input);
       return JSON.stringify(result);
     } catch (error: any) {
-      console.error('❌ [WEATHER-AGENT] Marine weather error:', error.message);
-      return JSON.stringify({ error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+      
+      if (isTimeout) {
+        console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
+        // Return empty array to allow supervisor to proceed with partial data
+        return JSON.stringify([]);
+      }
+      
+      console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
+      return JSON.stringify({ error: errorMessage });
     }
   },
   {

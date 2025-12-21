@@ -175,13 +175,14 @@ function sleep(ms: number): Promise<void> {
  * 
  * @param lat - Latitude
  * @param lon - Longitude
- * @param retries - Number of retry attempts (default: 3)
+ * @param retries - Number of retry attempts (default: 2)
  * @returns Weather data from API
  */
 async function callOpenMeteoApi(
   lat: number,
   lon: number,
-  retries: number = 3
+  retries: number = 2,
+  stats?: { apiCalls: number; retries: number; failures: number }
 ): Promise<OpenMeteoResponse> {
   const baseUrl = 'https://marine-api.open-meteo.com/v1/marine';
   const params = new URLSearchParams({
@@ -196,6 +197,11 @@ async function callOpenMeteoApi(
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      // Track API call
+      if (stats && attempt === 0) {
+        stats.apiCalls++;
+      }
+      
       const response = await fetch(`${baseUrl}?${params.toString()}`, {
         method: 'GET',
         headers: {
@@ -240,18 +246,29 @@ async function callOpenMeteoApi(
 
       // Don't retry on validation errors
       if (error instanceof PortWeatherError && error.code === 'INVALID_RESPONSE') {
+        if (stats) {
+          stats.failures++;
+        }
         throw error;
       }
 
-      // Exponential backoff: wait 1s, 2s, 4s
+      // Exponential backoff: wait 500ms, 1000ms, etc.
       if (attempt < retries - 1) {
-        const backoffMs = Math.pow(2, attempt) * 1000;
+        if (stats) {
+          stats.retries++;
+        }
+        const backoffMs = Math.pow(2, attempt) * 500;
+        console.log(`⏳ [PORT-WEATHER] Retry attempt ${attempt + 1} of ${retries}, waiting ${backoffMs}ms before retry...`);
         await sleep(backoffMs);
       }
     }
   }
 
   // All retries failed
+  if (stats) {
+    stats.failures++;
+  }
+  
   if (lastError instanceof PortWeatherError) {
     throw lastError;
   }
@@ -458,10 +475,23 @@ export async function checkPortWeather(
     return [];
   }
 
+  // API call statistics
+  const apiStats = {
+    apiCalls: 0,
+    retries: 0,
+    failures: 0,
+  };
+
+  const batchStartTime = Date.now();
+  console.log(`🌊 [PORT-WEATHER] Processing ${bunker_ports.length} ports`);
+
   const results: PortWeatherOutput[] = [];
 
   // Process each port
+  let portNum = 0;
   for (const port of bunker_ports) {
+    portNum++;
+    const portStart = Date.now();
     const {
       port_code,
       port_name,
@@ -473,7 +503,7 @@ export async function checkPortWeather(
 
     try {
       // Fetch weather forecast
-      const apiResponse = await callOpenMeteoApi(lat, lon);
+      const apiResponse = await callOpenMeteoApi(lat, lon, 2, apiStats);
 
       // Calculate bunkering window
       const arrivalTime = new Date(estimated_arrival);
@@ -606,7 +636,14 @@ export async function checkPortWeather(
         recommendation: `Unable to fetch weather data: ${error instanceof Error ? error.message : 'Unknown error'}`,
       });
     }
+    
+    const portDuration = Date.now() - portStart;
+    console.log(`⏱️ [PORT-WEATHER] Port ${portNum} (${port_code}) completed in ${portDuration}ms`);
   }
+
+  const totalTime = Date.now() - batchStartTime;
+  console.log(`⏱️ [PORT-WEATHER] Total port weather fetch time: ${totalTime}ms`);
+  console.log(`📊 [PORT-WEATHER] API call statistics: Made ${apiStats.apiCalls} API calls (${apiStats.retries} retried, ${apiStats.failures} failed)`);
 
   return results;
 }

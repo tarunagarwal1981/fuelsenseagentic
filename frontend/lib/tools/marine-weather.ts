@@ -16,6 +16,11 @@
 
 import { z } from 'zod';
 import { Coordinates } from '@/lib/types';
+import { getCachedWeather, cacheWeather } from '@/lib/multi-agent/optimizations';
+
+// Circuit breaker constants
+const MAX_CONSECUTIVE_FAILURES = 15;
+const CIRCUIT_BREAKER_THRESHOLD = 0.5; // 50% failure rate
 
 /**
  * Input position for weather forecast
@@ -218,19 +223,20 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Calls Open-Meteo Marine API with retry logic
+ * Calls Open-Meteo Marine API with retry logic and exponential backoff
  * 
  * @param lat - Latitude
  * @param lon - Longitude
  * @param targetDatetime - Target datetime for forecast
- * @param retries - Number of retry attempts (default: 3)
+ * @param retries - Number of retry attempts (default: 2)
  * @returns Weather data from API
  */
-async function callOpenMeteoApi(
+async function callOpenMeteoApiWithRetry(
   lat: number,
   lon: number,
   targetDatetime: string,
-  retries: number = 3
+  retries: number = 2,
+  stats?: { apiCalls: number; retries: number; failures: number }
 ): Promise<OpenMeteoResponse> {
   const baseUrl = 'https://marine-api.open-meteo.com/v1/marine';
   const params = new URLSearchParams({
@@ -245,6 +251,11 @@ async function callOpenMeteoApi(
 
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
+      // Track API call
+      if (stats && attempt === 0) {
+        stats.apiCalls++;
+      }
+      
       const response = await fetch(`${baseUrl}?${params.toString()}`, {
         method: 'GET',
         headers: {
@@ -289,15 +300,27 @@ async function callOpenMeteoApi(
 
       // Don't retry on validation errors
       if (error instanceof MarineWeatherError && error.code === 'INVALID_RESPONSE') {
+        if (stats) {
+          stats.failures++;
+        }
         throw error;
       }
 
-      // Exponential backoff: wait 1s, 2s, 4s
+      // Exponential backoff: wait 500ms, 1000ms, etc.
       if (attempt < retries - 1) {
-        const backoffMs = Math.pow(2, attempt) * 1000;
+        if (stats) {
+          stats.retries++;
+        }
+        const backoffMs = Math.pow(2, attempt) * 500;
+        console.log(`⏳ [WEATHER] Retry attempt ${attempt + 1} of ${retries}, waiting ${backoffMs}ms before retry...`);
         await sleep(backoffMs);
       }
     }
+  }
+
+  // All retries failed
+  if (stats) {
+    stats.failures++;
   }
 
   // All retries failed
@@ -426,19 +449,28 @@ export async function fetchMarineWeather(
     return [];
   }
 
+  // Sample positions intelligently to reduce API load
+  const sampledPositions = samplePositions(positions, 50);
+
   // Get reference datetime (use current time to determine forecast days)
   const referenceDatetime = new Date().toISOString();
 
   // Group positions by 6-hour windows
-  const groupedPositions = groupPositionsByTimeWindow(positions);
+  const groupedPositions = groupPositionsByTimeWindow(sampledPositions);
 
-  // Cache for API responses (key: lat,lon)
+  // Cache for API responses (key: lat,lon) - per-request cache
   const apiCache = new Map<string, OpenMeteoResponse>();
 
   const results: MarineWeatherOutput[] = [];
 
-  // Process each position
-  for (const position of positions) {
+  /**
+   * Process a single position to get weather data
+   * This function is designed to be called in parallel batches
+   */
+  async function processPosition(
+    position: WeatherPosition,
+    stats: { apiCalls: number; cacheHits: number; retries: number; failures: number }
+  ): Promise<MarineWeatherOutput> {
     const daysFromRef = daysFromReference(position.datetime, referenceDatetime);
     const isBeyond16Days = daysFromRef > 16;
 
@@ -454,24 +486,39 @@ export async function fetchMarineWeather(
       );
       confidence = 'medium';
     } else {
+      // Check persistent cache first
+      const cachedWeather = getCachedWeather(position.lat, position.lon, position.datetime);
+      if (cachedWeather) {
+        stats.cacheHits++;
+        return {
+          position: { lat: position.lat, lon: position.lon },
+          datetime: position.datetime,
+          weather: cachedWeather,
+          forecast_confidence: 'high',
+        };
+      }
+
       // Fetch from API
       const cacheKey = `${position.lat.toFixed(2)},${position.lon.toFixed(2)}`;
 
       let apiResponse: OpenMeteoResponse;
       if (apiCache.has(cacheKey)) {
+        stats.cacheHits++;
         apiResponse = apiCache.get(cacheKey)!;
       } else {
         try {
-          apiResponse = await callOpenMeteoApi(
+          apiResponse = await callOpenMeteoApiWithRetry(
             position.lat,
             position.lon,
-            position.datetime
+            position.datetime,
+            2,
+            stats
           );
           apiCache.set(cacheKey, apiResponse);
         } catch (error) {
           // If API call fails, fall back to historical estimate
           console.warn(
-            `API call failed for position ${position.lat}, ${position.lon}, using estimate`
+            `⚠️ [WEATHER] API call failed for position ${position.lat.toFixed(2)}, ${position.lon.toFixed(2)}, using estimate`
           );
           weatherData = generateHistoricalEstimate(
             position.lat,
@@ -479,13 +526,12 @@ export async function fetchMarineWeather(
             position.datetime
           );
           confidence = 'low';
-          results.push({
+          return {
             position: { lat: position.lat, lon: position.lon },
             datetime: position.datetime,
             weather: weatherData,
             forecast_confidence: confidence,
-          });
-          continue;
+          };
         }
       }
 
@@ -509,17 +555,154 @@ export async function fetchMarineWeather(
           sea_state: classifySeaState(hourlyData.wave_height),
         };
         confidence = 'high';
+        
+        // Cache the weather data for future requests
+        cacheWeather(position.lat, position.lon, position.datetime, weatherData);
       }
     }
 
-    results.push({
+    return {
       position: { lat: position.lat, lon: position.lon },
       datetime: position.datetime,
       weather: weatherData,
       forecast_confidence: confidence,
-    });
+    };
   }
 
+  // Circuit breaker tracking variables
+  let consecutiveFailures = 0;
+  let totalAttempts = 0;
+  let successfulFetches = 0;
+  let circuitBreakerTriggered = false;
+
+  // API call statistics
+  const apiStats = {
+    apiCalls: 0,
+    cacheHits: 0,
+    retries: 0,
+    failures: 0,
+  };
+
+  // Process positions in parallel batches for better performance
+  // Batch size of 10 positions per batch, process 3 batches concurrently
+  const BATCH_SIZE = 10;
+  const CONCURRENT_BATCHES = 3;
+  
+  const batchStartTime = Date.now();
+  console.log(`🌊 [WEATHER] Processing ${sampledPositions.length} positions (sampled from ${positions.length}) in parallel batches (batch size: ${BATCH_SIZE})`);
+  
+  // Split positions into batches
+  const batches: WeatherPosition[][] = [];
+  for (let i = 0; i < sampledPositions.length; i += BATCH_SIZE) {
+    batches.push(sampledPositions.slice(i, i + BATCH_SIZE));
+  }
+
+  // Process batches with controlled concurrency
+  let batchNum = 0;
+  for (let i = 0; i < batches.length; i += CONCURRENT_BATCHES) {
+    // Check circuit breaker before processing next batch
+    if (circuitBreakerTriggered) {
+      break;
+    }
+
+    const concurrentBatches = batches.slice(i, i + CONCURRENT_BATCHES);
+    const batchStart = Date.now();
+    batchNum++;
+    
+    // Process all positions in these batches in parallel
+    const batchPromises = concurrentBatches.flatMap(batch =>
+      batch.map(async (position) => {
+        const result = await processPosition(position, apiStats);
+        
+        // Track API call success/failure for circuit breaker
+        // Only track actual API call attempts (not cached, not beyond 16 days)
+        const daysFromRef = daysFromReference(position.datetime, referenceDatetime);
+        const isBeyond16Days = daysFromRef > 16;
+        const wasPersistentlyCached = getCachedWeather(position.lat, position.lon, position.datetime) !== null;
+        
+        // Only track actual API call attempts (not cached, not beyond 16 days)
+        // Low confidence for non-beyond-16-days positions indicates API failure
+        if (!isBeyond16Days && !wasPersistentlyCached) {
+          if (result.forecast_confidence === 'high') {
+            // API call succeeded (or was in per-request cache, which is also success)
+            consecutiveFailures = 0;
+            successfulFetches++;
+            totalAttempts++;
+          } else if (result.forecast_confidence === 'low') {
+            // API call failed - track failure
+            consecutiveFailures++;
+            totalAttempts++;
+            
+            // Check circuit breaker after each failure
+            if (consecutiveFailures > MAX_CONSECUTIVE_FAILURES) {
+              const successRate = totalAttempts > 0 ? (successfulFetches / totalAttempts * 100) : 0;
+              console.warn('⚠️ [WEATHER] Circuit breaker triggered - too many consecutive failures');
+              console.warn(`⚠️ [WEATHER] Success rate: ${successRate.toFixed(1)}% - using fallback estimates`);
+              circuitBreakerTriggered = true;
+            }
+          }
+        }
+        
+        return result;
+      })
+    );
+    
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    const batchDuration = Date.now() - batchStart;
+    console.log(`⏱️ [WEATHER] Batch ${batchNum} completed in ${batchDuration}ms`);
+    
+    // Break if circuit breaker triggered
+    if (circuitBreakerTriggered) {
+      break;
+    }
+    
+    // Small delay between concurrent batch groups to avoid overwhelming the API
+    if (i + CONCURRENT_BATCHES < batches.length) {
+      await sleep(100); // 100ms delay between batch groups
+    }
+  }
+
+  // If circuit breaker triggered, fill remaining results with estimates
+  if (circuitBreakerTriggered && results.length < sampledPositions.length) {
+    const remainingPositions = sampledPositions.slice(results.length);
+    console.log(`⚠️ [WEATHER] Filling ${remainingPositions.length} remaining positions with fallback estimates`);
+    
+    for (const position of remainingPositions) {
+      const weatherData = generateHistoricalEstimate(
+        position.lat,
+        position.lon,
+        position.datetime
+      );
+      results.push({
+        position: { lat: position.lat, lon: position.lon },
+        datetime: position.datetime,
+        weather: weatherData,
+        forecast_confidence: 'low',
+      });
+    }
+  }
+
+  // Check completion rate for graceful degradation
+  const completionRate = results.length / sampledPositions.length;
+  console.log(`📊 [WEATHER] Completion rate: ${(completionRate * 100).toFixed(1)}%`);
+
+  if (completionRate < 0.3) {
+    throw new MarineWeatherError(
+      'Weather data fetch failed - less than 30% coverage',
+      'INSUFFICIENT_DATA'
+    );
+  }
+
+  if (completionRate < 0.8) {
+    console.warn('⚠️ [WEATHER] Partial weather data - some positions missing');
+  }
+
+  const totalTime = Date.now() - batchStartTime;
+  console.log(`⏱️ [WEATHER] Total weather fetch time: ${totalTime}ms`);
+  console.log(`📊 [WEATHER] API call statistics: Made ${apiStats.apiCalls} API calls (${apiStats.cacheHits} cached, ${apiStats.retries} retried, ${apiStats.failures} failed)`);
+  console.log(`✅ [WEATHER] Completed processing ${results.length} positions`);
   return results;
 }
 
@@ -562,6 +745,35 @@ export const marineWeatherToolSchema = {
     required: ['positions'],
   },
 } as const;
+
+/**
+ * Samples positions intelligently to reduce API load
+ * Always keeps first, last, and evenly distributed middle points
+ */
+function samplePositions(positions: WeatherPosition[], maxSamples: number = 50): WeatherPosition[] {
+  if (positions.length <= maxSamples) return positions;
+  
+  const sampled: WeatherPosition[] = [];
+  
+  // Always include first position
+  sampled.push(positions[0]);
+  
+  // Calculate step size for middle positions
+  const step = Math.floor((positions.length - 2) / (maxSamples - 2));
+  
+  // Sample middle positions
+  for (let i = step; i < positions.length - 1; i += step) {
+    if (sampled.length < maxSamples - 1) {
+      sampled.push(positions[i]);
+    }
+  }
+  
+  // Always include last position
+  sampled.push(positions[positions.length - 1]);
+  
+  console.log(`📊 [WEATHER] Sampled ${positions.length} positions down to ${sampled.length}`);
+  return sampled;
+}
 
 /**
  * Tool execution wrapper for Claude

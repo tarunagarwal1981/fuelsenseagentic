@@ -138,9 +138,9 @@ export default function AnalyticsPage() {
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
+        <div>
             <h1 className="text-3xl font-bold mb-2">A/B Testing Analytics</h1>
-            <p className="text-muted-foreground">
+          <p className="text-muted-foreground">
               Single-Agent vs Multi-Agent Performance Comparison
             </p>
           </div>
@@ -199,7 +199,7 @@ export default function AnalyticsPage() {
                   {comparison.multiAgent.totalRequests}
                 </div>
                 <div className="text-xs text-muted-foreground">Multi-Agent</div>
-              </div>
+            </div>
             </div>
           </Card>
 
@@ -293,19 +293,19 @@ export default function AnalyticsPage() {
             </ResponsiveContainer>
           </Card>
 
-          <Card className="p-6">
+        <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Quality Metrics</h2>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={chartData.slice(3)}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
                 <Bar dataKey="Single-Agent" fill="#3b82f6" />
                 <Bar dataKey="Multi-Agent" fill="#8b5cf6" />
-              </BarChart>
-            </ResponsiveContainer>
+            </BarChart>
+          </ResponsiveContainer>
           </Card>
         </div>
 

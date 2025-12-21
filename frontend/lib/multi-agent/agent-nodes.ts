@@ -151,9 +151,11 @@ const fetchMarineWeatherTool = tool(
     const startTime = Date.now();
     
     try {
+      // Increased timeout for weather API to handle many positions (142+)
+      // Parallel processing should make this faster, but we need more time for large batches
       const result = await withTimeout(
         executeMarineWeatherTool(input),
-        TIMEOUTS.WEATHER_API,
+        TIMEOUTS.WEATHER_API * 3, // 90 seconds for weather processing
         'Marine weather API timed out'
       );
       
@@ -161,14 +163,24 @@ const fetchMarineWeatherTool = tool(
       recordToolCallTime('fetch_marine_weather', duration);
       return result;
     } catch (error: any) {
-      console.error('❌ [WEATHER-AGENT] Marine weather error:', error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+      
+      if (isTimeout) {
+        console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - continuing with partial data');
+        // Return empty array to allow supervisor to proceed
+        // The supervisor will check weather_agent_partial flag
+        return [];
+      }
+      
+      console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
       throw error;
     }
   },
   {
     name: 'fetch_marine_weather',
     description:
-      'Fetch marine weather forecast for vessel positions. Returns wave height, wind speed, wind direction, and sea state.',
+      'Fetch marine weather forecast for vessel positions. Returns wave height, wind speed, wind direction, and sea state. Processes positions in parallel batches for efficiency.',
     schema: marineWeatherInputSchema,
   }
 );
@@ -273,6 +285,8 @@ const analyzeBunkerOptionsTool = tool(
  * 
  * Decides which agent to delegate to next based on available state data.
  * Routes to: route_agent → weather_agent → bunker_agent → finalize
+ * 
+ * Implements graceful degradation: if an agent fails, skip to next step.
  */
 export async function supervisorAgentNode(state: MultiAgentState) {
   console.log('🎯 [SUPERVISOR] Node: Making routing decision...');
@@ -286,37 +300,86 @@ export async function supervisorAgentNode(state: MultiAgentState) {
   console.log(`   - Port prices: ${state.port_prices ? '✅' : '❌'}`);
   console.log(`   - Bunker analysis: ${state.bunker_analysis ? '✅' : '❌'}`);
 
-  let nextAgent = '';
+  // Check agent status for errors
+  const agentStatus = state.agent_status || {};
+  const agentErrors = state.agent_errors || {};
 
-  // Decision logic: check what data is available
+  // Log any agent failures
+  for (const [agent, status] of Object.entries(agentStatus)) {
+    if (status === 'failed') {
+      const error = agentErrors[agent];
+      console.warn(`⚠️ [SUPERVISOR] Agent ${agent} failed: ${error?.error || 'Unknown error'}`);
+    }
+  }
+
+  let nextAgent = '';
+  let skipWeather = false;
+  const hasPartialWeather = state.weather_agent_partial === true;
+
+  // Decision logic: check what data is available with graceful degradation
   if (!state.route_data) {
     // No route yet - delegate to route agent
-    nextAgent = 'route_agent';
-    console.log('🎯 [SUPERVISOR] Decision: Route to route_agent (no route data)');
+    // But check if route agent already failed
+    if (agentStatus['route_agent'] === 'failed') {
+      console.error('❌ [SUPERVISOR] Route agent failed, cannot proceed without route data');
+      nextAgent = 'finalize'; // Go to finalize to return partial results
+    } else {
+      nextAgent = 'route_agent';
+      console.log('🎯 [SUPERVISOR] Decision: Route to route_agent (no route data)');
+    }
   } else if (!state.weather_forecast || !state.weather_consumption) {
     // Have route but no weather analysis - delegate to weather agent
-    nextAgent = 'weather_agent';
-    console.log('🎯 [SUPERVISOR] Decision: Route to weather_agent (no weather data)');
+    // But check if weather agent already failed (timeout or error) or has partial data
+    if (agentStatus['weather_agent'] === 'failed' || hasPartialWeather) {
+      if (hasPartialWeather) {
+        console.warn('⚠️ [SUPERVISOR] Weather agent has partial data, proceeding to bunker agent');
+      } else {
+        console.warn('⚠️ [SUPERVISOR] Weather agent failed, proceeding without weather data');
+      }
+      skipWeather = true;
+      // Skip to bunker agent if we have route data (even with partial weather)
+      if (!state.bunker_analysis) {
+        nextAgent = 'bunker_agent';
+        console.log('🎯 [SUPERVISOR] Decision: Skip weather, route to bunker_agent');
+      } else {
+        nextAgent = 'finalize';
+        console.log('🎯 [SUPERVISOR] Decision: Skip weather, route to finalize');
+      }
+    } else {
+      nextAgent = 'weather_agent';
+      console.log('🎯 [SUPERVISOR] Decision: Route to weather_agent (no weather data)');
+    }
   } else if (!state.bunker_analysis) {
     // Have route and weather but no bunker analysis - delegate to bunker agent
-    nextAgent = 'bunker_agent';
-    console.log('🎯 [SUPERVISOR] Decision: Route to bunker_agent (no bunker analysis)');
+    // But check if bunker agent already failed
+    if (agentStatus['bunker_agent'] === 'failed') {
+      console.warn('⚠️ [SUPERVISOR] Bunker agent failed, proceeding to finalize with partial data');
+      nextAgent = 'finalize';
+    } else {
+      nextAgent = 'bunker_agent';
+      console.log('🎯 [SUPERVISOR] Decision: Route to bunker_agent (no bunker analysis)');
+    }
   } else {
     // All data complete - go to finalize
     nextAgent = 'finalize';
     console.log('🎯 [SUPERVISOR] Decision: Route to finalize (all data complete)');
   }
 
+  const weatherStatus = state.weather_forecast 
+    ? (hasPartialWeather ? 'Available (partial)' : 'Available')
+    : (skipWeather ? 'Skipped' : 'Not available');
+    
   const systemMessage = new SystemMessage(
     `You are the Supervisor Agent. Your role is to coordinate the multi-agent system.
     
 Current state:
 - Route data: ${state.route_data ? 'Available' : 'Not available'}
-- Weather data: ${state.weather_forecast ? 'Available' : 'Not available'}
+- Weather data: ${weatherStatus}${hasPartialWeather ? ' - partial data due to timeout' : ''}
 - Bunker analysis: ${state.bunker_analysis ? 'Available' : 'Not available'}
 
-Your decision: Route to ${nextAgent}.`
+${Object.keys(agentErrors).length > 0 ? `\nAgent errors encountered:\n${Object.entries(agentErrors).map(([agent, err]) => `- ${agent}: ${err.error}`).join('\n')}` : ''}
 
+Your decision: Route to ${nextAgent}.`
   );
 
   return {
@@ -384,7 +447,7 @@ export async function routeAgentNode(state: MultiAgentState) {
   // If we already have the data, just return
   if (state.route_data && state.vessel_timeline) {
     console.log('✅ [ROUTE-AGENT] Route data already available, skipping');
-    return stateUpdates;
+    return { ...stateUpdates, agent_status: { route_agent: 'success' } };
   }
 
   const routeTools = [calculateRouteTool, calculateWeatherTimelineTool];
@@ -493,13 +556,33 @@ You MUST call these tools. Do not explain - just call the tools.`;
       console.warn('⚠️ [ROUTE-AGENT] No tool calls made! LLM response:', typeof response.content === 'string' ? response.content.substring(0, 200) : 'Non-string content');
     }
 
-    return { ...stateUpdates, messages: [response] };
+    return { ...stateUpdates, messages: [response], agent_status: { route_agent: 'success' } };
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('route_agent', agentDuration);
     recordAgentExecution('route_agent', agentDuration, false);
-    console.error('❌ [ROUTE-AGENT] Node error:', error);
-    throw error;
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    
+    console.error(`❌ [ROUTE-AGENT] Node error: ${errorMessage}`);
+    console.error(`❌ [ROUTE-AGENT] Route agent failed - cannot proceed without route data`);
+    
+    // Route agent failure is critical - mark as failed
+    return {
+      agent_status: { route_agent: 'failed' },
+      agent_errors: {
+        route_agent: {
+          error: isTimeout ? 'Route agent timed out after 30 seconds' : errorMessage,
+          timestamp: Date.now(),
+        },
+      },
+      messages: [
+        new SystemMessage(
+          `Route agent encountered an error: ${errorMessage}. Cannot proceed without route data.`
+        ),
+      ],
+    };
   }
 }
 
@@ -569,26 +652,71 @@ Be thorough and ensure you complete all weather analysis steps.`;
 
     const response = await withTimeout(
       llmWithTools.invoke(messages),
-      TIMEOUTS.AGENT,
+      TIMEOUTS.WEATHER_AGENT,
       'Weather agent timed out'
     );
 
-      const agentDuration = Date.now() - agentStartTime;
-      recordAgentTime('weather_agent', agentDuration);
-      recordAgentExecution('weather_agent', agentDuration, true);
+    const agentDuration = Date.now() - agentStartTime;
+    recordAgentTime('weather_agent', agentDuration);
+    recordAgentExecution('weather_agent', agentDuration, true);
 
-      console.log('✅ [WEATHER-AGENT] Node: LLM responded');
+    console.log('✅ [WEATHER-AGENT] Node: LLM responded');
     if (response.tool_calls && response.tool_calls.length > 0) {
       console.log(`🔧 [WEATHER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
     }
 
-    return { messages: [response] };
+    // Mark as successful
+    return {
+      messages: [response],
+      agent_status: { weather_agent: 'success' },
+    };
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('weather_agent', agentDuration);
     recordAgentExecution('weather_agent', agentDuration, false);
-    console.error('❌ [WEATHER-AGENT] Node error:', error);
-    throw error;
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    
+    if (isTimeout) {
+      console.warn(`⚠️ [WEATHER-AGENT] Weather agent timed out - setting partial flag and allowing supervisor to proceed`);
+      
+      // Set partial flag and allow supervisor to proceed to bunker_agent
+      return {
+        agent_status: { weather_agent: 'success' }, // Mark as success to allow proceeding
+        weather_agent_partial: true,
+        agent_errors: {
+          weather_agent: {
+            error: 'Weather agent timed out - partial data available',
+            timestamp: Date.now(),
+          },
+        },
+        messages: [
+          new SystemMessage(
+            `Weather agent timed out but partial data may be available. The system will continue with available data.`
+          ),
+        ],
+      };
+    }
+    
+    console.error(`❌ [WEATHER-AGENT] Node error: ${errorMessage}`);
+    console.warn(`⚠️ [WEATHER-AGENT] Marking weather agent as failed, supervisor will skip to next step`);
+    
+    // Mark as failed and return error info - don't throw, let supervisor handle it
+    return {
+      agent_status: { weather_agent: 'failed' },
+      agent_errors: {
+        weather_agent: {
+          error: errorMessage,
+          timestamp: Date.now(),
+        },
+      },
+      messages: [
+        new SystemMessage(
+          `Weather agent encountered an error: ${errorMessage}. The system will continue with available data.`
+        ),
+      ],
+    };
   }
 }
 
@@ -657,22 +785,42 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       'Bunker agent timed out'
     );
 
-      const agentDuration = Date.now() - agentStartTime;
-      recordAgentTime('bunker_agent', agentDuration);
-      recordAgentExecution('bunker_agent', agentDuration, true);
+    const agentDuration = Date.now() - agentStartTime;
+    recordAgentTime('bunker_agent', agentDuration);
+    recordAgentExecution('bunker_agent', agentDuration, true);
 
-      console.log('✅ [BUNKER-AGENT] Node: LLM responded');
+    console.log('✅ [BUNKER-AGENT] Node: LLM responded');
     if (response.tool_calls && response.tool_calls.length > 0) {
       console.log(`🔧 [BUNKER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
     }
 
-    return { messages: [response] };
+    return { messages: [response], agent_status: { bunker_agent: 'success' } };
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('bunker_agent', agentDuration);
     recordAgentExecution('bunker_agent', agentDuration, false);
-    console.error('❌ [BUNKER-AGENT] Node error:', error);
-    throw error;
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    
+    console.error(`❌ [BUNKER-AGENT] Node error: ${errorMessage}`);
+    console.warn(`⚠️ [BUNKER-AGENT] Marking bunker agent as failed, supervisor will proceed to finalize`);
+    
+    // Mark as failed - don't throw, let supervisor handle it
+    return {
+      agent_status: { bunker_agent: 'failed' },
+      agent_errors: {
+        bunker_agent: {
+          error: isTimeout ? 'Bunker agent timed out after 30 seconds' : errorMessage,
+          timestamp: Date.now(),
+        },
+      },
+      messages: [
+        new SystemMessage(
+          `Bunker agent encountered an error: ${errorMessage}. The system will continue with available data.`
+        ),
+      ],
+    };
   }
 }
 
@@ -686,21 +834,36 @@ export async function finalizeNode(state: MultiAgentState) {
   console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
   const agentStartTime = Date.now();
 
+  // Check for errors and build context
+  const agentErrors = state.agent_errors || {};
+  const agentStatus = state.agent_status || {};
+  const hasErrors = Object.keys(agentErrors).length > 0;
+  
+  let errorContext = '';
+  if (hasErrors) {
+    const errorList = Object.entries(agentErrors)
+      .map(([agent, err]) => `- ${agent}: ${err.error}`)
+      .join('\n');
+    errorContext = `\n\n⚠️ Note: Some agents encountered errors:\n${errorList}\nPlease acknowledge these limitations in your recommendation.`;
+  }
+
   const systemPrompt = `You are the Finalization Agent. Your role is to create a comprehensive bunker recommendation from all the collected data.
 
 Available data:
 - Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}` : 'Not available'}
 - Weather impact: ${state.weather_consumption ? `${state.weather_consumption.consumption_increase_percent.toFixed(2)}% increase` : 'Not available'}
 - Bunker analysis: ${state.bunker_analysis ? `${state.bunker_analysis.recommendations.length} options analyzed` : 'Not available'}
-- Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}
+- Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}${errorContext}
 
 Create a comprehensive, well-structured recommendation that includes:
-1. Route summary
-2. Weather impact on fuel consumption
-3. Best bunker port recommendation with justification
-4. Port weather conditions assessment
-5. Total cost analysis
+1. Route summary${state.route_data ? '' : ' (if available)'}
+2. Weather impact on fuel consumption${state.weather_consumption ? '' : ' (if available - note if missing)'}
+3. Best bunker port recommendation with justification${state.bunker_analysis ? '' : ' (if available - note if missing)'}
+4. Port weather conditions assessment${state.port_weather_status ? '' : ' (if available - note if missing)'}
+5. Total cost analysis${state.bunker_analysis ? '' : ' (if available - note if missing)'}
 6. Risk assessment
+
+${hasErrors ? 'IMPORTANT: Clearly indicate which data is missing and how it affects the recommendation. Be transparent about limitations.' : ''}
 
 Be clear, concise, and actionable.`;
 

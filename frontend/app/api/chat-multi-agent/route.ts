@@ -3,9 +3,11 @@
  * 
  * API endpoint that uses the multi-agent LangGraph system for comprehensive
  * bunker optimization with route planning, weather analysis, and bunker recommendations.
+ * 
+ * Uses Server-Sent Events (SSE) streaming to send progressive updates as each agent completes.
  */
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 import { multiAgentApp } from '@/lib/multi-agent/graph';
 import { MultiAgentStateAnnotation } from '@/lib/multi-agent/state';
@@ -39,22 +41,6 @@ interface MultiAgentRequest {
   destination?: string;
   vessel_speed?: number;
   departure_date?: string;
-}
-
-/**
- * Response interface
- */
-interface MultiAgentResponse {
-  recommendation: string;
-  route_data: any;
-  weather_data: any;
-  bunker_data: any;
-  metadata: {
-    agents_called: string[];
-    total_tool_calls: number;
-    execution_time_ms: number;
-    ab_test_request_id?: string;
-  };
 }
 
 export async function POST(req: Request) {
@@ -107,16 +93,6 @@ export async function POST(req: Request) {
 
     const humanMessage = new HumanMessage(userMessage);
 
-    // A/B Testing: Determine variant (for comparison, we always use multi-agent here)
-    // But we can track this request for A/B testing
-    let variant: 'multi-agent' = 'multi-agent'; // This endpoint is multi-agent
-    const requestStartTime = Date.now();
-
-    // Track agent transitions and tool calls
-    const agentsCalled: string[] = [];
-    let totalToolCalls = 0;
-    let lastAgent = '';
-
     // Start performance monitoring
     startPerformanceMonitoring();
     
@@ -142,170 +118,214 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log('🚀 [MULTI-AGENT-API] Starting multi-agent graph execution...');
+    console.log('🚀 [MULTI-AGENT-API] Starting multi-agent graph execution with streaming...');
 
-    // Execute the multi-agent graph with total timeout
-    const finalState = await withTimeout(
-      multiAgentApp.invoke(
-        {
-          messages: [humanMessage],
-          next_agent: '',
-          route_data: null,
-          vessel_timeline: null,
-          weather_forecast: null,
-          weather_consumption: null,
-          port_weather_status: null,
-          bunker_ports: null,
-          port_prices: null,
-          bunker_analysis: null,
-          final_recommendation: null,
-        },
-        {
-          recursionLimit: 100, // Increased limit for multi-agent workflow
+    // Create streaming response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Send initial keep-alive
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+
+          // Track what we've already sent
+          let lastSentRoute = false;
+          let lastSentWeather = false;
+          let lastSentBunker = false;
+          let lastSentFinal = false;
+          
+          // Track accumulated state
+          let accumulatedState: any = {
+            route_data: null,
+            vessel_timeline: null,
+            weather_forecast: null,
+            weather_consumption: null,
+            port_weather_status: null,
+            bunker_ports: null,
+            port_prices: null,
+            bunker_analysis: null,
+            final_recommendation: null,
+            agent_errors: {},
+            agent_status: {},
+          };
+
+          // Keep-alive interval
+          const keepAliveInterval = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(': keep-alive\n\n'));
+            } catch (e) {
+              clearInterval(keepAliveInterval);
+            }
+          }, 2000);
+
+          // Stream graph execution
+          const streamResult = await multiAgentApp.stream(
+            {
+              messages: [humanMessage],
+              next_agent: '',
+              route_data: null,
+              vessel_timeline: null,
+              weather_forecast: null,
+              weather_consumption: null,
+              port_weather_status: null,
+              bunker_ports: null,
+              port_prices: null,
+              bunker_analysis: null,
+              final_recommendation: null,
+              agent_errors: {},
+              agent_status: {},
+            },
+            {
+              streamMode: 'values',
+              recursionLimit: 100,
+            }
+          );
+
+          // Process stream events
+          for await (const event of streamResult) {
+            // Update accumulated state
+            if (event.route_data) accumulatedState.route_data = event.route_data;
+            if (event.vessel_timeline) accumulatedState.vessel_timeline = event.vessel_timeline;
+            if (event.weather_forecast) accumulatedState.weather_forecast = event.weather_forecast;
+            if (event.weather_consumption) accumulatedState.weather_consumption = event.weather_consumption;
+            if (event.port_weather_status) accumulatedState.port_weather_status = event.port_weather_status;
+            if (event.bunker_ports) accumulatedState.bunker_ports = event.bunker_ports;
+            if (event.port_prices) accumulatedState.port_prices = event.port_prices;
+            if (event.bunker_analysis) accumulatedState.bunker_analysis = event.bunker_analysis;
+            if (event.final_recommendation) accumulatedState.final_recommendation = event.final_recommendation;
+            if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
+            if (event.agent_status) accumulatedState.agent_status = { ...accumulatedState.agent_status, ...event.agent_status };
+
+            // Stream route data when available
+            if (accumulatedState.route_data && !lastSentRoute) {
+              console.log('📤 [STREAM] Sending route data');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'route_complete',
+                    data: {
+                      distance_nm: accumulatedState.route_data.distance_nm,
+                      estimated_hours: accumulatedState.route_data.estimated_hours,
+                      waypoints: accumulatedState.route_data.waypoints,
+                      route_type: accumulatedState.route_data.route_type,
+                      origin_port_code: accumulatedState.route_data.origin_port_code,
+                      destination_port_code: accumulatedState.route_data.destination_port_code,
+                    },
+                  })}\n\n`
+                )
+              );
+              lastSentRoute = true;
+            }
+
+            // Stream weather data when available
+            if (accumulatedState.weather_consumption && !lastSentWeather) {
+              console.log('📤 [STREAM] Sending weather data');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'weather_complete',
+                    data: {
+                      base_consumption_mt: accumulatedState.weather_consumption.base_consumption_mt,
+                      adjusted_consumption_mt: accumulatedState.weather_consumption.weather_adjusted_consumption_mt,
+                      additional_fuel_mt: accumulatedState.weather_consumption.additional_fuel_needed_mt,
+                      increase_percent: accumulatedState.weather_consumption.consumption_increase_percent,
+                      weather_summary: accumulatedState.weather_consumption.voyage_weather_summary,
+                      alerts_count: accumulatedState.weather_consumption.weather_alerts?.length || 0,
+                      port_weather: accumulatedState.port_weather_status,
+                    },
+                  })}\n\n`
+                )
+              );
+              lastSentWeather = true;
+            }
+
+            // Stream bunker data when available
+            if (accumulatedState.bunker_analysis && !lastSentBunker) {
+              console.log('📤 [STREAM] Sending bunker data');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'bunker_complete',
+                    data: {
+                      recommendations: accumulatedState.bunker_analysis.recommendations,
+                      best_option: accumulatedState.bunker_analysis.best_option,
+                      worst_option: accumulatedState.bunker_analysis.worst_option,
+                      max_savings_usd: accumulatedState.bunker_analysis.max_savings_usd,
+                      analysis_summary: accumulatedState.bunker_analysis.analysis_summary,
+                    },
+                  })}\n\n`
+                )
+              );
+              lastSentBunker = true;
+            }
+
+            // Stream final recommendation when available
+            if (accumulatedState.final_recommendation && !lastSentFinal) {
+              console.log('📤 [STREAM] Sending final recommendation');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'final_complete',
+                    recommendation: accumulatedState.final_recommendation,
+                    errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
+                      agent_errors: accumulatedState.agent_errors,
+                      agent_status: accumulatedState.agent_status,
+                    } : undefined,
+                    warnings: Object.entries(accumulatedState.agent_status || {})
+                      .filter(([_, status]) => status === 'failed' || status === 'skipped')
+                      .map(([agent, status]) => {
+                        const error = accumulatedState.agent_errors[agent];
+                        return `${agent} ${status}: ${error?.error || 'Unknown error'}`;
+                      }),
+                  })}\n\n`
+                )
+              );
+              lastSentFinal = true;
+            }
+          }
+
+          clearInterval(keepAliveInterval);
+
+          // Send completion signal
+          const executionTime = Date.now() - startTime;
+          console.log(`✅ [MULTI-AGENT-API] Stream completed in ${executionTime}ms`);
+
+          // Record metrics
+          recordRequest(true, executionTime);
+          resetPerformanceMetrics();
+
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        } catch (error) {
+          const executionTime = Date.now() - startTime;
+          console.error('❌ [MULTI-AGENT-API] Stream error:', error);
+          
+          recordRequest(false, executionTime);
+
+          // Send error with any partial results we have
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'error',
+                error: errorMessage,
+                execution_time_ms: executionTime,
+              })}\n\n`
+            )
+          );
+          controller.close();
         }
-      ),
-      TIMEOUTS.TOTAL,
-      'Total execution timeout exceeded (90s)'
-    );
-
-    // Clean up state data to reduce memory footprint
-    const cleanedState = cleanupStateData(finalState);
-
-    const executionTime = Date.now() - startTime;
-    console.log(`✅ [MULTI-AGENT-API] Graph execution completed in ${executionTime}ms`);
-
-    // Get performance metrics
-    const perfMetrics = getPerformanceMetrics();
-    if (perfMetrics) {
-      console.log('📊 [MULTI-AGENT-API] Performance metrics:', {
-        totalTime: perfMetrics.totalTime,
-        agentTimes: perfMetrics.agentTimes,
-        toolCallCounts: Object.keys(perfMetrics.toolCallTimes).length,
-      });
-    }
-
-    // Record successful request
-    recordRequest(true, executionTime);
-
-    // Record A/B test result
-    const requestId = recordABTestResult({
-      variant,
-      responseTime: executionTime,
-      success: true,
-      cost: perfMetrics?.totalTime ? (perfMetrics.totalTime / 1000) * 0.0001 : undefined, // Rough estimate
-      metadata: {
-        agentTimes: perfMetrics?.agentTimes,
-        toolCalls: totalToolCalls,
-        cacheHit: false, // Could be enhanced to track cache hits
       },
     });
 
-    // Extract final recommendation
-    const recommendation =
-      cleanedState.final_recommendation ||
-      (finalState.messages.length > 0
-        ? (() => {
-            // Try to find final AI message without tool calls
-            for (let i = finalState.messages.length - 1; i >= 0; i--) {
-              const msg = finalState.messages[i];
-              if (msg instanceof AIMessage && !msg.tool_calls) {
-                const content =
-                  typeof msg.content === 'string'
-                    ? msg.content
-                    : String(msg.content || '');
-                if (content.trim()) {
-                  return content;
-                }
-              }
-            }
-            return 'Analysis completed. Please check the results below.';
-          })()
-        : 'No recommendation generated.');
-
-    // Count tool calls from messages
-    for (const msg of finalState.messages) {
-      if (msg instanceof AIMessage && msg.tool_calls) {
-        totalToolCalls += msg.tool_calls.length;
-      }
-    }
-
-    // Track agent transitions from next_agent changes
-    // This is a simplified tracking - in a real implementation, you might want to track state transitions
-    if (finalState.next_agent) {
-      agentsCalled.push(finalState.next_agent);
-    }
-
-    // Log final state
-    console.log('📊 [MULTI-AGENT-API] Final state:');
-    console.log(`   - Route data: ${finalState.route_data ? '✅' : '❌'}`);
-    console.log(`   - Vessel timeline: ${finalState.vessel_timeline ? '✅' : '❌'}`);
-    console.log(`   - Weather forecast: ${finalState.weather_forecast ? '✅' : '❌'}`);
-    console.log(`   - Weather consumption: ${finalState.weather_consumption ? '✅' : '❌'}`);
-    console.log(`   - Port weather: ${finalState.port_weather_status ? '✅' : '❌'}`);
-    console.log(`   - Bunker ports: ${finalState.bunker_ports ? '✅' : '❌'}`);
-    console.log(`   - Port prices: ${finalState.port_prices ? '✅' : '❌'}`);
-    console.log(`   - Bunker analysis: ${finalState.bunker_analysis ? '✅' : '❌'}`);
-    console.log(`   - Final recommendation: ${finalState.final_recommendation ? '✅' : '❌'}`);
-    console.log(`   - Total tool calls: ${totalToolCalls}`);
-    console.log(`   - Messages: ${finalState.messages.length}`);
-
-    // Build response
-    const response: MultiAgentResponse = {
-      recommendation,
-      route_data: cleanedState.route_data
-        ? {
-            distance_nm: cleanedState.route_data.distance_nm,
-            estimated_hours: cleanedState.route_data.estimated_hours,
-            waypoints: cleanedState.route_data.waypoints,
-            route_type: cleanedState.route_data.route_type,
-            origin_port_code: cleanedState.route_data.origin_port_code,
-            destination_port_code: cleanedState.route_data.destination_port_code,
-          }
-        : null,
-      weather_data: cleanedState.weather_consumption
-        ? {
-            base_consumption_mt: cleanedState.weather_consumption.base_consumption_mt,
-            adjusted_consumption_mt:
-              cleanedState.weather_consumption.weather_adjusted_consumption_mt,
-            additional_fuel_mt: cleanedState.weather_consumption.additional_fuel_needed_mt,
-            increase_percent:
-              cleanedState.weather_consumption.consumption_increase_percent,
-            weather_summary: cleanedState.weather_consumption.voyage_weather_summary,
-            alerts_count: cleanedState.weather_consumption.weather_alerts.length,
-            port_weather: cleanedState.port_weather_status,
-          }
-        : null,
-      bunker_data: cleanedState.bunker_analysis
-        ? {
-            recommendations: cleanedState.bunker_analysis.recommendations,
-            best_option: cleanedState.bunker_analysis.best_option,
-            worst_option: cleanedState.bunker_analysis.worst_option,
-            max_savings_usd: cleanedState.bunker_analysis.max_savings_usd,
-            analysis_summary: cleanedState.bunker_analysis.analysis_summary,
-          }
-        : null,
-      metadata: {
-        agents_called: agentsCalled.length > 0 ? agentsCalled : ['supervisor'],
-        total_tool_calls: totalToolCalls,
-        execution_time_ms: executionTime,
-        ab_test_request_id: requestId, // Include for frontend satisfaction tracking
-      },
-    };
-
-    console.log('✅ [MULTI-AGENT-API] Response prepared successfully');
-    console.log(`📤 [MULTI-AGENT-API] Returning response with ${JSON.stringify(response).length} bytes`);
-
-    // Reset performance metrics for next request
-    resetPerformanceMetrics();
-
-    return new Response(JSON.stringify(response), {
-      status: 200,
+    return new Response(stream, {
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
   } catch (error) {
@@ -324,7 +344,7 @@ export async function POST(req: Request) {
 
     // Record A/B test result for failure
     recordABTestResult({
-      variant: 'multi-agent', // This endpoint is always multi-agent
+      variant: 'multi-agent',
       responseTime: executionTime,
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -334,7 +354,7 @@ export async function POST(req: Request) {
       JSON.stringify({
         error: error instanceof Error ? error.message : 'Unknown error occurred',
         execution_time_ms: executionTime,
-        fallback_endpoint: '/api/chat-langgraph', // Suggest fallback
+        fallback_endpoint: '/api/chat-langgraph',
       }),
       {
         status: 500,
@@ -362,4 +382,3 @@ export async function OPTIONS(req: Request) {
     },
   });
 }
-

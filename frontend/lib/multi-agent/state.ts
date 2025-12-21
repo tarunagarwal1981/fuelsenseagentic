@@ -345,6 +345,17 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     default: () => null,
   }),
 
+  /**
+   * Flag indicating weather agent returned partial data (timeout or partial failure)
+   */
+  weather_agent_partial: Annotation<boolean>({
+    reducer: (x, y) => {
+      // New value overwrites old if provided
+      return y !== null && y !== undefined ? y : x;
+    },
+    default: () => false,
+  }),
+
   // ========================================================================
   // Bunker Agent State
   // ========================================================================
@@ -415,6 +426,32 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       return result;
     },
     default: () => null,
+  }),
+
+  // ========================================================================
+  // Error Tracking (for graceful degradation)
+  // ========================================================================
+
+  /**
+   * Agent errors - tracks which agents failed and why
+   */
+  agent_errors: Annotation<Record<string, { error: string; timestamp: number }>>({
+    reducer: (x, y) => {
+      // Merge errors, keeping existing ones unless overwritten
+      return { ...x, ...y };
+    },
+    default: () => ({}),
+  }),
+
+  /**
+   * Success status for each agent
+   */
+  agent_status: Annotation<Record<string, 'success' | 'failed' | 'skipped' | 'pending'>>({
+    reducer: (x, y) => {
+      // Merge status, keeping existing ones unless overwritten
+      return { ...x, ...y };
+    },
+    default: () => ({}),
   }),
 });
 

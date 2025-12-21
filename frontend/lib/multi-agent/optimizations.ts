@@ -83,6 +83,134 @@ export function clearExpiredCache(): void {
   if (cleared > 0) {
     console.log(`🧹 [CACHE] Cleared ${cleared} expired route cache entries`);
   }
+  
+  // Clear expired weather cache entries
+  let weatherCleared = 0;
+  for (const [key, entry] of weatherCache.entries()) {
+    if (now - entry.timestamp > WEATHER_CACHE_TTL) {
+      weatherCache.delete(key);
+      weatherCleared++;
+    }
+  }
+  if (weatherCleared > 0) {
+    console.log(`🧹 [CACHE] Cleared ${weatherCleared} expired weather cache entries`);
+  }
+}
+
+// ============================================================================
+// Weather Data Cache
+// ============================================================================
+
+interface WeatherCacheEntry {
+  lat: number;
+  lon: number;
+  datetime: string;
+  weather: any;
+  timestamp: number;
+}
+
+const WEATHER_CACHE_TTL = 3600000; // 1 hour in milliseconds
+const WEATHER_CACHE_MAX_SIZE = 1000; // Maximum cache entries before cleanup
+const weatherCache = new Map<string, WeatherCacheEntry>();
+
+/**
+ * Generate cache key for weather data
+ * Uses lat/lon rounded to 2 decimal places and timestamp (hour precision)
+ * This allows caching weather for the same location and time window
+ */
+function getWeatherCacheKey(lat: number, lon: number, datetime: string): string {
+  // Round coordinates to 2 decimal places (~1.1km precision)
+  const roundedLat = lat.toFixed(2);
+  const roundedLon = lon.toFixed(2);
+  
+  // Use timestamp with hour precision for cache key
+  // This groups positions within the same hour together
+  const date = new Date(datetime);
+  const timestampKey = date.toISOString().slice(0, 13); // YYYY-MM-DDTHH
+  
+  return `weather:${roundedLat}_${roundedLon}_${timestampKey}`;
+}
+
+/**
+ * Get cached weather data if available and not expired
+ */
+export function getCachedWeather(
+  lat: number,
+  lon: number,
+  datetime: string
+): any | null {
+  const key = getWeatherCacheKey(lat, lon, datetime);
+  const entry = weatherCache.get(key);
+
+  if (!entry) {
+    return null;
+  }
+
+  const age = Date.now() - entry.timestamp;
+  if (age > WEATHER_CACHE_TTL) {
+    weatherCache.delete(key);
+    return null;
+  }
+
+  const ageSeconds = Math.round(age / 1000);
+  console.log(`💾 [CACHE] Weather cache hit: ${lat.toFixed(2)}, ${lon.toFixed(2)} (age: ${ageSeconds}s, key: ${key})`);
+  return entry.weather;
+}
+
+/**
+ * Cache weather data result
+ * Automatically cleans up old entries if cache exceeds max size
+ */
+export function cacheWeather(
+  lat: number,
+  lon: number,
+  datetime: string,
+  weather: any
+): void {
+  const key = getWeatherCacheKey(lat, lon, datetime);
+  weatherCache.set(key, {
+    lat,
+    lon,
+    datetime,
+    weather,
+    timestamp: Date.now(),
+  });
+  console.log(`💾 [CACHE] Weather cached: ${lat.toFixed(2)}, ${lon.toFixed(2)} (key: ${key})`);
+  
+  // Clean up old cache entries if cache exceeds max size
+  // This prevents memory leaks from unbounded cache growth
+  if (weatherCache.size > WEATHER_CACHE_MAX_SIZE) {
+    console.log(`🧹 [CACHE] Weather cache size (${weatherCache.size}) exceeds max (${WEATHER_CACHE_MAX_SIZE}), cleaning up...`);
+    
+    // Sort entries by timestamp and remove oldest 10%
+    const entries = Array.from(weatherCache.entries())
+      .map(([key, entry]) => ({ key, timestamp: entry.timestamp }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+    
+    const toRemove = Math.floor(entries.length * 0.1); // Remove 10% oldest
+    for (let i = 0; i < toRemove; i++) {
+      weatherCache.delete(entries[i].key);
+    }
+    
+    console.log(`🧹 [CACHE] Removed ${toRemove} oldest weather cache entries`);
+  }
+}
+
+/**
+ * Get weather cache statistics
+ * Useful for monitoring cache performance
+ */
+export function getWeatherCacheStats(): {
+  size: number;
+  maxSize: number;
+  ttl: number;
+  hitRate?: number;
+} {
+  return {
+    size: weatherCache.size,
+    maxSize: WEATHER_CACHE_MAX_SIZE,
+    ttl: WEATHER_CACHE_TTL,
+  };
 }
 
 // ============================================================================
@@ -109,10 +237,11 @@ export function withTimeout<T>(
  * Agent-specific timeout constants
  */
 export const TIMEOUTS = {
-  AGENT: 30000, // 30 seconds per agent
-  TOTAL: 90000, // 90 seconds total
+  AGENT: 45000, // 45 seconds per agent
+  WEATHER_AGENT: 90000, // 90 seconds for weather agent (handles many positions)
+  TOTAL: 120000, // 120 seconds total (2 minutes)
   ROUTE_CALCULATION: 15000, // 15 seconds for route calculation
-  WEATHER_API: 20000, // 20 seconds for weather API
+  WEATHER_API: 30000, // 30 seconds for weather API
   PRICE_FETCH: 10000, // 10 seconds for price fetch
 } as const;
 
