@@ -34,10 +34,32 @@ function routeAgentDecision(state: BunkerState): "tools" | typeof END {
     
     console.log(`🔀 [ROUTER] AIMessage check - Has content: ${!!content.trim()}, Content length: ${content.length}, Has tool calls: ${hasToolCalls}`);
     
-    // If there's content and no tool calls, we're done
+    // If there's content and no tool calls, check if we should continue
+    // Only end if we have analysis data OR if the content explicitly says we're done
     if (content.trim() && !hasToolCalls) {
-      console.log("🔀 [ROUTER] LLM provided final answer, going to END");
-      return END;
+      // Check if we have complete analysis data
+      const hasCompleteData = state.analysis && state.analysis.recommendations && state.analysis.recommendations.length > 0;
+      
+      if (hasCompleteData) {
+        console.log("🔀 [ROUTER] LLM provided final answer and we have complete analysis, going to END");
+        return END;
+      }
+      
+      // If we don't have complete data, check if the LLM explicitly says it's done
+      const contentLower = content.toLowerCase();
+      const isExplicitlyDone = contentLower.includes("completed") || 
+                               contentLower.includes("finished") || 
+                               contentLower.includes("done") ||
+                               contentLower.includes("analysis complete");
+      
+      if (isExplicitlyDone) {
+        console.log("🔀 [ROUTER] LLM explicitly indicated completion, going to END");
+        return END;
+      }
+      
+      // Otherwise, continue to let the agent call more tools if needed
+      console.log("🔀 [ROUTER] LLM has content but no complete analysis yet, continuing...");
+      // Don't return END here - let it fall through to check for tool calls
     }
     
     // If no content and no tool calls, something might be wrong

@@ -375,9 +375,17 @@ export async function calculateRoute(
     );
     
     // Convert API geometry ([lon, lat]) to our Coordinates format ({lat, lon})
+    // Normalize longitudes to [-180, 180] range to handle routes crossing International Date Line
+    const normalizeLongitude = (lon: number): number => {
+      // Normalize to [-180, 180] range
+      while (lon > 180) lon -= 360;
+      while (lon < -180) lon += 360;
+      return lon;
+    };
+    
     const waypoints: Coordinates[] = apiResponse.geometry.map(([lon, lat]) => ({
       lat,
-      lon,
+      lon: normalizeLongitude(lon),
     }));
     
     // Determine route type
