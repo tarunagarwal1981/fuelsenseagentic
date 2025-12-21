@@ -52,8 +52,16 @@ export async function POST(req: Request) {
             encoder.encode(`data: ${JSON.stringify({ type: 'thinking', loop: loopCount })}\n\n`)
           );
           
+          // Model selection - can be overridden via env var
+          // Available models (cheapest to most expensive):
+          // - "claude-haiku-4-5-20251001" (cheapest, excellent tool calling) ⭐ RECOMMENDED
+          // - "claude-3-haiku-20240307" (very cheap, good for simple tasks)
+          // - "claude-sonnet-4-20250514" (balanced, more expensive)
+          // - "claude-opus-4-20250514" (most capable, most expensive)
+          const MODEL = process.env.LLM_MODEL || 'claude-haiku-4-5-20251001'; // Default to Haiku 4.5 (best value)
+          
           const response = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
+            model: MODEL,
             max_tokens: 4096,
             tools: [
               {

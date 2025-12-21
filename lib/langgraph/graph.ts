@@ -3,7 +3,7 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { AIMessage } from "@langchain/core/messages";
 import { StateAnnotation, type BunkerState } from "./state";
-import { agentNode } from "./nodes";
+import { agentNode, reducerNode } from "./nodes";
 import { tools } from "./tools";
 
 // Router function - decides next step after agent
@@ -27,6 +27,7 @@ const workflow = new StateGraph(StateAnnotation)
   // Add nodes
   .addNode("agent", agentNode)
   .addNode("tools", new ToolNode(tools))
+  .addNode("reducer", reducerNode)
   
   // Set entry point
   .setEntryPoint("agent")
@@ -37,8 +38,9 @@ const workflow = new StateGraph(StateAnnotation)
     [END]: END,
   })
   
-  // Add edge from tools back to agent
-  .addEdge("tools", "agent");
+  // Add edge from tools to reducer, then reducer back to agent
+  .addEdge("tools", "reducer")
+  .addEdge("reducer", "agent");
 
 // Compile the graph
 export const app = workflow.compile();

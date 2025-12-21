@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Send, Bot, User, Ship } from "lucide-react";
+import { Loader2, Send, Bot, User, Ship, Anchor } from "lucide-react";
 import { ResultsTable } from "./results-table";
 import dynamic from "next/dynamic";
 import portsData from "@/lib/data/ports.json";
@@ -80,7 +80,7 @@ export function ChatInterfaceLangGraph() {
     setInput("");
     setIsLoading(true);
     setCurrentThinking("Initializing LangGraph...");
-    setAnalysisData(null);
+    // Don't clear analysis data immediately - let it persist until new data arrives
 
     try {
       const response = await fetch("/api/chat-langgraph", {
@@ -153,13 +153,37 @@ export function ChatInterfaceLangGraph() {
               }
 
               if (parsed.type === "graph_event") {
-                // Update analysis data if present
+                // Debug logging
+                console.log("📊 Received graph_event:", {
+                  hasRoute: !!parsed.route,
+                  hasPorts: !!parsed.ports,
+                  hasPrices: !!parsed.prices,
+                  hasAnalysis: !!parsed.analysis,
+                  routeKeys: parsed.route ? Object.keys(parsed.route) : [],
+                  analysisKeys: parsed.analysis ? Object.keys(parsed.analysis) : [],
+                });
+                
+                // Update analysis data if present - merge with existing data
                 if (parsed.route || parsed.ports || parsed.prices || parsed.analysis) {
-                  setAnalysisData({
+                  const newData = {
                     route: parsed.route || null,
                     ports: parsed.ports || null,
                     prices: parsed.prices || null,
                     analysis: parsed.analysis || null,
+                  };
+                  
+                  // Only update if we have new data (don't overwrite with null)
+                  setAnalysisData((prev) => ({
+                    route: newData.route || prev?.route || null,
+                    ports: newData.ports || prev?.ports || null,
+                    prices: newData.prices || prev?.prices || null,
+                    analysis: newData.analysis || prev?.analysis || null,
+                  }));
+                  
+                  console.log("✅ Updated analysisData:", {
+                    hasRoute: !!newData.route,
+                    hasAnalysis: !!newData.analysis,
+                    recommendationsCount: newData.analysis?.recommendations?.length || 0,
                   });
                 }
 
@@ -205,7 +229,7 @@ export function ChatInterfaceLangGraph() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-6xl mx-auto p-4">
+    <div className="flex flex-col h-full max-w-6xl mx-auto p-4 overflow-hidden">
       {/* Header */}
       <div className="mb-4 flex-shrink-0">
         <div className="flex items-center gap-3 mb-2">
@@ -220,70 +244,72 @@ export function ChatInterfaceLangGraph() {
         </p>
       </div>
 
-      {/* Messages Area */}
-      <Card className="flex-1 mb-4 flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-4">
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex gap-3 ${
-                  message.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                {message.role === "assistant" && (
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                      <Bot className="h-5 w-5 text-white" />
-                    </div>
-                  </div>
-                )}
-
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto mb-4 min-h-0">
+        {/* Messages Area */}
+        <Card className="mb-4">
+          <div className="p-4">
+            <div className="space-y-4">
+              {messages.map((message, index) => (
                 <div
-                  className={`rounded-lg px-4 py-2 max-w-[80%] ${
-                    message.role === "user"
-                      ? "bg-blue-600 text-white"
-                      : "bg-muted"
+                  key={index}
+                  className={`flex gap-3 ${
+                    message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                  <p className="text-xs opacity-70 mt-1" suppressHydrationWarning>
-                    {message.timestamp.toLocaleTimeString()}
-                  </p>
-                </div>
+                  {message.role === "assistant" && (
+                    <div className="flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+                        <Bot className="h-5 w-5 text-white" />
+                      </div>
+                    </div>
+                  )}
 
-                {message.role === "user" && (
+                  <div
+                    className={`rounded-lg px-4 py-2 max-w-[80%] ${
+                      message.role === "user"
+                        ? "bg-blue-600 text-white"
+                        : "bg-muted"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    <p className="text-xs opacity-70 mt-1" suppressHydrationWarning>
+                      {message.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+
+                  {message.role === "user" && (
+                    <div className="flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
+                        <User className="h-5 w-5 text-white" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Thinking indicator */}
+              {currentThinking && (
+                <div className="flex gap-3 justify-start">
                   <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
-                      <User className="h-5 w-5 text-white" />
+                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
                     </div>
                   </div>
-                )}
-              </div>
-            ))}
-
-            {/* Thinking indicator */}
-            {currentThinking && (
-              <div className="flex gap-3 justify-start">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
-                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                  <div className="rounded-lg px-4 py-2 bg-purple-50 border border-purple-200">
+                    <p className="text-sm text-purple-800">{currentThinking}</p>
                   </div>
                 </div>
-                <div className="rounded-lg px-4 py-2 bg-purple-50 border border-purple-200">
-                  <p className="text-sm text-purple-800">{currentThinking}</p>
-                </div>
-              </div>
-            )}
+              )}
 
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      {/* Full Analysis Results */}
-      {analysisData?.analysis && (
-        <div className="space-y-4 mb-4">
+        {/* Full Analysis Results */}
+        {analysisData?.analysis && (
+          <div className="space-y-4 mb-4">
           {/* Quick Stats */}
           <Card className="p-4">
             <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -301,20 +327,22 @@ export function ChatInterfaceLangGraph() {
                 <p className="text-muted-foreground">Total Cost</p>
                 <p className="font-semibold text-lg">
                   $
-                  {analysisData.analysis.best_option?.total_cost_usd?.toLocaleString(
-                    undefined,
-                    { maximumFractionDigits: 0 }
-                  ) || "N/A"}
+                  {(
+                    analysisData.analysis.best_option?.total_cost_usd ||
+                    analysisData.analysis.best_option?.total_cost ||
+                    0
+                  ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Savings</p>
                 <p className="font-semibold text-lg text-green-600">
                   $
-                  {analysisData.analysis.max_savings_usd?.toLocaleString(
-                    undefined,
-                    { maximumFractionDigits: 0 }
-                  ) || "N/A"}
+                  {(
+                    analysisData.analysis.max_savings_usd ||
+                    analysisData.analysis.max_savings ||
+                    0
+                  ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </p>
               </div>
               <div>
@@ -338,11 +366,18 @@ export function ChatInterfaceLangGraph() {
             if (!originPort || !destinationPort) {
               return (
                 <Card className="p-4">
-                  <h3 className="font-semibold mb-3">Route Map</h3>
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Anchor className="h-5 w-5" />
+                    Route Map
+                  </h3>
                   <div className="w-full h-[600px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
                     <div className="text-center">
                       <p className="text-muted-foreground mb-2">
                         Port data not found
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Origin: {analysisData.route.origin_port_code} | 
+                        Destination: {analysisData.route.destination_port_code}
                       </p>
                     </div>
                   </div>
@@ -352,7 +387,10 @@ export function ChatInterfaceLangGraph() {
 
             return (
               <Card className="p-4">
-                <h3 className="font-semibold mb-3">Route Map</h3>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Anchor className="h-5 w-5" />
+                  Route Map
+                </h3>
                 <MapViewer
                   route={analysisData.route}
                   originPort={originPort}
@@ -373,13 +411,23 @@ export function ChatInterfaceLangGraph() {
           {/* Results Table */}
           {analysisData.analysis.recommendations && (
             <ResultsTable
-              recommendations={analysisData.analysis.recommendations}
+              recommendations={analysisData.analysis.recommendations.map((rec: any) => ({
+                ...rec,
+                // Ensure total_cost exists (use total_cost_usd if total_cost doesn't exist)
+                total_cost: rec.total_cost || rec.total_cost_usd || 0,
+                // Map other fields if needed
+                fuel_price_per_mt: rec.fuel_price_per_mt || rec.fuel_cost_usd / (rec.fuel_quantity_mt || 1000),
+                fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
+                deviation_fuel_cost: rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
+                savings_vs_most_expensive: rec.savings_vs_most_expensive || rec.savings_vs_worst_usd || 0,
+              }))}
               fuelQuantity={1000}
               fuelType="VLSFO"
             />
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Input Area */}
       <form onSubmit={handleSubmit} className="flex gap-2">

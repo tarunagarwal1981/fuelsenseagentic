@@ -36,10 +36,16 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       mapInstanceRef.current.remove();
     }
 
-    // Create map
+    // Create map with scrollWheelZoom disabled by default to allow page scrolling
+    // Users can zoom using: zoom controls (+/- buttons), double-click, or drag to pan
     const map = L.map(mapRef.current, {
       zoomControl: true,
-      scrollWheelZoom: true,
+      scrollWheelZoom: false, // Disabled to allow smooth page scrolling
+      dragging: true,
+      touchZoom: true,
+      doubleClickZoom: true,
+      boxZoom: true,
+      keyboard: true,
     });
 
     // Add OpenStreetMap tiles
@@ -234,8 +240,11 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
   }, []);
 
   return (
-    <div className="w-full h-[600px] rounded-lg overflow-hidden border">
+    <div className="w-full h-[600px] rounded-lg overflow-hidden border relative">
       <div ref={mapRef} className="w-full h-full" style={{ zIndex: 0 }} />
+      <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-md text-xs text-gray-600 shadow-sm pointer-events-none z-10">
+        Use + / - buttons or double-click to zoom
+      </div>
     </div>
   );
 }
