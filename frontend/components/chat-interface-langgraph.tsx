@@ -71,11 +71,13 @@ export function ChatInterfaceLangGraph() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    console.log("🚀 [FRONTEND] Starting chat submission");
     const userMessage: Message = {
       role: "user",
       content: input.trim(),
       timestamp: new Date(),
     };
+    console.log("📝 [FRONTEND] User message:", userMessage.content.substring(0, 100));
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
@@ -83,6 +85,7 @@ export function ChatInterfaceLangGraph() {
     // Don't clear analysis data immediately - let it persist until new data arrives
 
     try {
+      console.log("🌐 [FRONTEND] Fetching /api/chat-langgraph...");
       const response = await fetch("/api/chat-langgraph", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -94,6 +97,7 @@ export function ChatInterfaceLangGraph() {
         }),
       });
 
+      console.log("📡 [FRONTEND] Response status:", response.status, response.ok);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -107,10 +111,19 @@ export function ChatInterfaceLangGraph() {
 
       let assistantMessage = "";
       let buffer = ""; // Buffer for incomplete lines
+      let chunkCount = 0;
+      let eventCount = 0;
 
+      console.log("📥 [FRONTEND] Starting to read stream...");
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        chunkCount++;
+        console.log(`📦 [FRONTEND] Chunk #${chunkCount}, done=${done}`);
+        
+        if (done) {
+          console.log("✅ [FRONTEND] Stream reading complete. Total chunks:", chunkCount, "Total events:", eventCount);
+          break;
+        }
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
@@ -123,18 +136,25 @@ export function ChatInterfaceLangGraph() {
           if (!line.trim()) continue; // Skip empty lines
           
           if (line.startsWith("data: ")) {
+            eventCount++;
             const data = line.slice(6).trim();
+            console.log(`📨 [FRONTEND] Event #${eventCount}, data preview:`, data.substring(0, 100));
 
             if (data === "[DONE]") {
+              console.log("🏁 [FRONTEND] Received [DONE] signal, stopping...");
               setCurrentThinking(null);
               setIsLoading(false);
               break; // Exit the loop when done
             }
 
-            if (!data) continue; // Skip empty data
+            if (!data) {
+              console.log("⚠️ [FRONTEND] Empty data, skipping");
+              continue; // Skip empty data
+            }
 
             try {
               const parsed = JSON.parse(data);
+              console.log(`✅ [FRONTEND] Parsed event type: ${parsed.type}`);
 
               switch (parsed.type) {
                 case "error": {
@@ -157,14 +177,17 @@ export function ChatInterfaceLangGraph() {
                   break;
 
                 case "text":
+                  console.log("📝 [FRONTEND] Received text event, content length:", parsed.content?.length || 0);
                   assistantMessage = parsed.content || "";
                   setCurrentThinking(null);
                   // Display the message immediately if it has content
                   if (assistantMessage.trim()) {
+                    console.log("💬 [FRONTEND] Adding assistant message to UI");
                     setMessages((prev) => {
                       // Check if we already have this message (avoid duplicates)
                       const lastMsg = prev[prev.length - 1];
                       if (lastMsg && lastMsg.role === "assistant" && lastMsg.content === assistantMessage) {
+                        console.log("⚠️ [FRONTEND] Duplicate message detected, skipping");
                         return prev;
                       }
                       // Remove any existing incomplete assistant message
@@ -175,12 +198,14 @@ export function ChatInterfaceLangGraph() {
                         timestamp: new Date(),
                       }];
                     });
+                  } else {
+                    console.log("⚠️ [FRONTEND] Text event has no content");
                   }
                   break;
 
                 case "analysis":
                   // This is the key event that triggers map/table display (like manual version)
-                  console.log("📊 Received analysis event:", {
+                  console.log("📊 [FRONTEND] Received analysis event:", {
                     hasRoute: !!parsed.route,
                     hasPorts: !!parsed.ports,
                     hasPrices: !!parsed.prices,
@@ -193,6 +218,7 @@ export function ChatInterfaceLangGraph() {
                     prices: parsed.prices || null,
                     analysis: parsed.analysis || null,
                   });
+                  console.log("✅ [FRONTEND] Analysis data updated in state");
                   break;
 
                 case "graph_event":

@@ -11,15 +11,17 @@ function routeAgentDecision(state: BunkerState): "tools" | typeof END {
   const messages = state.messages;
   const lastMessage = messages[messages.length - 1];
 
+  console.log(`🔀 [ROUTER] Decision point - Messages: ${messages.length}, Last message type: ${lastMessage.constructor.name}`);
+
   // Safety check: prevent infinite loops
   if (messages.length > 50) {
-    console.warn("⚠️ Router: Too many messages (" + messages.length + "), forcing END to prevent infinite loop");
+    console.warn("⚠️ [ROUTER] Too many messages (" + messages.length + "), forcing END to prevent infinite loop");
     return END;
   }
 
   // Check if LLM called a tool (only AIMessage has tool_calls)
   if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
-    console.log("🔀 Router: Going to tools node");
+    console.log(`🔀 [ROUTER] Going to tools node - Tool calls: ${lastMessage.tool_calls.length}, First tool: ${lastMessage.tool_calls[0].name}`);
     return "tools";
   }
 
@@ -28,16 +30,25 @@ function routeAgentDecision(state: BunkerState): "tools" | typeof END {
     const content = typeof lastMessage.content === 'string' 
       ? lastMessage.content 
       : String(lastMessage.content || '');
+    const hasToolCalls = lastMessage.tool_calls && lastMessage.tool_calls.length > 0;
+    
+    console.log(`🔀 [ROUTER] AIMessage check - Has content: ${!!content.trim()}, Content length: ${content.length}, Has tool calls: ${hasToolCalls}`);
     
     // If there's content and no tool calls, we're done
-    if (content.trim() && (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
-      console.log("🔀 Router: LLM provided final answer, going to END");
+    if (content.trim() && !hasToolCalls) {
+      console.log("🔀 [ROUTER] LLM provided final answer, going to END");
+      return END;
+    }
+    
+    // If no content and no tool calls, something might be wrong
+    if (!content.trim() && !hasToolCalls) {
+      console.warn("⚠️ [ROUTER] AIMessage has no content and no tool calls - forcing END");
       return END;
     }
   }
 
   // LLM is done (no tool calls, or not an AIMessage)
-  console.log("🔀 Router: Going to END");
+  console.log("🔀 [ROUTER] Default case - Going to END");
   return END;
 }
 

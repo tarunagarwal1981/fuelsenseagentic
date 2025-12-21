@@ -53,7 +53,8 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          console.log("🚀 Starting graph stream...");
+          console.log("🚀 [API] Starting graph stream...");
+          console.log("📝 [API] Input message:", humanMessage.content.substring(0, 100));
           
           // Stream graph execution with increased recursion limit
           // Default is 25, but complex queries may need more iterations
@@ -65,7 +66,8 @@ export async function POST(req: Request) {
             }
           );
 
-          console.log("✅ Stream created, iterating events...");
+          console.log("✅ [API] Stream created, iterating events...");
+          let iterationCount = 0;
 
           // Track accumulated state across all events
           let accumulatedState = {
@@ -80,15 +82,27 @@ export async function POST(req: Request) {
           let eventCount = 0;
 
           for await (const event of streamResult) {
+            iterationCount++;
             eventCount++;
             lastEvent = event; // Keep track of the last event
-            console.log(`📤 Streaming event #${eventCount}`);
-            console.log("📊 State keys:", Object.keys(event));
-            console.log("📍 Route:", event.route ? `present (${event.route.distance_nm}nm)` : "null");
-            console.log("⚓ Ports:", event.ports ? `${event.ports.length} ports` : "null");
-            console.log("💰 Prices:", event.prices ? `${event.prices.length} ports` : "null");
-            console.log("📊 Analysis:", event.analysis ? `present (${event.analysis.recommendations?.length || 0} recs)` : "null");
-            console.log("💬 Messages:", event.messages ? `${event.messages.length} messages` : "null");
+            console.log(`📤 [API] Streaming event #${eventCount} (iteration ${iterationCount})`);
+            console.log("📊 [API] State keys:", Object.keys(event));
+            console.log("📍 [API] Route:", event.route ? `present (${event.route.distance_nm}nm)` : "null");
+            console.log("⚓ [API] Ports:", event.ports ? `${event.ports.length} ports` : "null");
+            console.log("💰 [API] Prices:", event.prices ? `${event.prices.length} ports` : "null");
+            console.log("📊 [API] Analysis:", event.analysis ? `present (${event.analysis.recommendations?.length || 0} recs)` : "null");
+            console.log("💬 [API] Messages:", event.messages ? `${event.messages.length} messages` : "null");
+            
+            // Log the last message type and content preview
+            if (event.messages && event.messages.length > 0) {
+              const lastMsg = event.messages[event.messages.length - 1];
+              const msgType = lastMsg.constructor.name;
+              const hasToolCalls = (lastMsg as any).tool_calls && (lastMsg as any).tool_calls.length > 0;
+              const contentPreview = typeof (lastMsg as any).content === 'string' 
+                ? (lastMsg as any).content.substring(0, 100) 
+                : 'non-string content';
+              console.log(`💬 [API] Last message: type=${msgType}, hasToolCalls=${hasToolCalls}, content="${contentPreview}..."`);
+            }
 
             // Accumulate state - keep the latest non-null values
             if (event.route) accumulatedState.route = event.route;
@@ -160,7 +174,8 @@ export async function POST(req: Request) {
             controller.enqueue(encoder.encode(`data: ${graphEventData}\n\n`));
           }
           
-          console.log(`✅ Stream completed. Processed ${eventCount} events`);
+          console.log(`✅ [API] Stream completed. Processed ${eventCount} events in ${iterationCount} iterations`);
+          console.log(`📊 [API] Final state: route=${!!lastEvent?.route}, ports=${!!lastEvent?.ports}, prices=${!!lastEvent?.prices}, analysis=${!!lastEvent?.analysis}`);
           
           // If we didn't get a final text response, try to extract from the last event
           if (!finalTextResponse && lastEvent && lastEvent.messages) {

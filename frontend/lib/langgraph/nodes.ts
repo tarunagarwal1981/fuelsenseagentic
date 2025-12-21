@@ -84,8 +84,9 @@ export async function agentNode(state: BunkerState) {
 
 // Reducer Node - Extract tool results and update state
 export async function reducerNode(state: BunkerState) {
-  console.log("🔄 Reducer Node: Processing tool results...");
-  console.log(`📊 Total messages: ${state.messages.length}`);
+  console.log("🔄 [REDUCER] Node: Processing tool results...");
+  console.log(`📊 [REDUCER] Total messages: ${state.messages.length}`);
+  console.log(`📊 [REDUCER] Current state - route: ${!!state.route}, ports: ${!!state.ports}, prices: ${!!state.prices}, analysis: ${!!state.analysis}`);
   
   const updates: Partial<BunkerState> = {};
   
