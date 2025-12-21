@@ -24,6 +24,11 @@ import { tools } from "./tools";
 // Switch models by setting LLM_MODEL env var or changing the default below:
 const MODEL = process.env.LLM_MODEL || "claude-haiku-4-5-20251001"; // Default to Haiku 4.5 (best value)
 
+// Validate API key is present
+if (!process.env.ANTHROPIC_API_KEY) {
+  throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+}
+
 const llm = new ChatAnthropic({
   model: MODEL,
   temperature: 0,
