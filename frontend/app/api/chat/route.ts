@@ -217,6 +217,45 @@ export async function POST(req: Request) {
               (block): block is Anthropic.TextBlock => block.type === 'text'
             );
             
+            // Check if we have complete data
+            const hasCompleteData = analysisResult && analysisResult.recommendations && analysisResult.recommendations.length > 0;
+            const hasPartialData = calculatedRoute && (foundPorts.length > 0 || fetchedPrices);
+            
+            console.log(`📊 [MANUAL-API] Data completeness check:`, {
+              hasCompleteData,
+              hasPartialData,
+              hasRoute: !!calculatedRoute,
+              portsCount: foundPorts.length,
+              hasPrices: !!fetchedPrices,
+              hasAnalysis: !!analysisResult,
+            });
+            
+            // If we don't have complete analysis, check if the LLM is prematurely ending
+            if (!hasCompleteData && textBlock) {
+              const textLower = textBlock.text.toLowerCase();
+              const isPrematureEnd = !textLower.includes("analysis") && 
+                                    !textLower.includes("recommendation") && 
+                                    !textLower.includes("option") &&
+                                    !textLower.includes("bunker") &&
+                                    (textLower.includes("calculated") || textLower.includes("route") || textLower.includes("found"));
+              
+              if (isPrematureEnd && hasPartialData) {
+                console.warn("⚠️ [MANUAL-API] LLM ended prematurely - we have partial data but no analysis");
+                // Add a follow-up message to encourage continuation
+                anthropicMessages.push({
+                  role: 'assistant',
+                  content: response.content,
+                });
+                anthropicMessages.push({
+                  role: 'user',
+                  content: "Please continue with the full analysis. I need you to find bunker ports, fetch fuel prices, and provide ranked recommendations with cost analysis. Don't stop after just calculating the route.",
+                });
+                console.log("🔄 [MANUAL-API] Added follow-up message to continue analysis");
+                // Don't end the loop - continue to next iteration
+                continue;
+              }
+            }
+            
             if (textBlock) {
               console.log(`📝 [MANUAL-API] Final text response length: ${textBlock.text.length} chars`);
               // Stream the final text response
@@ -227,8 +266,8 @@ export async function POST(req: Request) {
                 })}\n\n`)
               );
               
-              // Stream structured data for UI
-              if (analysisResult) {
+              // Stream structured data for UI - send even if incomplete
+              if (calculatedRoute || foundPorts.length > 0 || fetchedPrices || analysisResult) {
                 console.log("📊 [MANUAL-API] Sending analysis data to frontend:", {
                   hasRoute: !!calculatedRoute,
                   portsCount: foundPorts.length,
@@ -246,7 +285,7 @@ export async function POST(req: Request) {
                   })}\n\n`)
                 );
               } else {
-                console.log("⚠️ [MANUAL-API] No analysis result to send");
+                console.log("⚠️ [MANUAL-API] No data to send");
               }
             } else {
               console.warn("⚠️ [MANUAL-API] No text block found in end_turn response");
