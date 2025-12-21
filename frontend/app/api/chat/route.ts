@@ -37,7 +37,9 @@ export async function POST(req: Request) {
       vesselConsumption = 35,
     } = options;
     
-    console.log('🤖 Agent started with', messages.length, 'messages');
+    console.log('🤖 [MANUAL-API] Agent started with', messages.length, 'messages');
+    console.log('📝 [MANUAL-API] Last user message:', messages[messages.length - 1]?.content?.substring(0, 100));
+    console.log('⚙️ [MANUAL-API] Options:', { fuelQuantityMT, vesselSpeed, vesselConsumption });
     
     // Create a TransformStream for streaming responses
     const encoder = new TextEncoder();
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
         
         while (continueLoop && loopCount < MAX_LOOPS) {
           loopCount++;
+          console.log(`🔄 [MANUAL-API] Loop iteration ${loopCount}/${MAX_LOOPS}`);
           
           // Stream thinking indicator
           await writer.write(
@@ -75,6 +78,8 @@ export async function POST(req: Request) {
           // - "claude-opus-4-20250514" (most capable, most expensive)
           const MODEL = process.env.LLM_MODEL || 'claude-haiku-4-5-20251001'; // Default to Haiku 4.5 (best value)
           
+          console.log(`🤖 [MANUAL-API] Calling LLM with model: ${MODEL}, message count: ${anthropicMessages.length}`);
+          const llmStartTime = Date.now();
           const response = await anthropic.messages.create({
             model: MODEL,
             max_tokens: 4096,
@@ -115,12 +120,20 @@ export async function POST(req: Request) {
             messages: anthropicMessages,
           });
           
+          console.log(`📊 [MANUAL-API] LLM response - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+          
           if (response.stop_reason === 'tool_use') {
             const toolUseBlock = response.content.find(
               (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
             );
             
-            if (!toolUseBlock) break;
+            if (!toolUseBlock) {
+              console.warn("⚠️ [MANUAL-API] Tool use block not found, breaking loop");
+              break;
+            }
+            
+            console.log(`🔧 [MANUAL-API] Executing tool: ${toolUseBlock.name}`);
+            console.log(`📥 [MANUAL-API] Tool input:`, JSON.stringify(toolUseBlock.input).substring(0, 200));
             
             // Stream tool usage
             await writer.write(
@@ -131,25 +144,34 @@ export async function POST(req: Request) {
             );
             
             let toolResult: any;
+            const toolStartTime = Date.now();
             
             // Execute tool
             switch (toolUseBlock.name) {
               case 'calculate_route':
+                console.log("🗺️ [MANUAL-API] Executing calculate_route tool...");
                 toolResult = await executeRouteCalculatorTool(toolUseBlock.input);
                 calculatedRoute = toolResult;
+                console.log(`✅ [MANUAL-API] Route calculated: ${toolResult?.distance_nm}nm, ${toolResult?.estimated_hours}h`);
                 break;
                 
               case 'find_ports_near_route':
+                console.log("⚓ [MANUAL-API] Executing find_ports_near_route tool...");
                 toolResult = await executePortFinderTool(toolUseBlock.input);
                 foundPorts = toolResult.ports || [];
+                console.log(`✅ [MANUAL-API] Found ${foundPorts.length} ports near route`);
                 break;
                 
               case 'fetch_fuel_prices':
+                console.log("💰 [MANUAL-API] Executing fetch_fuel_prices tool...");
                 toolResult = await executePriceFetcherTool(toolUseBlock.input);
                 fetchedPrices = toolResult;
+                const priceCount = toolResult?.prices_by_port ? Object.keys(toolResult.prices_by_port).length : 0;
+                console.log(`✅ [MANUAL-API] Fetched prices for ${priceCount} ports`);
                 break;
                 
               case 'analyze_bunker_options':
+                console.log("📊 [MANUAL-API] Executing analyze_bunker_options tool...");
                 const analyzerInput = {
                   ...(toolUseBlock.input as any),
                   fuel_quantity_mt: (toolUseBlock.input as any).fuel_quantity_mt || fuelQuantityMT,
@@ -158,11 +180,17 @@ export async function POST(req: Request) {
                 };
                 toolResult = await executeBunkerAnalyzerTool(analyzerInput);
                 analysisResult = toolResult;
+                const recCount = toolResult?.recommendations?.length || 0;
+                console.log(`✅ [MANUAL-API] Analysis complete: ${recCount} recommendations`);
                 break;
                 
               default:
+                console.warn(`⚠️ [MANUAL-API] Unknown tool: ${toolUseBlock.name}`);
                 toolResult = { error: `Unknown tool: ${toolUseBlock.name}` };
             }
+            
+            const toolDuration = Date.now() - toolStartTime;
+            console.log(`⏱️ [MANUAL-API] Tool ${toolUseBlock.name} completed in ${toolDuration}ms`);
             
             // Add to message history
             anthropicMessages.push({
@@ -182,11 +210,13 @@ export async function POST(req: Request) {
             });
             
           } else if (response.stop_reason === 'end_turn') {
+            console.log("✅ [MANUAL-API] LLM provided final answer (end_turn)");
             const textBlock = response.content.find(
               (block): block is Anthropic.TextBlock => block.type === 'text'
             );
             
             if (textBlock) {
+              console.log(`📝 [MANUAL-API] Final text response length: ${textBlock.text.length} chars`);
               // Stream the final text response
               await writer.write(
                 encoder.encode(`data: ${JSON.stringify({ 
@@ -197,6 +227,13 @@ export async function POST(req: Request) {
               
               // Stream structured data for UI
               if (analysisResult) {
+                console.log("📊 [MANUAL-API] Sending analysis data to frontend:", {
+                  hasRoute: !!calculatedRoute,
+                  portsCount: foundPorts.length,
+                  hasPrices: !!fetchedPrices,
+                  hasAnalysis: !!analysisResult,
+                  recommendationsCount: analysisResult?.recommendations?.length || 0,
+                });
                 await writer.write(
                   encoder.encode(`data: ${JSON.stringify({ 
                     type: 'analysis',
@@ -206,20 +243,30 @@ export async function POST(req: Request) {
                     analysis: analysisResult,
                   })}\n\n`)
                 );
+              } else {
+                console.log("⚠️ [MANUAL-API] No analysis result to send");
               }
+            } else {
+              console.warn("⚠️ [MANUAL-API] No text block found in end_turn response");
             }
             
             continueLoop = false;
+            console.log("🛑 [MANUAL-API] Loop ending - received end_turn");
           } else {
+            console.log(`🛑 [MANUAL-API] Loop ending - stop_reason: ${response.stop_reason}`);
             continueLoop = false;
           }
         }
         
+        console.log(`✅ [MANUAL-API] Agent loop completed after ${loopCount} iterations`);
+        console.log(`📊 [MANUAL-API] Final state: route=${!!calculatedRoute}, ports=${foundPorts.length}, prices=${!!fetchedPrices}, analysis=${!!analysisResult}`);
+        
         // Stream done signal
+        console.log("🏁 [MANUAL-API] Sending done signal");
         await writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
         
       } catch (error: any) {
-        console.error('Agent error:', error);
+        console.error('❌ [MANUAL-API] Agent error:', error);
         await writer.write(
           encoder.encode(`data: ${JSON.stringify({ 
             type: 'error', 
@@ -227,6 +274,7 @@ export async function POST(req: Request) {
           })}\n\n`)
         );
       } finally {
+        console.log("🏁 [MANUAL-API] Closing stream writer");
         await writer.close();
       }
     })();
@@ -243,7 +291,7 @@ export async function POST(req: Request) {
     });
     
   } catch (error: any) {
-    console.error('API route error:', error);
+    console.error('❌ [MANUAL-API] API route error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 

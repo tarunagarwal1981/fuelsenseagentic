@@ -117,12 +117,14 @@ export function ChatInterface() {
     
     if (!input.trim() || isLoading) return;
     
+    console.log("🚀 [MANUAL-FRONTEND] Starting chat submission");
     const userMessage: Message = {
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
     };
     
+    console.log("📝 [MANUAL-FRONTEND] User message:", userMessage.content.substring(0, 100));
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
@@ -131,6 +133,7 @@ export function ChatInterface() {
     setAnalysisData(null);
     
     try {
+      console.log("🌐 [MANUAL-FRONTEND] Fetching /api/chat...");
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -147,6 +150,7 @@ export function ChatInterface() {
         }),
       });
       
+      console.log("📡 [MANUAL-FRONTEND] Response status:", response.status, response.ok);
       if (!response.ok) {
         throw new Error('Failed to get response');
       }
@@ -157,25 +161,38 @@ export function ChatInterface() {
       if (!reader) throw new Error('No reader available');
       
       let assistantMessage = '';
+      let chunkCount = 0;
+      let eventCount = 0;
       
+      console.log("📥 [MANUAL-FRONTEND] Starting to read stream...");
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        chunkCount++;
+        console.log(`📦 [MANUAL-FRONTEND] Chunk #${chunkCount}, done=${done}`);
+        
+        if (done) {
+          console.log("✅ [MANUAL-FRONTEND] Stream reading complete. Total chunks:", chunkCount, "Total events:", eventCount);
+          break;
+        }
         
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            eventCount++;
             try {
               const data = JSON.parse(line.slice(6));
+              console.log(`📨 [MANUAL-FRONTEND] Event #${eventCount}, type: ${data.type}`);
               
               switch (data.type) {
                 case 'thinking':
+                  console.log(`💭 [MANUAL-FRONTEND] Thinking event - loop: ${data.loop}`);
                   setThinkingState(`Processing (step ${data.loop})...`);
                   break;
                   
                 case 'tool_use':
+                  console.log(`🔧 [MANUAL-FRONTEND] Tool use event - tool: ${data.tool}`);
                   setToolUses(prev => [...prev, {
                     tool: data.tool,
                     timestamp: new Date(),
@@ -184,11 +201,19 @@ export function ChatInterface() {
                   break;
                   
                 case 'text':
+                  console.log(`📝 [MANUAL-FRONTEND] Text event - content length: ${data.content?.length || 0}`);
                   assistantMessage = data.content;
                   setThinkingState(null);
                   break;
                   
                 case 'analysis':
+                  console.log("📊 [MANUAL-FRONTEND] Analysis event received:", {
+                    hasRoute: !!data.route,
+                    portsCount: data.ports?.length || 0,
+                    hasPrices: !!data.prices,
+                    hasAnalysis: !!data.analysis,
+                    recommendationsCount: data.analysis?.recommendations?.length || 0,
+                  });
                   setAnalysisData({
                     route: data.route,
                     ports: data.ports,
