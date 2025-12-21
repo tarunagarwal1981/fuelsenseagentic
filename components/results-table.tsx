@@ -2,6 +2,7 @@
 'use client';
 
 import { useState } from 'react';
+import React from 'react';
 import {
   Table,
   TableBody,
@@ -165,9 +166,8 @@ export function ResultsTable({ recommendations, fuelQuantity, fuelType }: Result
             </TableHeader>
             <TableBody>
               {sortedRecommendations.map((rec) => (
-                <>
+                <React.Fragment key={rec.port_code}>
                   <TableRow
-                    key={rec.port_code}
                     className={`
                       ${rec.rank === 1 ? 'bg-green-50 hover:bg-green-100 dark:bg-green-950 dark:hover:bg-green-900' : ''}
                       ${expandedRow === rec.port_code ? 'border-b-0' : ''}
@@ -238,7 +238,7 @@ export function ResultsTable({ recommendations, fuelQuantity, fuelType }: Result
                   
                   {/* Expanded Details Row */}
                   {expandedRow === rec.port_code && (
-                    <TableRow key={`${rec.port_code}-expanded`}>
+                    <TableRow>
                       <TableCell colSpan={7} className="bg-muted/50">
                         <div className="p-4 space-y-3">
                           <h4 className="font-semibold text-sm">Cost Breakdown</h4>
@@ -284,7 +284,7 @@ export function ResultsTable({ recommendations, fuelQuantity, fuelType }: Result
                       </TableCell>
                     </TableRow>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>

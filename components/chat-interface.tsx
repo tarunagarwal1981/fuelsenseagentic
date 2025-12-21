@@ -383,23 +383,50 @@ export function ChatInterface() {
           </Card>
 
           {/* Map */}
-          {analysisData.route && (
-            <Card className="p-4">
-              <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Anchor className="h-5 w-5" />
-                Route Map
-              </h3>
-              <MapViewer
-                route={analysisData.route}
-                originPort={getPortDetails(analysisData.route.origin_port_code)!}
-                destinationPort={getPortDetails(analysisData.route.destination_port_code)!}
-                bunkerPorts={analysisData.analysis.recommendations.map((rec: any) => ({
-                  ...getPortDetails(rec.port_code)!,
-                  ...rec,
-                }))}
-              />
-            </Card>
-          )}
+          {analysisData.route && (() => {
+            const originPort = getPortDetails(analysisData.route.origin_port_code);
+            const destinationPort = getPortDetails(analysisData.route.destination_port_code);
+            
+            if (!originPort || !destinationPort) {
+              return (
+                <Card className="p-4">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Anchor className="h-5 w-5" />
+                    Route Map
+                  </h3>
+                  <div className="w-full h-[600px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
+                    <div className="text-center">
+                      <p className="text-muted-foreground mb-2">Port data not found</p>
+                      <p className="text-sm text-muted-foreground">
+                        Origin: {analysisData.route.origin_port_code} | 
+                        Destination: {analysisData.route.destination_port_code}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              );
+            }
+            
+            return (
+              <Card className="p-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Anchor className="h-5 w-5" />
+                  Route Map
+                </h3>
+                <MapViewer
+                  route={analysisData.route}
+                  originPort={originPort}
+                  destinationPort={destinationPort}
+                  bunkerPorts={analysisData.analysis.recommendations
+                    .map((rec: any) => {
+                      const portDetails = getPortDetails(rec.port_code);
+                      return portDetails ? { ...portDetails, ...rec } : null;
+                    })
+                    .filter((p: any) => p !== null)}
+                />
+              </Card>
+            );
+          })()}
 
           {/* Results Table */}
           <ResultsTable
