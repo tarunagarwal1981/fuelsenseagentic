@@ -68,11 +68,10 @@ export async function POST(req: Request) {
           // Stream thinking indicator
           const thinkingEvent = `data: ${JSON.stringify({ type: 'thinking', loop: loopCount })}\n\n`;
           controller.enqueue(encoder.encode(thinkingEvent));
+          console.log(`✅ [MANUAL-API] Thinking event enqueued for loop ${loopCount}`);
           
-          // Send keep-alive comment periodically to prevent connection timeout
-          if (loopCount % 2 === 0) {
-            controller.enqueue(encoder.encode(': keep-alive\n\n'));
-          }
+          // Send keep-alive comment after every thinking event to prevent connection timeout
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
           
           // Model selection - can be overridden via env var
           // Available models (cheapest to most expensive):
@@ -148,6 +147,9 @@ export async function POST(req: Request) {
               tool: toolUseBlock.name 
             })}\n\n`;
             controller.enqueue(encoder.encode(toolUseEvent));
+            console.log(`✅ [MANUAL-API] Tool use event enqueued: ${toolUseBlock.name}`);
+            // Keep-alive after tool use to prevent connection timeout
+            controller.enqueue(encoder.encode(': keep-alive\n\n'));
             
             let toolResult: any;
             const toolStartTime = Date.now();
@@ -325,9 +327,8 @@ export async function POST(req: Request) {
               })}\n\n`;
               controller.enqueue(encoder.encode(textEvent));
               console.log("✅ [MANUAL-API] Text event enqueued, length:", textBlock.text.length);
-              
-              // Small delay to ensure text event is sent
-              await new Promise(resolve => setTimeout(resolve, 50));
+              // Keep-alive after text
+              controller.enqueue(encoder.encode(': keep-alive\n\n'));
               
               // Stream structured data for UI - send even if incomplete
               if (calculatedRoute || foundPorts.length > 0 || fetchedPrices || analysisResult) {
@@ -347,9 +348,8 @@ export async function POST(req: Request) {
                 })}\n\n`;
                 controller.enqueue(encoder.encode(analysisEvent));
                 console.log("✅ [MANUAL-API] Analysis event enqueued");
-                
-                // Small delay to ensure analysis event is sent
-                await new Promise(resolve => setTimeout(resolve, 50));
+                // Keep-alive after analysis
+                controller.enqueue(encoder.encode(': keep-alive\n\n'));
               } else {
                 console.log("⚠️ [MANUAL-API] No data to send");
               }
@@ -373,12 +373,20 @@ export async function POST(req: Request) {
         const doneEvent = `data: ${JSON.stringify({ type: 'done' })}\n\n`;
         try {
           controller.enqueue(encoder.encode(doneEvent));
-          // Small delay to ensure done event is sent before closing
-          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log("✅ [MANUAL-API] Done event enqueued");
+          // Longer delay to ensure all events are sent before closing
+          // This gives Netlify time to flush the stream
+          await new Promise(resolve => setTimeout(resolve, 500));
           controller.close();
           console.log("✅ [MANUAL-API] Stream closed successfully");
         } catch (closeError) {
           console.error('❌ [MANUAL-API] Error closing stream:', closeError);
+          // Try to close anyway
+          try {
+            controller.close();
+          } catch (e) {
+            console.error('❌ [MANUAL-API] Error in final close attempt:', e);
+          }
         }
         
       } catch (error: any) {
