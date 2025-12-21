@@ -264,8 +264,10 @@ export async function POST(req: Request) {
           }
 
           // Send completion
+          console.log("🏁 [API] Sending [DONE] signal and closing stream");
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
+          console.log("✅ [API] Stream closed successfully");
         } catch (error) {
           console.error("❌ Stream error:", error);
           
