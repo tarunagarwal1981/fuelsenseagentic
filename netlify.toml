@@ -1,0 +1,31 @@
+# Netlify Configuration for FuelSense 360
+# This configures Netlify to build from the frontend folder
+
+[build]
+  # Set base directory to frontend folder
+  # IMPORTANT: Make sure the 'frontend' folder is committed to your git repository
+  base = "frontend"
+  # Build command (runs from frontend directory)
+  command = "cd frontend && npm install && npm run build"
+  # Publish directory (Next.js output)
+  publish = "frontend/.next"
+
+# Next.js plugin for optimal Next.js deployment
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Build environment variables
+[build.environment]
+  NODE_VERSION = "18"
+  # Next.js specific
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Environment variables to set in Netlify Dashboard:
+# Required:
+# - ANTHROPIC_API_KEY (your Anthropic API key)
+# Optional:
+# - LANGCHAIN_API_KEY (for LangSmith monitoring)
+# - LANGCHAIN_TRACING_V2=true
+# - LANGCHAIN_PROJECT=fuelsense-360
+# - LLM_MODEL (defaults to claude-haiku-4-5-20251001)
+

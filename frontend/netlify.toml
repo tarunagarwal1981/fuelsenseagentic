@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Environment variables
+# Add in Netlify dashboard:
+# ANTHROPIC_API_KEY
+# LANGCHAIN_API_KEY (optional)
+# LANGCHAIN_TRACING_V2=true
+# LANGCHAIN_PROJECT=fuelsense-360
+
