@@ -54,7 +54,10 @@ export async function POST(req: Request) {
       async start(controller) {
         try {
           console.log("🚀 [API] Starting graph stream...");
-          console.log("📝 [API] Input message:", humanMessage.content.substring(0, 100));
+          const inputPreview = typeof humanMessage.content === 'string' 
+            ? humanMessage.content.substring(0, 100) 
+            : String(humanMessage.content || '').substring(0, 100);
+          console.log("📝 [API] Input message:", inputPreview);
           
           // Stream graph execution with increased recursion limit
           // Default is 25, but complex queries may need more iterations
