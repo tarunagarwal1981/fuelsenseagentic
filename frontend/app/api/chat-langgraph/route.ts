@@ -55,10 +55,14 @@ export async function POST(req: Request) {
         try {
           console.log("🚀 Starting graph stream...");
           
-          // Stream graph execution
+          // Stream graph execution with increased recursion limit
+          // Default is 25, but complex queries may need more iterations
           const streamResult = await app.stream(
             { messages: [humanMessage] },
-            { streamMode: "values" }
+            { 
+              streamMode: "values",
+              recursionLimit: 50, // Increased from default 25 to handle complex multi-step queries
+            }
           );
 
           console.log("✅ Stream created, iterating events...");

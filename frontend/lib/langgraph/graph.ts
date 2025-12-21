@@ -43,6 +43,7 @@ const workflow = new StateGraph(StateAnnotation)
   .addEdge("reducer", "agent");
 
 // Compile the graph
+// Note: recursionLimit is set when invoking, not when compiling
 export const app = workflow.compile();
 
 console.log("✅ LangGraph compiled successfully");

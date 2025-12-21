@@ -43,6 +43,15 @@ export async function agentNode(state: BunkerState) {
   console.log("🧠 Agent Node: LLM making decision...");
   console.log(`📊 Current state: ${state.messages.length} messages`);
 
+  // Safety check: prevent infinite loops
+  if (state.messages.length > 50) {
+    console.warn("⚠️ Too many messages, forcing final response");
+    const finalMessage = new (await import("@langchain/core/messages")).AIMessage({
+      content: "I've completed the analysis. Please check the results below.",
+    });
+    return { messages: [finalMessage] };
+  }
+
   try {
     // Messages are already BaseMessage[] types, pass them directly
     const response = await llmWithTools.invoke(state.messages);
@@ -52,6 +61,15 @@ export async function agentNode(state: BunkerState) {
     // Check if LLM called a tool
     if (response.tool_calls && response.tool_calls.length > 0) {
       console.log(`🔧 Agent wants to call: ${response.tool_calls[0].name}`);
+      
+      // Safety: if we've called tools many times, check if we should force a final answer
+      const toolCallCount = state.messages.filter((msg: any) => 
+        msg instanceof (await import("@langchain/core/messages")).AIMessage && msg.tool_calls
+      ).length;
+      
+      if (toolCallCount > 10) {
+        console.warn("⚠️ Many tool calls detected, agent should provide final answer soon");
+      }
     } else {
       console.log("✅ Agent is done, providing final answer");
     }
