@@ -154,60 +154,77 @@ export async function POST(req: Request) {
             let toolResult: any;
             const toolStartTime = Date.now();
             
-            // Execute tool
-            switch (toolUseBlock.name) {
-              case 'calculate_route':
-                console.log("🗺️ [MANUAL-API] Executing calculate_route tool...");
-                toolResult = await executeRouteCalculatorTool(toolUseBlock.input);
-                calculatedRoute = toolResult;
-                console.log(`✅ [MANUAL-API] Route calculated: ${toolResult?.distance_nm}nm, ${toolResult?.estimated_hours}h`);
-                break;
-                
-              case 'find_ports_near_route':
-                console.log("⚓ [MANUAL-API] Executing find_ports_near_route tool...");
-                toolResult = await executePortFinderTool(toolUseBlock.input);
-                foundPorts = toolResult.ports || [];
-                console.log(`✅ [MANUAL-API] Found ${foundPorts.length} ports near route`);
-                break;
-                
-              case 'fetch_fuel_prices':
-                console.log("💰 [MANUAL-API] Executing fetch_fuel_prices tool...");
-                toolResult = await executePriceFetcherTool(toolUseBlock.input);
-                fetchedPrices = toolResult;
-                const priceCount = toolResult?.prices_by_port ? Object.keys(toolResult.prices_by_port).length : 0;
-                console.log(`✅ [MANUAL-API] Fetched prices for ${priceCount} ports`);
-                break;
-                
-              case 'analyze_bunker_options':
-                console.log("📊 [MANUAL-API] Executing analyze_bunker_options tool...");
-                // Ensure we use the actual fetchedPrices we stored, not what LLM might pass
-                const analyzerInput = {
-                  ...(toolUseBlock.input as any),
-                  port_prices: fetchedPrices || (toolUseBlock.input as any).port_prices, // Use stored prices if available
-                  fuel_quantity_mt: (toolUseBlock.input as any).fuel_quantity_mt || fuelQuantityMT,
-                  vessel_speed_knots: (toolUseBlock.input as any).vessel_speed_knots || vesselSpeed,
-                  vessel_consumption_mt_per_day: (toolUseBlock.input as any).vessel_consumption_mt_per_day || vesselConsumption,
-                };
-                
-                // Validate port_prices structure before calling
-                if (!analyzerInput.port_prices || !analyzerInput.port_prices.prices_by_port) {
-                  console.error("❌ [MANUAL-API] Invalid port_prices in analyzer input:", {
-                    hasPortPrices: !!analyzerInput.port_prices,
-                    hasPricesByPort: !!analyzerInput.port_prices?.prices_by_port,
-                    fetchedPricesHasPricesByPort: !!fetchedPrices?.prices_by_port,
-                  });
-                  throw new Error("Port prices data is missing or invalid. Please fetch fuel prices first.");
-                }
-                
-                toolResult = await executeBunkerAnalyzerTool(analyzerInput);
-                analysisResult = toolResult;
-                const recCount = toolResult?.recommendations?.length || 0;
-                console.log(`✅ [MANUAL-API] Analysis complete: ${recCount} recommendations`);
-                break;
-                
-              default:
-                console.warn(`⚠️ [MANUAL-API] Unknown tool: ${toolUseBlock.name}`);
-                toolResult = { error: `Unknown tool: ${toolUseBlock.name}` };
+            // Set up keep-alive interval during tool execution to prevent Netlify from closing connection
+            const keepAliveInterval = setInterval(() => {
+              try {
+                controller.enqueue(encoder.encode(': keep-alive\n\n'));
+                console.log(`💚 [MANUAL-API] Sent keep-alive during tool execution`);
+              } catch (e) {
+                console.warn('⚠️ [MANUAL-API] Error sending keep-alive:', e);
+                clearInterval(keepAliveInterval);
+              }
+            }, 2000); // Send keep-alive every 2 seconds during tool execution
+            
+            try {
+              // Execute tool
+              switch (toolUseBlock.name) {
+                case 'calculate_route':
+                  console.log("🗺️ [MANUAL-API] Executing calculate_route tool...");
+                  toolResult = await executeRouteCalculatorTool(toolUseBlock.input);
+                  calculatedRoute = toolResult;
+                  console.log(`✅ [MANUAL-API] Route calculated: ${toolResult?.distance_nm}nm, ${toolResult?.estimated_hours}h`);
+                  break;
+                  
+                case 'find_ports_near_route':
+                  console.log("⚓ [MANUAL-API] Executing find_ports_near_route tool...");
+                  toolResult = await executePortFinderTool(toolUseBlock.input);
+                  foundPorts = toolResult.ports || [];
+                  console.log(`✅ [MANUAL-API] Found ${foundPorts.length} ports near route`);
+                  break;
+                  
+                case 'fetch_fuel_prices':
+                  console.log("💰 [MANUAL-API] Executing fetch_fuel_prices tool...");
+                  toolResult = await executePriceFetcherTool(toolUseBlock.input);
+                  fetchedPrices = toolResult;
+                  const priceCount = toolResult?.prices_by_port ? Object.keys(toolResult.prices_by_port).length : 0;
+                  console.log(`✅ [MANUAL-API] Fetched prices for ${priceCount} ports`);
+                  break;
+                  
+                case 'analyze_bunker_options':
+                  console.log("📊 [MANUAL-API] Executing analyze_bunker_options tool...");
+                  // Ensure we use the actual fetchedPrices we stored, not what LLM might pass
+                  const analyzerInput = {
+                    ...(toolUseBlock.input as any),
+                    port_prices: fetchedPrices || (toolUseBlock.input as any).port_prices, // Use stored prices if available
+                    fuel_quantity_mt: (toolUseBlock.input as any).fuel_quantity_mt || fuelQuantityMT,
+                    vessel_speed_knots: (toolUseBlock.input as any).vessel_speed_knots || vesselSpeed,
+                    vessel_consumption_mt_per_day: (toolUseBlock.input as any).vessel_consumption_mt_per_day || vesselConsumption,
+                  };
+                  
+                  // Validate port_prices structure before calling
+                  if (!analyzerInput.port_prices || !analyzerInput.port_prices.prices_by_port) {
+                    console.error("❌ [MANUAL-API] Invalid port_prices in analyzer input:", {
+                      hasPortPrices: !!analyzerInput.port_prices,
+                      hasPricesByPort: !!analyzerInput.port_prices?.prices_by_port,
+                      fetchedPricesHasPricesByPort: !!fetchedPrices?.prices_by_port,
+                    });
+                    throw new Error("Port prices data is missing or invalid. Please fetch fuel prices first.");
+                  }
+                  
+                  toolResult = await executeBunkerAnalyzerTool(analyzerInput);
+                  analysisResult = toolResult;
+                  const recCount = toolResult?.recommendations?.length || 0;
+                  console.log(`✅ [MANUAL-API] Analysis complete: ${recCount} recommendations`);
+                  break;
+                  
+                default:
+                  console.warn(`⚠️ [MANUAL-API] Unknown tool: ${toolUseBlock.name}`);
+                  toolResult = { error: `Unknown tool: ${toolUseBlock.name}` };
+              }
+            } finally {
+              // Always clear the keep-alive interval when tool execution completes
+              clearInterval(keepAliveInterval);
+              console.log(`🛑 [MANUAL-API] Cleared keep-alive interval after tool execution`);
             }
             
             const toolDuration = Date.now() - toolStartTime;
