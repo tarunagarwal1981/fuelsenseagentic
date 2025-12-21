@@ -223,7 +223,15 @@ export function ChatInterfaceLangGraph() {
 
                 case "graph_event":
                   // Legacy support - still handle graph_event for backwards compatibility
+                  console.log("📊 [FRONTEND] Received graph_event:", {
+                    hasRoute: !!parsed.route,
+                    hasPorts: !!parsed.ports,
+                    hasPrices: !!parsed.prices,
+                    hasAnalysis: !!parsed.analysis,
+                  });
+                  
                   if (parsed.route || parsed.ports || parsed.prices || parsed.analysis) {
+                    console.log("✅ [FRONTEND] Updating analysis data from graph_event");
                     setAnalysisData((prev) => ({
                       route: parsed.route || prev?.route || null,
                       ports: parsed.ports || prev?.ports || null,

@@ -221,14 +221,26 @@ export async function POST(req: Request) {
           }
           
           // Send analysis event (like manual version) to trigger map/table display
-          // Send if we have route + ports + prices (even without analysis, we can show map/table)
+          // Send if we have ANY data (route, ports, prices, or analysis) - partial data is better than nothing
           const hasRoute = accumulatedState.route && accumulatedState.route.distance_nm;
           const hasPorts = accumulatedState.ports && Array.isArray(accumulatedState.ports) && accumulatedState.ports.length > 0;
           const hasPrices = accumulatedState.prices && Array.isArray(accumulatedState.prices) && accumulatedState.prices.length > 0;
           const hasAnalysis = accumulatedState.analysis && accumulatedState.analysis.recommendations;
           
-          if (hasRoute && (hasPorts || hasPrices || hasAnalysis)) {
-            console.log("📤 Sending analysis event:", {
+          console.log("📊 [API] Final accumulated state check:", {
+            hasRoute: !!hasRoute,
+            hasPorts: !!hasPorts,
+            hasPrices: !!hasPrices,
+            hasAnalysis: !!hasAnalysis,
+            routeDistance: accumulatedState.route?.distance_nm,
+            portsCount: accumulatedState.ports?.length || 0,
+            pricesCount: accumulatedState.prices?.length || 0,
+            analysisRecs: accumulatedState.analysis?.recommendations?.length || 0,
+          });
+          
+          // Send analysis event if we have ANY data - even just route is useful for map display
+          if (hasRoute || hasPorts || hasPrices || hasAnalysis) {
+            console.log("📤 [API] Sending analysis event with available data:", {
               hasRoute: !!hasRoute,
               hasPorts: !!hasPorts,
               hasPrices: !!hasPrices,
@@ -253,9 +265,9 @@ export async function POST(req: Request) {
             });
             
             controller.enqueue(encoder.encode(`data: ${analysisData}\n\n`));
-            console.log("✅ Analysis event sent");
+            console.log("✅ [API] Analysis event sent");
           } else {
-            console.log("⚠️ Not sending analysis event - missing required data:", {
+            console.warn("⚠️ [API] Not sending analysis event - no data available:", {
               hasRoute: !!hasRoute,
               hasPorts: !!hasPorts,
               hasPrices: !!hasPrices,
