@@ -65,7 +65,7 @@ export async function POST(req: Request) {
             { messages: [humanMessage] },
             { 
               streamMode: "values",
-              recursionLimit: 50, // Increased from default 25 to handle complex multi-step queries
+              recursionLimit: 100, // Increased to handle complex multi-step queries (route -> ports -> prices -> analysis)
             }
           );
 
