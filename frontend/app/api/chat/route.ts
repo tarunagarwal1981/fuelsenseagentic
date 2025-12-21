@@ -41,15 +41,12 @@ export async function POST(req: Request) {
     console.log('📝 [MANUAL-API] Last user message:', messages[messages.length - 1]?.content?.substring(0, 100));
     console.log('⚙️ [MANUAL-API] Options:', { fuelQuantityMT, vesselSpeed, vesselConsumption });
     
-    // Create a TransformStream for streaming responses
+    // Create a ReadableStream for streaming responses (better Netlify compatibility)
     const encoder = new TextEncoder();
-    const stream = new TransformStream();
-    const writer = stream.writable.getWriter();
-    
-    // Run agent in background
-    (async () => {
-      try {
-        const anthropicMessages: Anthropic.MessageParam[] = messages;
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          const anthropicMessages: Anthropic.MessageParam[] = messages;
         
         let continueLoop = true;
         let loopCount = 0;
@@ -66,10 +63,8 @@ export async function POST(req: Request) {
           console.log(`🔄 [MANUAL-API] Loop iteration ${loopCount}/${MAX_LOOPS}`);
           
           // Stream thinking indicator
-          const thinkingEvent = encoder.encode(`data: ${JSON.stringify({ type: 'thinking', loop: loopCount })}\n\n`);
-          await writer.write(thinkingEvent);
-          // Ensure data is flushed (especially important for Netlify)
-          await writer.ready;
+          const thinkingEvent = `data: ${JSON.stringify({ type: 'thinking', loop: loopCount })}\n\n`;
+          controller.enqueue(encoder.encode(thinkingEvent));
           
           // Model selection - can be overridden via env var
           // Available models (cheapest to most expensive):
@@ -140,12 +135,11 @@ export async function POST(req: Request) {
             console.log(`📥 [MANUAL-API] Tool input:`, JSON.stringify(toolUseBlock.input).substring(0, 200));
             
             // Stream tool usage
-            const toolUseEvent = encoder.encode(`data: ${JSON.stringify({ 
+            const toolUseEvent = `data: ${JSON.stringify({ 
               type: 'tool_use', 
               tool: toolUseBlock.name 
-            })}\n\n`);
-            await writer.write(toolUseEvent);
-            await writer.ready; // Ensure flush
+            })}\n\n`;
+            controller.enqueue(encoder.encode(toolUseEvent));
             
             let toolResult: any;
             const toolStartTime = Date.now();
@@ -317,12 +311,11 @@ export async function POST(req: Request) {
             if (textBlock) {
               console.log(`📝 [MANUAL-API] Final text response length: ${textBlock.text.length} chars`);
               // Stream the final text response
-              const textEvent = encoder.encode(`data: ${JSON.stringify({ 
+              const textEvent = `data: ${JSON.stringify({ 
                 type: 'text', 
                 content: textBlock.text 
-              })}\n\n`);
-              await writer.write(textEvent);
-              await writer.ready; // Ensure flush
+              })}\n\n`;
+              controller.enqueue(encoder.encode(textEvent));
               
               // Stream structured data for UI - send even if incomplete
               if (calculatedRoute || foundPorts.length > 0 || fetchedPrices || analysisResult) {
@@ -333,15 +326,14 @@ export async function POST(req: Request) {
                   hasAnalysis: !!analysisResult,
                   recommendationsCount: analysisResult?.recommendations?.length || 0,
                 });
-                const analysisEvent = encoder.encode(`data: ${JSON.stringify({ 
+                const analysisEvent = `data: ${JSON.stringify({ 
                   type: 'analysis',
                   route: calculatedRoute,
                   ports: foundPorts,
                   prices: fetchedPrices,
                   analysis: analysisResult,
-                })}\n\n`);
-                await writer.write(analysisEvent);
-                await writer.ready; // Ensure flush
+                })}\n\n`;
+                controller.enqueue(encoder.encode(analysisEvent));
               } else {
                 console.log("⚠️ [MANUAL-API] No data to send");
               }
@@ -362,25 +354,23 @@ export async function POST(req: Request) {
         
         // Stream done signal
         console.log("🏁 [MANUAL-API] Sending done signal");
-        const doneEvent = encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-        await writer.write(doneEvent);
-        await writer.ready; // Ensure flush before closing
+        const doneEvent = `data: ${JSON.stringify({ type: 'done' })}\n\n`;
+        controller.enqueue(encoder.encode(doneEvent));
+        controller.close();
         
       } catch (error: any) {
         console.error('❌ [MANUAL-API] Agent error:', error);
-        await writer.write(
-          encoder.encode(`data: ${JSON.stringify({ 
-            type: 'error', 
-            error: error.message 
-          })}\n\n`)
-        );
-      } finally {
-        console.log("🏁 [MANUAL-API] Closing stream writer");
-        await writer.close();
+        const errorEvent = `data: ${JSON.stringify({ 
+          type: 'error', 
+          error: error.message 
+        })}\n\n`;
+        controller.enqueue(encoder.encode(errorEvent));
+        controller.close();
       }
-    })();
+      },
+    });
     
-    return new Response(stream.readable, {
+    return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
