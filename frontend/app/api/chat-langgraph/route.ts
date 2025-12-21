@@ -108,10 +108,22 @@ export async function POST(req: Request) {
             }
 
             // Accumulate state - keep the latest non-null values
-            if (event.route) accumulatedState.route = event.route;
-            if (event.ports) accumulatedState.ports = event.ports;
-            if (event.prices) accumulatedState.prices = event.prices;
-            if (event.analysis) accumulatedState.analysis = event.analysis;
+            if (event.route) {
+              accumulatedState.route = event.route;
+              console.log("📌 [API] Accumulated route:", event.route.distance_nm, "nm");
+            }
+            if (event.ports) {
+              accumulatedState.ports = event.ports;
+              console.log("📌 [API] Accumulated ports:", event.ports.length);
+            }
+            if (event.prices) {
+              accumulatedState.prices = event.prices;
+              console.log("📌 [API] Accumulated prices:", event.prices.length);
+            }
+            if (event.analysis) {
+              accumulatedState.analysis = event.analysis;
+              console.log("📌 [API] Accumulated analysis:", event.analysis.recommendations?.length || 0, "recommendations");
+            }
 
             // Extract final response from messages
             const lastMsg = event.messages && event.messages.length > 0 ? event.messages[event.messages.length - 1] : null;
