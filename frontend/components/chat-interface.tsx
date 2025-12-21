@@ -132,6 +132,13 @@ export function ChatInterface() {
     setToolUses([]);
     setAnalysisData(null);
     
+    // Declare variables outside try block so they're accessible in finally
+    let assistantMessage = '';
+    let chunkCount = 0;
+    let eventCount = 0;
+    let buffer = ''; // Buffer for incomplete lines
+    let analysisData: any = null; // Track analysis data for logging
+    
     try {
       console.log("🌐 [MANUAL-FRONTEND] Fetching /api/chat...");
       const response = await fetch('/api/chat', {
@@ -160,65 +167,113 @@ export function ChatInterface() {
       
       if (!reader) throw new Error('No reader available');
       
-      let assistantMessage = '';
-      let chunkCount = 0;
-      let eventCount = 0;
-      let buffer = ''; // Buffer for incomplete lines
-      
       console.log("📥 [MANUAL-FRONTEND] Starting to read stream...");
+      console.log("🔍 [MANUAL-FRONTEND] Stream reader initialized, starting read loop...");
+      
       while (true) {
+        const readStartTime = Date.now();
         const { done, value } = await reader.read();
+        const readDuration = Date.now() - readStartTime;
         chunkCount++;
-        console.log(`📦 [MANUAL-FRONTEND] Chunk #${chunkCount}, done=${done}`);
+        
+        console.log(`📦 [MANUAL-FRONTEND] Chunk #${chunkCount}, done=${done}, readDuration=${readDuration}ms`);
+        
+        if (value) {
+          const chunkSize = value.byteLength;
+          console.log(`📏 [MANUAL-FRONTEND] Chunk size: ${chunkSize} bytes`);
+        }
         
         if (done) {
+          console.log("🛑 [MANUAL-FRONTEND] Stream marked as done!");
+          console.log(`📊 [MANUAL-FRONTEND] Final stats: chunks=${chunkCount}, events=${eventCount}, bufferLength=${buffer.length}`);
+          
           // Process any remaining data in buffer
           if (buffer.trim()) {
-            console.log("📦 [MANUAL-FRONTEND] Processing remaining buffer on done");
+            console.log(`📦 [MANUAL-FRONTEND] Processing remaining buffer on done (${buffer.length} chars)`);
+            console.log(`📝 [MANUAL-FRONTEND] Buffer content preview:`, buffer.substring(0, 200));
             const lines = buffer.split('\n');
+            console.log(`📊 [MANUAL-FRONTEND] Buffer has ${lines.length} lines`);
+            
             for (const line of lines) {
               if (line.startsWith('data: ')) {
                 try {
-                  const data = JSON.parse(line.slice(6));
+                  const dataStr = line.slice(6).trim();
+                  console.log(`🔍 [MANUAL-FRONTEND] Parsing buffer line, data preview:`, dataStr.substring(0, 100));
+                  const data = JSON.parse(dataStr);
                   console.log(`📨 [MANUAL-FRONTEND] Final event from buffer, type: ${data.type}`);
+                  
                   // Process this event (same switch statement below)
                   if (data.type === 'text') {
                     assistantMessage = data.content;
                     setThinkingState(null);
+                    console.log(`✅ [MANUAL-FRONTEND] Processed text from buffer, length: ${data.content?.length || 0}`);
                   } else if (data.type === 'analysis') {
+                    analysisData = data;
                     setAnalysisData({
                       route: data.route,
                       ports: data.ports,
                       prices: data.prices,
                       analysis: data.analysis,
                     });
+                    console.log(`✅ [MANUAL-FRONTEND] Processed analysis from buffer`);
                   } else if (data.type === 'done') {
                     setIsLoading(false);
+                    console.log(`✅ [MANUAL-FRONTEND] Processed done from buffer`);
                   }
                 } catch (e) {
                   console.error('❌ [MANUAL-FRONTEND] Parse error on buffer:', e);
+                  console.error('❌ [MANUAL-FRONTEND] Problematic line:', line.substring(0, 200));
                 }
+              } else if (line.trim() && !line.startsWith(':')) {
+                console.log(`⚠️ [MANUAL-FRONTEND] Non-data line in buffer:`, line.substring(0, 100));
               }
             }
+          } else {
+            console.log("⚠️ [MANUAL-FRONTEND] No buffer content to process on done");
           }
+          
           console.log("✅ [MANUAL-FRONTEND] Stream reading complete. Total chunks:", chunkCount, "Total events:", eventCount);
+          console.log(`📊 [MANUAL-FRONTEND] Final state: assistantMessage=${!!assistantMessage}, hasAnalysisData=${!!analysisData}`);
           break;
         }
         
+        if (!value) {
+          console.warn("⚠️ [MANUAL-FRONTEND] Received chunk with no value but done=false");
+          continue;
+        }
+        
         const chunk = decoder.decode(value, { stream: true });
+        console.log(`📝 [MANUAL-FRONTEND] Decoded chunk length: ${chunk.length} chars`);
+        console.log(`📝 [MANUAL-FRONTEND] Chunk preview (first 200 chars):`, chunk.substring(0, 200));
+        
         buffer += chunk;
+        console.log(`📊 [MANUAL-FRONTEND] Buffer length after adding chunk: ${buffer.length} chars`);
+        
         const lines = buffer.split('\n');
+        console.log(`📊 [MANUAL-FRONTEND] Buffer split into ${lines.length} lines`);
         
         // Keep the last incomplete line in buffer
-        buffer = lines.pop() || '';
+        const lastLine = lines.pop() || '';
+        buffer = lastLine;
+        console.log(`📊 [MANUAL-FRONTEND] Kept last line in buffer (${lastLine.length} chars), processing ${lines.length} complete lines`);
         
-        for (const line of lines) {
-          if (!line.trim()) continue; // Skip empty lines
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.trim()) {
+            console.log(`⏭️ [MANUAL-FRONTEND] Skipping empty line ${i + 1}`);
+            continue; // Skip empty lines
+          }
           
           if (line.startsWith('data: ')) {
             eventCount++;
             const dataStr = line.slice(6).trim();
-            if (!dataStr) continue; // Skip empty data
+            console.log(`🔍 [MANUAL-FRONTEND] Processing line ${i + 1}, dataStr length: ${dataStr.length}`);
+            console.log(`🔍 [MANUAL-FRONTEND] Data preview:`, dataStr.substring(0, 150));
+            
+            if (!dataStr) {
+              console.log(`⏭️ [MANUAL-FRONTEND] Skipping empty data string`);
+              continue; // Skip empty data
+            }
             
             try {
               const data = JSON.parse(dataStr);
@@ -297,6 +352,8 @@ export function ChatInterface() {
       
     } catch (error: any) {
       console.error('❌ [MANUAL-FRONTEND] Error in chat submission:', error);
+      console.error('❌ [MANUAL-FRONTEND] Error stack:', error.stack);
+      console.error('❌ [MANUAL-FRONTEND] Error name:', error.name);
       setThinkingState(null);
       setIsLoading(false);
       setMessages(prev => [...prev, {
@@ -306,6 +363,8 @@ export function ChatInterface() {
       }]);
     } finally {
       console.log("🏁 [MANUAL-FRONTEND] Chat submission finished, cleaning up...");
+      console.log(`📊 [MANUAL-FRONTEND] Final stats: chunks=${chunkCount}, events=${eventCount}`);
+      console.log(`📊 [MANUAL-FRONTEND] Final state: assistantMessage=${!!assistantMessage}, hasAnalysisData=${!!analysisData}`);
       setIsLoading(false);
       setThinkingState(null);
     }
