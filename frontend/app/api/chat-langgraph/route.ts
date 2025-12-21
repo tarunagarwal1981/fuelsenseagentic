@@ -53,6 +53,9 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          // Send initial keep-alive comment to establish connection
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          
           console.log("🚀 [API] Starting graph stream...");
           const inputPreview = typeof humanMessage.content === 'string' 
             ? humanMessage.content.substring(0, 100) 
@@ -71,6 +74,17 @@ export async function POST(req: Request) {
 
           console.log("✅ [API] Stream created, iterating events...");
           let iterationCount = 0;
+          
+          // Set up keep-alive interval during graph execution to prevent Netlify from closing connection
+          const keepAliveInterval = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(': keep-alive\n\n'));
+              console.log(`💚 [API] Sent keep-alive during graph execution`);
+            } catch (e) {
+              console.warn('⚠️ [API] Error sending keep-alive:', e);
+              clearInterval(keepAliveInterval);
+            }
+          }, 2000); // Send keep-alive every 2 seconds during graph execution
 
           // Track accumulated state across all events
           let accumulatedState = {
@@ -147,6 +161,9 @@ export async function POST(req: Request) {
                   content: finalTextResponse,
                 });
                 controller.enqueue(encoder.encode(`data: ${textData}\n\n`));
+                console.log("✅ [API] Text event enqueued, length:", finalTextResponse.length);
+                // Keep-alive after text
+                controller.enqueue(encoder.encode(': keep-alive\n\n'));
               }
             }
             
@@ -187,7 +204,16 @@ export async function POST(req: Request) {
               tool_calls: toolCalls,
             });
             controller.enqueue(encoder.encode(`data: ${graphEventData}\n\n`));
+            
+            // Send keep-alive after every few events to prevent connection timeout
+            if (eventCount % 3 === 0) {
+              controller.enqueue(encoder.encode(': keep-alive\n\n'));
+            }
           }
+          
+          // Clear keep-alive interval when graph execution completes
+          clearInterval(keepAliveInterval);
+          console.log(`🛑 [API] Cleared keep-alive interval after graph execution`);
           
           console.log(`✅ [API] Stream completed. Processed ${eventCount} events in ${iterationCount} iterations`);
           console.log(`📊 [API] Final state: route=${!!lastEvent?.route}, ports=${!!lastEvent?.ports}, prices=${!!lastEvent?.prices}, analysis=${!!lastEvent?.analysis}`);
@@ -278,6 +304,8 @@ export async function POST(req: Request) {
             
             controller.enqueue(encoder.encode(`data: ${analysisData}\n\n`));
             console.log("✅ [API] Analysis event sent");
+            // Keep-alive after analysis
+            controller.enqueue(encoder.encode(': keep-alive\n\n'));
           } else {
             console.warn("⚠️ [API] Not sending analysis event - no data available:", {
               hasRoute: !!hasRoute,
@@ -289,7 +317,24 @@ export async function POST(req: Request) {
 
           // Send completion
           console.log("🏁 [API] Sending [DONE] signal and closing stream");
+          
+          // Send keep-alive before done to ensure connection is still open
+          try {
+            controller.enqueue(encoder.encode(': keep-alive\n\n'));
+            console.log("✅ [API] Keep-alive sent before done event");
+          } catch (e) {
+            console.warn('⚠️ [API] Error sending keep-alive before done:', e);
+          }
+          
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          
+          // Send another keep-alive after done to ensure it's transmitted
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+          console.log("✅ [API] Keep-alive sent after done event");
+          
+          // Longer delay to ensure all events are sent before closing
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
           controller.close();
           console.log("✅ [API] Stream closed successfully");
         } catch (error) {
@@ -309,8 +354,9 @@ export async function POST(req: Request) {
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no", // Disable nginx/proxy buffering
       },
     });
   } catch (error) {
