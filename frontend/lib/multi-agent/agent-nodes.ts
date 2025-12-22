@@ -839,10 +839,10 @@ export async function routeAgentNode(state: MultiAgentState) {
         
         // Try to find cached route matching origin/destination
         try {
-          const fs = require('fs');
-          const path = require('path');
-          const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
-          const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+          const cachedRoutes = await loadCachedRoutes();
+          if (!cachedRoutes || !cachedRoutes.routes) {
+            throw new Error('Cached routes data is invalid');
+          }
           
           // Find route matching origin and destination (try both directions)
           const cachedRoute = cachedRoutes.routes.find(
