@@ -309,14 +309,19 @@ export async function supervisorAgentNode(
   });
   
   // Use intent for routing decisions
-  const needsRoute = intent.needs_route && (!state.route_data || !state.vessel_timeline);
+  // For route-only queries: route is complete if route_data exists (vessel_timeline not needed)
+  // For weather/bunker queries: route is complete if both route_data AND vessel_timeline exist
+  const routeCompleteForQuery = state.route_data && (
+    !agentContext.route_agent.needs_weather_timeline || state.vessel_timeline
+  );
+  const needsRoute = intent.needs_route && !routeCompleteForQuery;
   const needsWeather = intent.needs_weather;
   const needsBunker = intent.needs_bunker;
 
   // NEW LOGIC: Check if weather agent is stuck
   // Better detection: If route is complete, weather is needed, but weather data doesn't exist
   // AND we've been through supervisor multiple times, we're likely stuck
-  const routeComplete = state.route_data && state.vessel_timeline;
+  // Use routeCompleteForQuery which considers context (vessel_timeline only needed if weather/bunker analysis required)
   const weatherNeededButMissing = needsWeather && !state.weather_forecast && !state.weather_consumption;
   
   // Count how many times we've likely tried weather_agent by checking message patterns
@@ -332,7 +337,7 @@ export async function supervisorAgentNode(
         return toolNames.includes('fetch_marine_weather') || toolNames.includes('calculate_weather_consumption');
       }
       // Empty responses after route is complete are likely failed weather_agent attempts
-      if (isEmpty && routeComplete) {
+      if (isEmpty && routeCompleteForQuery) {
         return true;
       }
     }
@@ -344,7 +349,7 @@ export async function supervisorAgentNode(
   const weatherAgentPartial = state.weather_agent_partial === true;
   
   // If weather is needed but we've tried multiple times with no progress, or agent failed
-  if (routeComplete && weatherNeededButMissing && (weatherAgentAttempts >= 3 || weatherAgentFailed)) {
+  if (routeCompleteForQuery && weatherNeededButMissing && (weatherAgentAttempts >= 3 || weatherAgentFailed)) {
     // If weather was needed but agent is stuck, check if we should skip or finalize
     if (needsWeather && !needsBunker) {
       // User only asked for weather, not bunker - finalize with what we have
@@ -422,7 +427,7 @@ export async function supervisorAgentNode(
   
   // 1. If route is needed and not available, get route first
   // BUT: Check if route_agent has already failed - if so, finalize with error instead of retrying
-  if (needsRoute && (!state.route_data || !state.vessel_timeline)) {
+  if (needsRoute && !routeCompleteForQuery) {
     // Check if route_agent has already failed - if so, finalize with error instead of retrying
     if (state.agent_status?.route_agent === 'failed') {
       console.log('⚠️ [SUPERVISOR] Route needed but route_agent has failed - finalizing with error');
@@ -440,8 +445,8 @@ export async function supervisorAgentNode(
     };
   }
   
-  // 2. If route is complete, check what else is needed based on query intent
-  if (state.route_data && state.vessel_timeline) {
+  // 2. If route is complete (for this query type), check what else is needed based on query intent
+  if (routeCompleteForQuery) {
     // Priority 1: Weather is needed and not done
     // For simple route weather queries, we only need weather_forecast (not consumption)
     // Consumption is only needed for bunker planning

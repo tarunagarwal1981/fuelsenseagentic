@@ -178,7 +178,7 @@ export async function POST(req: Request) {
             },
             {
               streamMode: 'values',
-              recursionLimit: 25, // Maximum 25 agent calls
+              recursionLimit: 50, // Increased to handle complex queries, but should be prevented by logic fixes
             }
           );
 
