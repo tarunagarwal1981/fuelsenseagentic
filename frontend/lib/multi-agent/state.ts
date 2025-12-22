@@ -63,6 +63,8 @@ export interface RouteData {
   origin_port_code: string;
   /** Destination port code */
   destination_port_code: string;
+  /** Flag indicating if route came from cache */
+  _from_cache?: boolean;
 }
 
 /**
@@ -297,6 +299,18 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       if (result) {
         console.log('🔄 Agent context reducer: updating context');
       }
+      return result;
+    },
+    default: () => null,
+  }),
+
+  /**
+   * Selected cached route ID (from UI route selector)
+   */
+  selected_route_id: Annotation<string | null>({
+    reducer: (x, y) => {
+      // New value overwrites old if provided
+      const result = y !== null && y !== undefined ? y : x;
       return result;
     },
     default: () => null,

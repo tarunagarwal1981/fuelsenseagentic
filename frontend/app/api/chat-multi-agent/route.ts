@@ -42,6 +42,8 @@ interface MultiAgentRequest {
   destination?: string;
   vessel_speed?: number;
   departure_date?: string;
+  selectedRouteId?: string;
+  messages?: Array<{ role: string; content: string }>;
 }
 
 export async function POST(req: Request) {
@@ -71,7 +73,7 @@ export async function POST(req: Request) {
   try {
     // Parse request body
     const body: MultiAgentRequest = await req.json();
-    const { message, origin, destination, vessel_speed, departure_date } = body;
+    const { message, origin, destination, vessel_speed, departure_date, selectedRouteId, messages } = body;
 
     console.log('📝 [MULTI-AGENT-API] Request details:');
     console.log(`   - Message: ${message.substring(0, 100)}...`);
@@ -159,12 +161,40 @@ export async function POST(req: Request) {
             }
           }, 2000);
 
+          // Check if we should use cached route
+          let initialRouteData = null;
+          if (selectedRouteId) {
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
+              const cachedRoutesData = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+              const cachedRoute = cachedRoutesData.routes.find(
+                (r: any) => r.id === selectedRouteId
+              );
+              if (cachedRoute) {
+                initialRouteData = {
+                  distance_nm: cachedRoute.distance_nm,
+                  estimated_hours: cachedRoute.estimated_hours,
+                  waypoints: cachedRoute.waypoints,
+                  route_type: cachedRoute.route_type,
+                  origin_port_code: cachedRoute.origin_port_code,
+                  destination_port_code: cachedRoute.destination_port_code,
+                  _from_cache: true,
+                };
+                console.log(`✅ [MULTI-AGENT-API] Loaded cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+              }
+            } catch (error) {
+              console.warn(`⚠️ [MULTI-AGENT-API] Failed to load cached route: ${error}`);
+            }
+          }
+
           // Stream graph execution
           const streamResult = await multiAgentApp.stream(
             {
               messages: [humanMessage],
               next_agent: '',
-              route_data: null,
+              route_data: initialRouteData,
               vessel_timeline: null,
               weather_forecast: null,
               weather_consumption: null,
@@ -175,6 +205,8 @@ export async function POST(req: Request) {
               final_recommendation: null,
               agent_errors: {},
               agent_status: {},
+              agent_context: null,
+              selected_route_id: selectedRouteId || null,
             },
             {
               streamMode: 'values',

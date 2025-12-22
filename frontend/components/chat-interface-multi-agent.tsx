@@ -20,8 +20,11 @@ import {
   Activity,
 } from "lucide-react";
 import { ResultsTable } from "./results-table";
+import { RouteSelector } from "./route-selector";
+import { PerformanceMetricsPane } from "./performance-metrics-pane";
 import dynamic from "next/dynamic";
 import portsData from "@/lib/data/ports.json";
+import cachedRoutesData from "@/lib/data/cached-routes.json";
 import Link from "next/link";
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
@@ -83,6 +86,21 @@ export function ChatInterfaceMultiAgent() {
     useState<PerformanceMetrics | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [useMultiAgent, setUseMultiAgent] = useState(true);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
+    id: string;
+    origin_port_code: string;
+    destination_port_code: string;
+    origin_name: string;
+    destination_name: string;
+    description: string;
+    distance_nm: number;
+    estimated_hours: number;
+    route_type: string;
+    waypoints: Array<{ lat: number; lon: number }>;
+    cached_at: string;
+    popularity: 'high' | 'medium' | 'low';
+  }>);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -175,23 +193,30 @@ export function ChatInterfaceMultiAgent() {
         : "/api/chat-langgraph";
 
       console.log(`🌐 [MULTI-AGENT-FRONTEND] Fetching ${endpoint}...`);
+      
+      // Build request body
+      const requestBody = useMultiAgent
+        ? {
+            message: userMessage.content,
+            origin: extractPortCode(userMessage.content, "from"),
+            destination: extractPortCode(userMessage.content, "to"),
+            ...(selectedRouteId && { selectedRouteId }),
+          }
+        : {
+            messages: [...messages, userMessage].map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          };
+      
+      if (selectedRouteId && useMultiAgent) {
+        console.log(`🎯 [MULTI-AGENT-FRONTEND] Using cached route: ${selectedRouteId}`);
+      }
+      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          useMultiAgent
-            ? {
-                message: userMessage.content,
-                origin: extractPortCode(userMessage.content, "from"),
-                destination: extractPortCode(userMessage.content, "to"),
-              }
-            : {
-                messages: [...messages, userMessage].map((m) => ({
-                  role: m.role,
-                  content: m.content,
-                })),
-              }
-        ),
+        body: JSON.stringify(requestBody),
       });
 
       console.log(
@@ -805,66 +830,21 @@ export function ChatInterfaceMultiAgent() {
       </Card>
       </div>
 
-      {/* Right Side Pane - Performance Metrics */}
-      {performanceMetrics && (
-        <div className="w-64 flex-shrink-0 overflow-y-auto">
-          <Card className="p-4 bg-gray-50 sticky top-0">
-            <div className="flex items-center gap-2 mb-3">
-              <Clock className="h-4 w-4 text-gray-600" />
-              <span className="font-semibold text-sm">Performance Metrics</span>
-            </div>
-            <div className="space-y-4 text-sm">
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Total Time</p>
-                <p className="font-semibold text-lg">
-                  {performanceMetrics.totalExecutionTime}ms
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Tool Calls</p>
-                <p className="font-semibold text-lg">
-                  {performanceMetrics.totalToolCalls}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Agents Used</p>
-                <p className="font-semibold text-lg">
-                  {performanceMetrics.agentsCalled.length}
-                </p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-xs mb-1">Avg per Agent</p>
-                <p className="font-semibold text-lg">
-                  {performanceMetrics.agentsCalled.length > 0
-                    ? Math.round(
-                        performanceMetrics.totalExecutionTime /
-                          performanceMetrics.agentsCalled.length
-                      )
-                    : 0}
-                  ms
-                </p>
-              </div>
-              {performanceMetrics.agentsCalled.length > 0 && Object.keys(performanceMetrics.agentTimes || {}).length > 0 && (
-                <div className="pt-2 border-t">
-                  <p className="text-muted-foreground text-xs mb-2">Agent Times</p>
-                  <div className="space-y-1">
-                    {performanceMetrics.agentsCalled.map((agent) => (
-                      <div key={agent} className="flex justify-between text-xs">
-                        <span className="text-muted-foreground capitalize">
-                          {agent.replace('_', ' ')}
-                        </span>
-                        <span className="font-medium">
-                          {performanceMetrics.agentTimes[agent] || 0}ms
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Right Side Pane - Route Selector & Performance Metrics */}
+      <div className="w-80 flex-shrink-0 overflow-y-auto space-y-4">
+        {/* Route Selector - Always visible */}
+        <RouteSelector
+          routes={cachedRoutes}
+          selectedRouteId={selectedRouteId}
+          onRouteSelect={(routeId) => {
+            setSelectedRouteId(routeId);
+            console.log(`🎯 [MULTI-AGENT-FRONTEND] Route selected: ${routeId}`);
+          }}
+        />
+
+        {/* Performance Metrics - Compact, collapsible */}
+        <PerformanceMetricsPane metrics={performanceMetrics} />
+      </div>
     </div>
   );
 }

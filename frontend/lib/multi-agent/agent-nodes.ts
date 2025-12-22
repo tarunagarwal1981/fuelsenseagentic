@@ -622,7 +622,78 @@ export async function routeAgentNode(state: MultiAgentState) {
   // Check based on context - if weather timeline not needed, only check route_data
   if (state.route_data && (needsWeatherTimeline ? state.vessel_timeline : true)) {
     console.log('✅ [ROUTE-AGENT] Route data already available, skipping');
-    return { ...stateUpdates, agent_status: { route_agent: 'success' } };
+    // If route came from cache, we still need to calculate vessel timeline if needed
+    if (needsWeatherTimeline && !state.vessel_timeline && (state.route_data as any)._from_cache) {
+      console.log('🔄 [ROUTE-AGENT] Route from cache, calculating vessel timeline...');
+      // Continue to calculate timeline
+    } else {
+      return { ...stateUpdates, agent_status: { route_agent: 'success' } };
+    }
+  }
+  
+  // Get user query for departure date extraction
+  const userMessageForDate = state.messages.find((msg) => msg instanceof HumanMessage);
+  const userQueryForDate = userMessageForDate ? (typeof userMessageForDate.content === 'string' ? userMessageForDate.content : String(userMessageForDate.content)) : '';
+  
+  // Extract departure date from query (needed for weather timeline)
+  let cachedRouteDepartureDate = '2024-12-25T08:00:00Z'; // Default
+  const cachedDateMatch = userQueryForDate.match(/(?:december|dec)\s+(\d+)/i);
+  if (cachedDateMatch) {
+    cachedRouteDepartureDate = `2024-12-${cachedDateMatch[1].padStart(2, '0')}T08:00:00Z`;
+  }
+
+  // Check if we should use cached route (fallback after API failure or if selected)
+  const selectedRouteId = state.selected_route_id;
+  if (!state.route_data && selectedRouteId) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
+      const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+      const cachedRoute = cachedRoutes.routes.find((r: any) => r.id === selectedRouteId);
+      if (cachedRoute) {
+        console.log(`✅ [ROUTE-AGENT] Using cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+        const cachedRouteData = {
+          distance_nm: cachedRoute.distance_nm,
+          estimated_hours: cachedRoute.estimated_hours,
+          waypoints: cachedRoute.waypoints,
+          route_type: cachedRoute.route_type,
+          origin_port_code: cachedRoute.origin_port_code,
+          destination_port_code: cachedRoute.destination_port_code,
+          _from_cache: true,
+        };
+        
+        // If weather timeline needed, calculate it
+        if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
+          console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route with ${cachedRouteData.waypoints.length} waypoints`);
+          const timelineResult = await withTimeout(
+            executeWeatherTimelineTool({
+              waypoints: cachedRouteData.waypoints,
+              vessel_speed_knots: 14,
+              departure_datetime: cachedRouteDepartureDate,
+              sampling_interval_hours: 12
+            }),
+            TIMEOUTS.ROUTE_CALCULATION,
+            'Weather timeline calculation timed out'
+          );
+          
+          return {
+            route_data: cachedRouteData,
+            vessel_timeline: timelineResult,
+            agent_status: { route_agent: 'success' },
+            messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache, timeline calculated')]
+          };
+        }
+        
+        return {
+          route_data: cachedRouteData,
+          agent_status: { route_agent: 'success' },
+          messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache')]
+        };
+      }
+    } catch (error) {
+      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route: ${error}`);
+    }
   }
 
   // Get user's original message to understand what they want
@@ -1634,7 +1705,7 @@ IMPORTANT: Focus ONLY on weather information. Do NOT include bunker port recomme
 User Query: "${userQuery}"
 
 Available data:
-- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}` : 'Not available'}
+- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}${(state.route_data as any)._from_cache ? ' (from cache)' : ''}` : 'Not available'}
 - Weather impact: ${state.weather_consumption ? `${state.weather_consumption.consumption_increase_percent.toFixed(2)}% increase` : 'Not available'}
 - Bunker analysis: ${state.bunker_analysis ? `${state.bunker_analysis.recommendations.length} options analyzed` : 'Not available'}
 - Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}${errorContext}${stateSummary}
