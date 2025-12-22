@@ -26,6 +26,8 @@ import {
   recordAgentExecution,
   recordToolCall,
 } from './monitoring';
+import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
+import { LLMFactory } from './llm-factory';
 
 // Import tool execute functions
 import { executeRouteCalculatorTool } from '@/lib/tools/route-calculator';
@@ -244,8 +246,16 @@ export async function supervisorAgentNode(
   // If we have more than 20 messages and still no progress, force finalize
   if (messageCount > 20) {
     console.log("⚠️ [SUPERVISOR] Loop detected (20+ messages) - forcing finalize");
+    // Generate context even for forced finalize
+    const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+    const userQuery = userMessage 
+      ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+      : 'Plan bunker route';
+    const intent = analyzeQueryIntent(userQuery);
+    const agentContext = generateAgentContext(intent, state);
     return {
       next_agent: "finalize",
+      agent_context: agentContext,
       messages: [],
     };
   }
@@ -264,8 +274,11 @@ export async function supervisorAgentNode(
     
     if (needsWeather && !needsBunker) {
       console.log("⚠️ [SUPERVISOR] Early detection: Weather stuck (10+ messages, no weather data) - finalizing");
+      const intent = analyzeQueryIntent(query);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
+        agent_context: agentContext,
         messages: [],
       };
     }
@@ -277,21 +290,28 @@ export async function supervisorAgentNode(
     ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
     : state.messages[0]?.content?.toString() || 'Plan bunker route';
   
-  const userQueryLower = userQuery.toLowerCase();
+  // NEW: Analyze intent and generate agent context
+  const intent = analyzeQueryIntent(userQuery);
+  const agentContext = generateAgentContext(intent, state);
   
-  // Analyze user intent - what do they actually need?
-  const needsRoute = !state.route_data || !state.vessel_timeline;
+  console.log('🔍 [SUPERVISOR] Intent analysis:', {
+    needs_route: intent.needs_route,
+    needs_weather: intent.needs_weather,
+    needs_bunker: intent.needs_bunker,
+    complexity: intent.complexity,
+  });
   
-  const needsWeather = [
-    'weather', 'forecast', 'consumption', 'conditions', 'wind', 'wave', 
-    'storm', 'gale', 'seas', 'swell', 'meteorological', 'climate'
-  ].some(keyword => userQueryLower.includes(keyword));
+  console.log('📋 [SUPERVISOR] Agent context:', {
+    route_agent: agentContext.route_agent,
+    weather_agent: agentContext.weather_agent,
+    bunker_agent: agentContext.bunker_agent,
+    finalize: agentContext.finalize,
+  });
   
-  const needsBunker = [
-    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
-    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
-    'best option', 'recommendation', 'compare', 'savings'
-  ].some(keyword => userQueryLower.includes(keyword));
+  // Use intent for routing decisions
+  const needsRoute = intent.needs_route && (!state.route_data || !state.vessel_timeline);
+  const needsWeather = intent.needs_weather;
+  const needsBunker = intent.needs_bunker;
 
   // NEW LOGIC: Check if weather agent is stuck
   // Better detection: If route is complete, weather is needed, but weather data doesn't exist
@@ -329,22 +349,31 @@ export async function supervisorAgentNode(
     if (needsWeather && !needsBunker) {
       // User only asked for weather, not bunker - finalize with what we have
       console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - finalizing with route data only`);
+      const intent = analyzeQueryIntent(userQuery);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
+        agent_context: agentContext,
         messages: [],
       };
     } else if (needsBunker) {
       // User asked for bunker too - skip weather and go to bunker
       console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - skipping to bunker`);
+      const intent = analyzeQueryIntent(userQuery);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "bunker_agent",
+        agent_context: agentContext,
         messages: [],
       };
     } else {
       // Neither weather nor bunker needed - shouldn't happen, but finalize
       console.log("⚠️ [SUPERVISOR] Weather agent stuck but not needed - finalizing");
+      const intent = analyzeQueryIntent(userQuery);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
+        agent_context: agentContext,
         messages: [],
       };
     }
@@ -355,14 +384,28 @@ export async function supervisorAgentNode(
     // Weather agent has partial data, continue to next step if needed
     if (needsBunker && !state.bunker_analysis) {
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
+      const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+      const userQuery = userMessage 
+        ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+        : 'Plan bunker route';
+      const intent = analyzeQueryIntent(userQuery);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "bunker_agent",
+        agent_context: agentContext,
         messages: [],
       };
     } else {
       console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
+      const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+      const userQuery = userMessage 
+        ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+        : 'Plan bunker route';
+      const intent = analyzeQueryIntent(userQuery);
+      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
+        agent_context: agentContext,
         messages: [],
       };
     }
@@ -382,6 +425,7 @@ export async function supervisorAgentNode(
     console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent');
     return {
       next_agent: "route_agent",
+      agent_context: agentContext,
       messages: [],
     };
   }
@@ -398,6 +442,7 @@ export async function supervisorAgentNode(
       console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent');
       return {
         next_agent: "weather_agent",
+        agent_context: agentContext,
         messages: [],
       };
     }
@@ -409,6 +454,7 @@ export async function supervisorAgentNode(
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, no bunker needed → finalize');
         return {
           next_agent: "finalize",
+          agent_context: agentContext,
           messages: [],
         };
       }
@@ -419,6 +465,7 @@ export async function supervisorAgentNode(
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
         return {
           next_agent: "weather_agent",
+          agent_context: agentContext,
           messages: [],
         };
       }
@@ -428,6 +475,7 @@ export async function supervisorAgentNode(
         console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent');
         return {
           next_agent: "bunker_agent",
+          agent_context: agentContext,
           messages: [],
         };
       }
@@ -444,6 +492,7 @@ export async function supervisorAgentNode(
         console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent');
         return {
           next_agent: "bunker_agent",
+          agent_context: agentContext,
           messages: [],
         };
       }
@@ -460,6 +509,7 @@ export async function supervisorAgentNode(
       console.log('🎯 [SUPERVISOR] Decision: All requested work complete → finalize');
       return {
         next_agent: "finalize",
+        agent_context: agentContext,
         messages: [],
       };
     }
@@ -469,6 +519,7 @@ export async function supervisorAgentNode(
     console.log('🎯 [SUPERVISOR] Decision: Route complete, finalizing with available data');
     return {
       next_agent: "finalize",
+      agent_context: agentContext,
       messages: [],
     };
   }
@@ -477,6 +528,7 @@ export async function supervisorAgentNode(
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
   return {
     next_agent: "route_agent",
+    agent_context: agentContext,
     messages: [],
   };
 }
@@ -523,6 +575,12 @@ export async function routeAgentNode(state: MultiAgentState) {
   console.log('🗺️ [ROUTE-AGENT] Node: Starting route calculation...');
   const agentStartTime = Date.now();
 
+  // NEW: Get agent context from supervisor
+  const context = state.agent_context?.route_agent;
+  const needsWeatherTimeline = context?.needs_weather_timeline ?? false;
+  
+  console.log(`📋 [ROUTE-AGENT] Context: needs_weather_timeline=${needsWeatherTimeline}`);
+
   // First, check if we have tool results to extract
   const extractedData = extractRouteDataFromMessages(state.messages);
   const stateUpdates: any = {};
@@ -538,7 +596,8 @@ export async function routeAgentNode(state: MultiAgentState) {
   }
 
   // If we already have the data, just return
-  if (state.route_data && state.vessel_timeline) {
+  // Check based on context - if weather timeline not needed, only check route_data
+  if (state.route_data && (needsWeatherTimeline ? state.vessel_timeline : true)) {
     console.log('✅ [ROUTE-AGENT] Route data already available, skipping');
     return { ...stateUpdates, agent_status: { route_agent: 'success' } };
   }
@@ -587,9 +646,9 @@ export async function routeAgentNode(state: MultiAgentState) {
       
       console.log(`✅ [ROUTE-AGENT] Direct route calculation successful`);
       
-      // Now directly call weather timeline if we have route data
-      if (routeResult.waypoints && routeResult.waypoints.length > 0 && !state.vessel_timeline) {
-        console.log(`🚀 [ROUTE-AGENT] Directly calling calculate_weather_timeline with ${routeResult.waypoints.length} waypoints`);
+      // NEW: Only call weather timeline if needed (based on context)
+      if (needsWeatherTimeline && routeResult.waypoints && routeResult.waypoints.length > 0 && !state.vessel_timeline) {
+        console.log(`🚀 [ROUTE-AGENT] Directly calling calculate_weather_timeline with ${routeResult.waypoints.length} waypoints (needed for weather/bunker analysis)`);
         const timelineResult = await withTimeout(
           executeWeatherTimelineTool({
             waypoints: routeResult.waypoints,
@@ -610,9 +669,11 @@ export async function routeAgentNode(state: MultiAgentState) {
           agent_status: { route_agent: 'success' },
           messages: [new AIMessage('[ROUTE-AGENT] Route and timeline calculated directly')]
         };
+      } else if (!needsWeatherTimeline) {
+        console.log('⏭️ [ROUTE-AGENT] Skipping weather timeline - not needed for route-only query');
       }
       
-      // If we already have vessel timeline, just return route data
+      // Return route data only (weather timeline not needed or already exists)
       return {
         route_data: routeResult,
         agent_status: { route_agent: 'success' },
@@ -624,10 +685,18 @@ export async function routeAgentNode(state: MultiAgentState) {
     }
   }
 
-  // Fallback to LLM approach if we can't extract ports or direct call failed
-  const routeTools = [calculateRouteTool, calculateWeatherTimelineTool];
-  const llmWithTools = baseLLM.bindTools(routeTools);
+  // NEW: Use tiered LLM (Gemini Flash for simple tool calling)
+  const routeAgentLLM = LLMFactory.getLLMForAgent('route_agent', state.agent_context || undefined);
+  
+  // NEW: Only include weather timeline tool if needed
+  const routeTools: any[] = [calculateRouteTool];
+  if (needsWeatherTimeline) {
+    routeTools.push(calculateWeatherTimelineTool);
+  }
+  
+  const llmWithTools = (routeAgentLLM as any).bindTools(routeTools);
 
+  // NEW: Update system prompt based on context
   const systemPrompt = `You are the Route Planning Agent. Your ONLY job is to call tools to calculate routes.
 
 CRITICAL: You MUST call the calculate_route tool immediately. Do NOT respond with text - ONLY call tools.
@@ -649,6 +718,7 @@ STEP 1: Call calculate_route with:
   "vessel_speed_knots": 14
 }
 
+${needsWeatherTimeline ? `
 STEP 2: After getting route result, call calculate_weather_timeline with:
 {
   "waypoints": [use waypoints from calculate_route result],
@@ -656,6 +726,9 @@ STEP 2: After getting route result, call calculate_weather_timeline with:
   "departure_datetime": "${departureDate}",
   "sampling_interval_hours": 12
 }
+` : `
+NOTE: You only need to calculate the route. Weather timeline is not needed for this query.
+`}
 
 You MUST call these tools. Do not explain - just call the tools.`;
 
@@ -687,7 +760,7 @@ You MUST call these tools. Do not explain - just call the tools.`;
       ...filteredMessages,
     ];
 
-    const response = await withTimeout(
+    const response: any = await withTimeout(
       llmWithTools.invoke(messages),
       TIMEOUTS.AGENT,
       'Route agent timed out'
@@ -908,33 +981,29 @@ export async function weatherAgentNode(
     };
   }
   
-  // Determine if bunker planning is needed (check user query)
-  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQuery = userMessage 
-    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-    : '';
-  const userQueryLower = userQuery.toLowerCase();
-  const needsBunker = [
-    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
-    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
-    'best option', 'recommendation', 'compare', 'savings'
-  ].some(keyword => userQueryLower.includes(keyword));
+  // NEW: Get agent context from supervisor
+  const context = state.agent_context?.weather_agent;
+  const needsConsumption = context?.needs_consumption ?? false;
+  const needsPortWeather = context?.needs_port_weather ?? false;
   
-  // Use imported tools from tools.ts
-  // For simple route weather queries, only fetch_marine_weather is needed
-  // For bunker planning queries, we also need calculate_weather_consumption
+  console.log(`📋 [WEATHER-AGENT] Context: needs_consumption=${needsConsumption}, needs_port_weather=${needsPortWeather}`);
+  
+  // NEW: Use tiered LLM (Gemini Flash for simple tool calling)
+  const weatherAgentLLM = LLMFactory.getLLMForAgent('weather_agent', state.agent_context || undefined);
+  
+  // Build tools based on context (from supervisor, not query analysis)
   const weatherTools = [
     fetchMarineWeatherTool,
-    // Only include consumption tool if bunker planning is needed
-    ...(needsBunker ? [calculateWeatherConsumptionTool] : []),
-    // Only include port weather check if bunker ports are available
-    ...(state.bunker_ports && state.bunker_ports.length > 0 ? [checkPortWeatherTool] : []),
+    // Only include consumption tool if context says it's needed
+    ...(needsConsumption ? [calculateWeatherConsumptionTool] : []),
+    // Only include port weather check if context says it's needed and ports exist
+    ...(needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? [checkPortWeatherTool] : []),
   ];
   
   console.log(`🔧 [WEATHER-AGENT] Tool selection: ${weatherTools.length} tools`);
   console.log(`🔧 [WEATHER-AGENT] - fetch_marine_weather: included`);
-  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsBunker ? 'included (bunker needed)' : 'excluded (route weather only)'}`);
-  console.log(`🔧 [WEATHER-AGENT] - check_bunker_port_weather: ${state.bunker_ports && state.bunker_ports.length > 0 ? 'included' : 'excluded'}`);
+  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsConsumption ? 'included (from context)' : 'excluded (not needed)'}`);
+  console.log(`🔧 [WEATHER-AGENT] - check_bunker_port_weather: ${needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? 'included' : 'excluded'}`);
   
   // Check what data is available
   console.log("🔧 [WEATHER-AGENT] Tools available:", weatherTools.map(t => t.name));
@@ -956,12 +1025,12 @@ export async function weatherAgentNode(
   
   // If we already have weather forecast, check if we need to calculate consumption
   if (state.weather_forecast && !state.weather_consumption) {
-    // Only calculate consumption if bunker planning is needed
-    if (needsBunker) {
-      console.log("✅ [WEATHER-AGENT] Weather forecast exists, need to calculate consumption for bunker planning");
+    // Only calculate consumption if context says it's needed
+    if (needsConsumption) {
+      console.log("✅ [WEATHER-AGENT] Weather forecast exists, need to calculate consumption (from context)");
       // Continue to LLM call to calculate consumption
     } else {
-      console.log("✅ [WEATHER-AGENT] Weather forecast exists, consumption not needed (route weather only) - done");
+      console.log("✅ [WEATHER-AGENT] Weather forecast exists, consumption not needed (from context) - done");
       return {
         agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
       };
@@ -1007,7 +1076,7 @@ export async function weatherAgentNode(
     }
   }
   
-  const llmWithTools = baseLLM.bindTools(weatherTools);
+  const llmWithTools = (weatherAgentLLM as any).bindTools(weatherTools);
   
   // MUCH MORE DIRECTIVE SYSTEM PROMPT - Be extremely explicit
   // Show first 2 positions as example format only
@@ -1036,8 +1105,8 @@ The vessel_timeline data will be provided in the next message. Use ALL positions
 
 CALL fetch_marine_weather NOW. NO TEXT.`;
 
-  // Only mention consumption if bunker planning is needed
-  if (needsBunker && weatherTools.includes(calculateWeatherConsumptionTool)) {
+  // Only mention consumption if context says it's needed
+  if (needsConsumption && weatherTools.includes(calculateWeatherConsumptionTool)) {
     systemPrompt += `
 
 AFTER getting weather data, you may also call calculate_weather_consumption tool.`;
@@ -1058,6 +1127,11 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     // This gives the LLM a clean context without confusing route agent responses
     const userMessage = trimmedMessages[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
     
+    // Get user query for message
+    const userQueryForMessage = userMessage instanceof HumanMessage 
+      ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+      : 'Get weather for route';
+    
     // Don't include full vessel timeline in message - it's too large and causes timeouts
     // Only include a small sample (3 positions) to show the format
     const sampleForMessage = state.vessel_timeline.slice(0, 3).map((pos: any) => ({
@@ -1075,7 +1149,7 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     // Minimal message context: system prompt + user query + vessel timeline sample
     const messages = [
       new SystemMessage(systemPrompt),
-      userMessage instanceof HumanMessage ? userMessage : new HumanMessage(userQuery || 'Get weather for route'),
+      userMessage instanceof HumanMessage ? userMessage : new HumanMessage(userQueryForMessage),
       vesselTimelineMessage,
     ];
   
@@ -1086,7 +1160,7 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     console.log(`📝 [WEATHER-AGENT] Message types: ${messages.map(m => m.constructor.name).join(' -> ')}`);
     
     // Use longer timeout for weather agent since it processes many positions
-    const response = await withTimeout(
+    const response: any = await withTimeout(
       llmWithTools.invoke(messages),
       TIMEOUTS.WEATHER_AGENT || TIMEOUTS.AGENT * 2, // 90 seconds for weather agent
       'Weather agent timed out'
@@ -1117,7 +1191,7 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     }
     
     return {
-      messages: [response],
+      messages: [response as any],
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1251,8 +1325,10 @@ export async function bunkerAgentNode(state: MultiAgentState) {
     };
   }
 
-  const bunkerTools = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool];
-  const llmWithTools = baseLLM.bindTools(bunkerTools);
+  // NEW: Use tiered LLM (GPT-4o-mini for complex tool calling)
+  const bunkerAgentLLM = LLMFactory.getLLMForAgent('bunker_agent', state.agent_context || undefined);
+  const bunkerTools: any[] = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool];
+  const llmWithTools = (bunkerAgentLLM as any).bindTools(bunkerTools);
 
   const systemPrompt = `You are the Bunker Agent. Your role is to:
 1. Find bunker ports along the route using route waypoints
@@ -1301,7 +1377,7 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       ...filteredMessages,
     ];
 
-    const response = await withTimeout(
+    const response: any = await withTimeout(
       llmWithTools.invoke(messages),
       TIMEOUTS.AGENT,
       'Bunker agent timed out'
@@ -1380,6 +1456,15 @@ export async function finalizeNode(state: MultiAgentState) {
   ].some(keyword => userQueryLower.includes(keyword));
 
   console.log(`📝 [FINALIZE] User query analysis: weather=${needsWeather}, bunker=${needsBunker}`);
+
+  // NEW: Get agent context from supervisor
+  const context = state.agent_context?.finalize;
+  const complexity = context?.complexity || 'medium';
+  
+  console.log(`📋 [FINALIZE] Context: complexity=${complexity}, needs_weather_analysis=${context?.needs_weather_analysis}, needs_bunker_analysis=${context?.needs_bunker_analysis}`);
+
+  // NEW: Use tiered LLM (Haiku 4.5 for synthesis)
+  const finalizeLLM = LLMFactory.getLLMForAgent('finalize', state.agent_context || undefined);
 
   // Check for errors and build context
   const agentErrors = state.agent_errors || {};
@@ -1548,7 +1633,7 @@ Provide a clear summary of the route information.`;
     ];
 
     const response = await withTimeout(
-      baseLLM.invoke(messages),
+      finalizeLLM.invoke(messages),
       TIMEOUTS.AGENT,
       'Finalize node timed out'
     );

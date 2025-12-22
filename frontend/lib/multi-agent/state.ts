@@ -15,6 +15,39 @@ import type { Coordinates, Port, FuelType } from '@/lib/types';
 // ============================================================================
 
 /**
+ * Agent context passed from supervisor to agents
+ * Contains intent-based instructions for each agent
+ */
+export interface AgentContext {
+  route_agent: {
+    /** Whether weather timeline is needed (for weather/bunker queries) */
+    needs_weather_timeline: boolean;
+    /** Whether port information is needed (for bunker queries) */
+    needs_port_info?: boolean;
+  };
+  weather_agent: {
+    /** Whether weather consumption calculation is needed (for bunker planning) */
+    needs_consumption: boolean;
+    /** Whether port weather check is needed (if bunker ports exist) */
+    needs_port_weather: boolean;
+  };
+  bunker_agent: {
+    /** Whether weather consumption is needed for accurate bunker analysis */
+    needs_weather_consumption: boolean;
+    /** Whether port weather check is needed */
+    needs_port_weather: boolean;
+  };
+  finalize: {
+    /** Query complexity level */
+    complexity: 'low' | 'medium' | 'high';
+    /** Whether weather analysis is needed in final response */
+    needs_weather_analysis: boolean;
+    /** Whether bunker analysis is needed in final response */
+    needs_bunker_analysis: boolean;
+  };
+}
+
+/**
  * Route data from route calculation
  */
 export interface RouteData {
@@ -251,6 +284,22 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       return result;
     },
     default: () => '',
+  }),
+
+  /**
+   * Agent context with intent-based instructions
+   * Set by supervisor, read by agents to determine tool usage
+   */
+  agent_context: Annotation<AgentContext | null>({
+    reducer: (x, y) => {
+      // New value overwrites old if provided
+      const result = y !== null && y !== undefined ? y : x;
+      if (result) {
+        console.log('🔄 Agent context reducer: updating context');
+      }
+      return result;
+    },
+    default: () => null,
   }),
 
   // ========================================================================
