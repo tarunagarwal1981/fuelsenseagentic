@@ -1253,6 +1253,26 @@ export async function weatherAgentNode(
   console.log("\n🌊 [WEATHER-AGENT] Node: Starting weather analysis...");
   const agentStartTime = Date.now();
   
+  // Count previous attempts
+  const weatherMessages = state.messages.filter(m => 
+    m.additional_kwargs?.agent_name === 'weather_agent' ||
+    (typeof m.content === 'string' && m.content.includes('[WEATHER-AGENT]'))
+  ).length;
+
+  console.log(`🔢 [WEATHER-AGENT] This is attempt #${weatherMessages + 1}`);
+
+  // If 3+ attempts with no progress, bail out
+  if (weatherMessages >= 3 && !state.weather_forecast) {
+    console.log("⚠️ [WEATHER-AGENT] 3+ attempts with no progress - returning to supervisor");
+    return {
+      weather_agent_partial: true,
+      messages: [new AIMessage({
+        content: "[WEATHER-AGENT] Unable to fetch weather data - continuing without weather",
+        additional_kwargs: { agent_name: 'weather_agent' }
+      })],
+    };
+  }
+  
   // NEW: Early validation - if we already calculated consumption, return success
   if (state.weather_forecast && state.weather_consumption) {
     console.log('✅ [WEATHER-AGENT] Weather consumption already calculated - skipping');
@@ -1490,19 +1510,35 @@ export async function weatherAgentNode(
   
   // Build system prompt - be extremely explicit and directive
   // Use the same variables declared earlier for tool selection
-  let systemPrompt = `You are the Weather Analysis Agent. 
+  const systemPrompt = `You are the Weather Intelligence Agent for maritime bunker planning.
 
-CRITICAL RULES:
-1. vessel_timeline data with ${state.vessel_timeline.length} positions IS PROVIDED in the messages
-2. DO NOT ask for vessel_timeline - it is already provided
-3. You MUST call the appropriate tool immediately
-4. DO NOT respond with text - ONLY call tools
-5. Use the vessel_timeline data exactly as provided
+CRITICAL: You MUST call tools - do not respond with text only.
 
-${needsForecast ? `Your task: Call fetch_marine_weather with the provided vessel_timeline data.` : ''}
-${needsConsumptionCalc ? `Your task: Call calculate_weather_consumption with the provided vessel_timeline data.` : ''}
+Current State Analysis:
+${state.vessel_timeline 
+  ? `✅ Vessel timeline: ${state.vessel_timeline.length} positions available` 
+  : `❌ No vessel timeline - cannot proceed`}
+${state.weather_forecast 
+  ? `✅ Weather forecast: Already fetched` 
+  : `❌ Weather forecast: NOT FETCHED`}
+${state.weather_consumption 
+  ? `✅ Weather consumption: Already calculated` 
+  : `❌ Weather consumption: NOT CALCULATED`}
 
-CALL THE TOOL NOW. NO TEXT RESPONSES.`;
+MANDATORY ACTION SEQUENCE:
+
+STEP 1: If vessel_timeline exists AND weather_forecast is null:
+→ IMMEDIATELY call fetch_marine_weather tool
+→ Input format: { "positions": [array of vessel_timeline positions] }
+
+STEP 2: If weather_forecast exists AND weather_consumption is null:
+→ IMMEDIATELY call calculate_weather_consumption tool
+→ Input: weather_forecast data + base_consumption_mt (750)
+
+STEP 3: If both weather_forecast AND weather_consumption exist:
+→ Your work is COMPLETE - return to supervisor
+
+DO NOT respond with explanatory text. CALL THE REQUIRED TOOL IMMEDIATELY.`;
 
   try {
     // Build messages with system prompt and trimmed conversation history

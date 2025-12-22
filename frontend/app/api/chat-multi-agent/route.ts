@@ -209,7 +209,7 @@ export async function POST(req: Request) {
             },
             {
               streamMode: 'values',
-              recursionLimit: 50, // Increased to handle complex queries, but should be prevented by logic fixes
+              recursionLimit: 30, // Prevents infinite loops in graph execution
             }
           );
 
