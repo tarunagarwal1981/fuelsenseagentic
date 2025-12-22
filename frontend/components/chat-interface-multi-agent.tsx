@@ -400,9 +400,11 @@ export function ChatInterfaceMultiAgent() {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-6xl mx-auto p-4 overflow-hidden">
-      {/* Header */}
-      <div className="mb-4 flex-shrink-0">
+    <div className="flex flex-row h-full max-w-7xl mx-auto p-4 overflow-hidden gap-4">
+      {/* Main Content Area */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        {/* Header */}
+        <div className="mb-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <Ship className="h-8 w-8 text-blue-600" />
@@ -476,48 +478,6 @@ export function ChatInterfaceMultiAgent() {
                   {getAgentLabel(currentAgent)}
                 </Badge>
               )}
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Performance Metrics */}
-      {performanceMetrics && (
-        <Card className="mb-4 p-3 bg-gray-50">
-          <div className="flex items-center gap-2 mb-2">
-            <Clock className="h-4 w-4 text-gray-600" />
-            <span className="font-semibold text-sm">Performance Metrics</span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <div>
-              <p className="text-muted-foreground text-xs">Total Time</p>
-              <p className="font-semibold">
-                {performanceMetrics.totalExecutionTime}ms
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Tool Calls</p>
-              <p className="font-semibold">
-                {performanceMetrics.totalToolCalls}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Agents Used</p>
-              <p className="font-semibold">
-                {performanceMetrics.agentsCalled.length}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Avg per Agent</p>
-              <p className="font-semibold">
-                {performanceMetrics.agentsCalled.length > 0
-                  ? Math.round(
-                      performanceMetrics.totalExecutionTime /
-                        performanceMetrics.agentsCalled.length
-                    )
-                  : 0}
-                ms
-              </p>
             </div>
           </div>
         </Card>
@@ -843,6 +803,68 @@ export function ChatInterfaceMultiAgent() {
           </div>
         </form>
       </Card>
+      </div>
+
+      {/* Right Side Pane - Performance Metrics */}
+      {performanceMetrics && (
+        <div className="w-64 flex-shrink-0 overflow-y-auto">
+          <Card className="p-4 bg-gray-50 sticky top-0">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="h-4 w-4 text-gray-600" />
+              <span className="font-semibold text-sm">Performance Metrics</span>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Total Time</p>
+                <p className="font-semibold text-lg">
+                  {performanceMetrics.totalExecutionTime}ms
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Tool Calls</p>
+                <p className="font-semibold text-lg">
+                  {performanceMetrics.totalToolCalls}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Agents Used</p>
+                <p className="font-semibold text-lg">
+                  {performanceMetrics.agentsCalled.length}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs mb-1">Avg per Agent</p>
+                <p className="font-semibold text-lg">
+                  {performanceMetrics.agentsCalled.length > 0
+                    ? Math.round(
+                        performanceMetrics.totalExecutionTime /
+                          performanceMetrics.agentsCalled.length
+                      )
+                    : 0}
+                  ms
+                </p>
+              </div>
+              {performanceMetrics.agentsCalled.length > 0 && Object.keys(performanceMetrics.agentTimes || {}).length > 0 && (
+                <div className="pt-2 border-t">
+                  <p className="text-muted-foreground text-xs mb-2">Agent Times</p>
+                  <div className="space-y-1">
+                    {performanceMetrics.agentsCalled.map((agent) => (
+                      <div key={agent} className="flex justify-between text-xs">
+                        <span className="text-muted-foreground capitalize">
+                          {agent.replace('_', ' ')}
+                        </span>
+                        <span className="font-medium">
+                          {performanceMetrics.agentTimes[agent] || 0}ms
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
