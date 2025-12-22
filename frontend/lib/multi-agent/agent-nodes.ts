@@ -421,7 +421,17 @@ export async function supervisorAgentNode(
   // DETERMINISTIC DECISION LOGIC - Based on actual needs, not fixed sequence
   
   // 1. If route is needed and not available, get route first
+  // BUT: Check if route_agent has already failed - if so, finalize with error instead of retrying
   if (needsRoute && (!state.route_data || !state.vessel_timeline)) {
+    // Check if route_agent has already failed - if so, finalize with error instead of retrying
+    if (state.agent_status?.route_agent === 'failed') {
+      console.log('⚠️ [SUPERVISOR] Route needed but route_agent has failed - finalizing with error');
+      return {
+        next_agent: "finalize",
+        agent_context: agentContext,
+        messages: [],
+      };
+    }
     console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent');
     return {
       next_agent: "route_agent",
@@ -524,7 +534,15 @@ export async function supervisorAgentNode(
     };
   }
   
-  // 4. Ultimate fallback: Get route
+  // 4. Ultimate fallback: Get route (but check if route_agent has failed)
+  if (state.agent_status?.route_agent === 'failed') {
+    console.log('⚠️ [SUPERVISOR] Fallback: Route agent has failed - finalizing with error');
+    return {
+      next_agent: "finalize",
+      agent_context: agentContext,
+      messages: [],
+    };
+  }
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
   return {
     next_agent: "route_agent",
@@ -680,8 +698,35 @@ export async function routeAgentNode(state: MultiAgentState) {
         messages: [new AIMessage('[ROUTE-AGENT] Route calculated directly')]
       };
     } catch (error: any) {
-      console.error(`❌ [ROUTE-AGENT] Direct tool call failed: ${error.message}`);
-      // Fall through to LLM approach
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+      
+      console.error(`❌ [ROUTE-AGENT] Direct tool call failed: ${errorMessage}`);
+      
+      // If timeout, mark as failed immediately to prevent retry loops
+      if (isTimeout) {
+        const agentDuration = Date.now() - agentStartTime;
+        recordAgentTime('route_agent', agentDuration);
+        recordAgentExecution('route_agent', agentDuration, false);
+        
+        console.error(`❌ [ROUTE-AGENT] Route calculation timed out - marking as failed to prevent retry loop`);
+        return {
+          ...stateUpdates,
+          agent_status: { route_agent: 'failed' },
+          agent_errors: {
+            route_agent: {
+              error: 'Route calculation timed out after 20 seconds. The maritime route API is experiencing delays.',
+              timestamp: Date.now(),
+            },
+          },
+          messages: [
+            new AIMessage('[ROUTE-AGENT] Route calculation timed out. Cannot proceed without route data.')
+          ],
+        };
+      }
+      
+      // For non-timeout errors, fall through to LLM approach as fallback
+      console.log('⚠️ [ROUTE-AGENT] Non-timeout error, falling back to LLM approach');
     }
   }
 
