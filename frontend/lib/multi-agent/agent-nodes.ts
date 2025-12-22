@@ -1253,6 +1253,31 @@ export async function weatherAgentNode(
   console.log("\n🌊 [WEATHER-AGENT] Node: Starting weather analysis...");
   const agentStartTime = Date.now();
   
+  // NEW: Early validation - if we already calculated consumption, return success
+  if (state.weather_forecast && state.weather_consumption) {
+    console.log('✅ [WEATHER-AGENT] Weather consumption already calculated - skipping');
+    return {
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
+    };
+  }
+  
+  // NEW: Validate vessel_timeline exists and has data
+  if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
+    console.error('❌ [WEATHER-AGENT] No vessel_timeline in state - cannot proceed');
+    return {
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
+      agent_errors: {
+        ...(state.agent_errors || {}),
+        weather_agent: {
+          error: 'No vessel_timeline available in state',
+          timestamp: Date.now(),
+        },
+      },
+    };
+  }
+  
+  console.log(`✅ [WEATHER-AGENT] vessel_timeline validated: ${state.vessel_timeline.length} positions`);
+  
   // FIRST: Check if we have tool results to extract (like route agent does)
   console.log(`🔍 [WEATHER-AGENT] Checking for tool results in ${state.messages.length} messages`);
   const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
@@ -1342,18 +1367,23 @@ export async function weatherAgentNode(
   // NEW: Use tiered LLM (Gemini Flash for simple tool calling)
   const weatherAgentLLM = LLMFactory.getLLMForAgent('weather_agent', state.agent_context || undefined);
   
-  // Build tools based on context (from supervisor, not query analysis)
+  // Build tools based on context AND state - only include tools that are actually needed
+  // If weather_forecast exists, don't include fetch_marine_weather
+  const needsForecast = !state.weather_forecast;
+  const needsConsumptionCalc = state.weather_forecast && needsConsumption && !state.weather_consumption;
+  
   const weatherTools = [
-    fetchMarineWeatherTool,
-    // Only include consumption tool if context says it's needed
-    ...(needsConsumption ? [calculateWeatherConsumptionTool] : []),
+    // Only include fetch_marine_weather if forecast doesn't exist
+    ...(needsForecast ? [fetchMarineWeatherTool] : []),
+    // Only include consumption tool if context says it's needed AND forecast exists
+    ...(needsConsumptionCalc ? [calculateWeatherConsumptionTool] : []),
     // Only include port weather check if context says it's needed and ports exist
     ...(needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? [checkPortWeatherTool] : []),
   ];
   
   console.log(`🔧 [WEATHER-AGENT] Tool selection: ${weatherTools.length} tools`);
-  console.log(`🔧 [WEATHER-AGENT] - fetch_marine_weather: included`);
-  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsConsumption ? 'included (from context)' : 'excluded (not needed)'}`);
+  console.log(`🔧 [WEATHER-AGENT] - fetch_marine_weather: ${needsForecast ? 'included (forecast needed)' : 'excluded (forecast exists)'}`);
+  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsConsumptionCalc ? 'included (consumption needed)' : 'excluded (not needed or already done)'}`);
   console.log(`🔧 [WEATHER-AGENT] - check_bunker_port_weather: ${needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? 'included' : 'excluded'}`);
   
   // Check what data is available
@@ -1459,30 +1489,20 @@ export async function weatherAgentNode(
   }));
   
   // Build system prompt - be extremely explicit and directive
-  let systemPrompt = `You are the Weather Analysis Agent. Your ONLY job is to call the fetch_marine_weather tool.
+  // Use the same variables declared earlier for tool selection
+  let systemPrompt = `You are the Weather Analysis Agent. 
 
-CRITICAL: You MUST call fetch_marine_weather tool. Do NOT write text. Do NOT explain. ONLY call the tool.
+CRITICAL RULES:
+1. vessel_timeline data with ${state.vessel_timeline.length} positions IS PROVIDED in the messages
+2. DO NOT ask for vessel_timeline - it is already provided
+3. You MUST call the appropriate tool immediately
+4. DO NOT respond with text - ONLY call tools
+5. Use the vessel_timeline data exactly as provided
 
-You have ${state.vessel_timeline.length} vessel positions available in the vessel_timeline.
+${needsForecast ? `Your task: Call fetch_marine_weather with the provided vessel_timeline data.` : ''}
+${needsConsumptionCalc ? `Your task: Call calculate_weather_consumption with the provided vessel_timeline data.` : ''}
 
-Example format (first 2 positions - use ALL ${state.vessel_timeline.length} positions):
-${JSON.stringify(samplePositions, null, 2)}
-
-Call fetch_marine_weather with this structure:
-{
-  "positions": [array of ${state.vessel_timeline.length} position objects, each with lat, lon, datetime]
-}
-
-The vessel_timeline data will be provided in the next message. Use ALL positions from it.
-
-CALL fetch_marine_weather NOW. NO TEXT.`;
-
-  // Only mention consumption if context says it's needed
-  if (needsConsumption && weatherTools.includes(calculateWeatherConsumptionTool)) {
-    systemPrompt += `
-
-AFTER getting weather data, you may also call calculate_weather_consumption tool.`;
-  }
+CALL THE TOOL NOW. NO TEXT RESPONSES.`;
 
   try {
     // Build messages with system prompt and trimmed conversation history
@@ -1504,25 +1524,34 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
       ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
       : 'Get weather for route';
     
-    // Don't include full vessel timeline in message - it's too large and causes timeouts
-    // Only include a small sample (3 positions) to show the format
-    const sampleForMessage = state.vessel_timeline.slice(0, 3).map((pos: any) => ({
+    // NEW: Explicitly inject vessel_timeline data into agent's context
+    const vesselTimelineForAgent = state.vessel_timeline.map((pos: any) => ({
       lat: pos.lat,
       lon: pos.lon,
       datetime: pos.datetime
     }));
     
-    const vesselTimelineMessage = new HumanMessage(
-      `Vessel timeline data (${state.vessel_timeline.length} total positions). Sample format (first 3):\n` +
-      JSON.stringify(sampleForMessage, null, 2) +
-      `\n\nCall fetch_marine_weather with ALL ${state.vessel_timeline.length} positions. The full data is in vessel_timeline state.`
+    // Use the same variables declared earlier for tool selection
+    // Create explicit state context message
+    const stateContextMessage = new HumanMessage(
+      `CRITICAL STATE DATA - vessel_timeline is available:
+      
+Total positions: ${state.vessel_timeline.length}
+
+Full vessel_timeline array:
+${JSON.stringify(vesselTimelineForAgent, null, 2)}
+
+${needsForecast ? 'You MUST use this data to call fetch_marine_weather tool immediately.' : ''}
+${needsConsumptionCalc ? 'You MUST use this data to call calculate_weather_consumption tool immediately.' : ''}
+DO NOT ask for this data - it is provided above.
+Call the tool now with the vessel_timeline data provided above.`
     );
     
-    // Minimal message context: system prompt + user query + vessel timeline sample
+    // Minimal message context: system prompt + user query + explicit state injection
     const messages = [
       new SystemMessage(systemPrompt),
       userMessage instanceof HumanMessage ? userMessage : new HumanMessage(userQueryForMessage),
-      vesselTimelineMessage,
+      stateContextMessage, // NEW: Explicit state injection
     ];
   
     console.log("🔧 [WEATHER-AGENT] Available tools before invoke:", 
@@ -1552,33 +1581,25 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     });
     
     // If still no tool calls after directive prompt, something is wrong
-    // Mark as failed if we've already tried once
+    // Fail immediately if no tool calls - don't retry with text responses
     if (!response.tool_calls || response.tool_calls.length === 0) {
       console.log("⚠️ [WEATHER-AGENT] No tool calls in response!");
       
-      // If this is the second+ attempt, mark as failed
-      if (failedWeatherAttempts >= 1) {
-        console.log("⚠️ [WEATHER-AGENT] LLM failed to call tools after previous attempt - marking as failed");
+      // Fail immediately if no tool calls - don't retry with text responses
+      if (failedWeatherAttempts >= 0) {
+        console.log("⚠️ [WEATHER-AGENT] LLM failed to call tools - marking as failed immediately");
         return {
           agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
           agent_errors: {
             ...(state.agent_errors || {}),
             weather_agent: {
-              error: 'LLM failed to call weather tools after multiple attempts. This may indicate an LLM configuration issue.',
+              error: 'LLM failed to call weather tools. This may indicate an LLM configuration issue.',
               timestamp: Date.now(),
             },
           },
-          messages: [new AIMessage("[WEATHER-AGENT] No tools called after multiple attempts - returning to supervisor")],
+          messages: [new AIMessage("[WEATHER-AGENT] No tools called - returning to supervisor")],
         };
       }
-      
-      // First attempt - return message and let supervisor retry once
-      return {
-        weather_forecast: null,
-        weather_consumption: null,
-        port_weather_status: null,
-        messages: [new AIMessage("[WEATHER-AGENT] No tools called - returning to supervisor")],
-      };
     }
     
     return {

@@ -73,6 +73,31 @@ function supervisorRouter(state: MultiAgentState): string | typeof END {
 }
 
 /**
+ * Circuit breaker: Check if weather agent has been called repeatedly without progress
+ */
+function shouldEscapeToSupervisor(state: MultiAgentState): boolean {
+  const recentMessages = state.messages.slice(-10);
+  const weatherAgentMessages = recentMessages.filter(msg => {
+    if (msg instanceof AIMessage) {
+      const content = msg.content?.toString() || '';
+      return content.includes('[WEATHER-AGENT]') || 
+             (msg.tool_calls && msg.tool_calls.some((tc: any) => 
+               tc.name === 'fetch_marine_weather' || 
+               tc.name === 'calculate_weather_consumption'));
+    }
+    return false;
+  });
+  
+  // If weather agent has been called 3+ times recently without progress, escape
+  if (weatherAgentMessages.length >= 3) {
+    console.log('⚠️ [ROUTER] Weather agent called 3+ times without progress - escaping to supervisor');
+    return true;
+  }
+  
+  return false;
+}
+
+/**
  * Agent Tool Router
  * 
  * Routes agent to tools if tool calls are present, otherwise back to supervisor.
@@ -84,6 +109,11 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   console.log(
     `🔀 [AGENT-TOOL-ROUTER] Decision point - Messages: ${messages.length}, Last message type: ${lastMessage.constructor.name}`
   );
+
+  // NEW: Add escape hatch for repeated agent calls
+  if (shouldEscapeToSupervisor(state)) {
+    return 'supervisor';
+  }
 
   // Safety check: prevent infinite loops
   // Lower threshold to catch loops earlier (50 instead of 100)
