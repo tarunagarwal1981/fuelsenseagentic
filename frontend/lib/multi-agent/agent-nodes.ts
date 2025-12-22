@@ -1141,6 +1141,76 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
 }
 
 /**
+ * Extract bunker data from tool results
+ */
+function extractBunkerDataFromMessages(messages: any[]): { 
+  bunker_ports?: any; 
+  port_prices?: any; 
+  bunker_analysis?: any 
+} {
+  const result: any = {};
+  
+  // Find all ToolMessages related to bunker tools
+  const bunkerToolNames = ['find_bunker_ports', 'get_fuel_prices', 'analyze_bunker_options'];
+  
+  console.log(`🔍 [BUNKER-AGENT] Extracting bunker data from ${messages.length} messages`);
+  
+  // Search backwards through messages to find most recent tool results
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    
+    if (msg instanceof ToolMessage) {
+      try {
+        const toolName = msg.name;
+        if (!toolName || !bunkerToolNames.includes(toolName)) {
+          continue;
+        }
+        
+        // Parse tool result (may be JSON string or object)
+        let toolResult: any;
+        try {
+          const content = typeof msg.content === 'string' ? msg.content : String(msg.content);
+          toolResult = JSON.parse(content);
+        } catch {
+          // If not JSON, use as-is
+          toolResult = msg.content;
+        }
+        
+        console.log(`🔍 [BUNKER-AGENT] Found tool result for ${toolName}`);
+        
+        // Extract find_bunker_ports result
+        if (toolName === 'find_bunker_ports' && toolResult && !result.bunker_ports) {
+          if (toolResult.ports && Array.isArray(toolResult.ports)) {
+            result.bunker_ports = toolResult.ports;
+            console.log(`✅ [BUNKER-AGENT] Extracted bunker_ports: ${toolResult.ports.length} ports`);
+          }
+        }
+        
+        // Extract get_fuel_prices result
+        if (toolName === 'get_fuel_prices' && toolResult && !result.port_prices) {
+          if (toolResult.prices_by_port || (Array.isArray(toolResult) && toolResult.length > 0)) {
+            result.port_prices = toolResult;
+            console.log(`✅ [BUNKER-AGENT] Extracted port_prices`);
+          }
+        }
+        
+        // Extract analyze_bunker_options result
+        if (toolName === 'analyze_bunker_options' && toolResult && !result.bunker_analysis) {
+          if (toolResult.recommendations && Array.isArray(toolResult.recommendations)) {
+            result.bunker_analysis = toolResult;
+            console.log(`✅ [BUNKER-AGENT] Extracted bunker_analysis: ${toolResult.recommendations.length} recommendations`);
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ [BUNKER-AGENT] Error processing ToolMessage at index ${i}: ${e}`);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Bunker Agent Node
  * 
  * Finds best bunker option using port finder, price fetcher, and bunker analyzer tools.
@@ -1148,6 +1218,38 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
 export async function bunkerAgentNode(state: MultiAgentState) {
   console.log('⚓ [BUNKER-AGENT] Node: Starting bunker analysis...');
   const agentStartTime = Date.now();
+
+  // FIRST: Check if we have tool results to extract (like route and weather agents do)
+  console.log(`🔍 [BUNKER-AGENT] Checking for tool results in ${state.messages.length} messages`);
+  const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
+  console.log(`🔍 [BUNKER-AGENT] Found ${toolMessages.length} ToolMessages`);
+  
+  const extractedData = extractBunkerDataFromMessages(state.messages);
+  const stateUpdates: any = {};
+  
+  if (extractedData.bunker_ports && !state.bunker_ports) {
+    stateUpdates.bunker_ports = extractedData.bunker_ports;
+    console.log(`✅ [BUNKER-AGENT] Extracted bunker_ports from tool results (${extractedData.bunker_ports.length} ports)`);
+  }
+  
+  if (extractedData.port_prices && !state.port_prices) {
+    stateUpdates.port_prices = extractedData.port_prices;
+    console.log('✅ [BUNKER-AGENT] Extracted port_prices from tool results');
+  }
+  
+  if (extractedData.bunker_analysis && !state.bunker_analysis) {
+    stateUpdates.bunker_analysis = extractedData.bunker_analysis;
+    console.log(`✅ [BUNKER-AGENT] Extracted bunker_analysis from tool results`);
+  }
+  
+  // If we got all bunker data from tool results, we're done
+  if (extractedData.bunker_ports && extractedData.port_prices && extractedData.bunker_analysis) {
+    console.log('✅ [BUNKER-AGENT] All bunker data extracted, returning state update');
+    return { 
+      ...stateUpdates, 
+      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' } 
+    };
+  }
 
   const bunkerTools = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool];
   const llmWithTools = baseLLM.bindTools(bunkerTools);
@@ -1214,7 +1316,12 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       console.log(`🔧 [BUNKER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
     }
 
-    return { messages: [response], agent_status: { bunker_agent: 'success' } };
+    // Return both the LLM response and any state updates from extracted data
+    return { 
+      ...stateUpdates,
+      messages: [response], 
+      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' } 
+    };
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('bunker_agent', agentDuration);
