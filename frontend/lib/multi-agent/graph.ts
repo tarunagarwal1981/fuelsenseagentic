@@ -86,11 +86,26 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   );
 
   // Safety check: prevent infinite loops
-  if (messages.length > 100) {
+  // Lower threshold to catch loops earlier (50 instead of 100)
+  if (messages.length > 50) {
     console.warn(
       `⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor to prevent infinite loop`
     );
     return 'supervisor';
+  }
+  
+  // Additional check: If last message is an AIMessage without tool calls and we have many messages,
+  // likely stuck in a loop - force supervisor to handle it
+  if (messages.length > 20 && lastMessage instanceof AIMessage && 
+      (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
+    const content = lastMessage.content?.toString() || '';
+    // If it's a weather agent message without tool calls, we're stuck
+    if (content.includes('[WEATHER-AGENT]') || content.includes('No tools called')) {
+      console.warn(
+        `⚠️ [AGENT-TOOL-ROUTER] Detected weather agent loop (${messages.length} messages, no tool calls) - forcing supervisor`
+      );
+      return 'supervisor';
+    }
   }
 
   // Check if LLM called a tool (only AIMessage has tool_calls)

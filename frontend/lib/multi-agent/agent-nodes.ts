@@ -293,20 +293,38 @@ export async function supervisorAgentNode(
   console.log(`   - Port prices: ${state.port_prices ? '✅' : '❌'}`);
   console.log(`   - Bunker analysis: ${state.bunker_analysis ? '✅' : '❌'}`);
 
-  // ADD THIS: Loop detection
+  // Get user query to analyze intent FIRST (before loop detection)
+  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+  const userQuery = userMessage 
+    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+    : state.messages[0]?.content?.toString() || 'Plan bunker route';
+  
+  // NEW: Analyze intent and generate agent context EARLY (needed for loop detection)
+  const intent = analyzeQueryIntent(userQuery);
+  const agentContext = generateAgentContext(intent, state);
+
+  // ADD THIS: Loop detection - more aggressive
   const messageCount = state.messages.length;
   console.log(`📊 [SUPERVISOR] Message count: ${messageCount}`);
   
-  // If we have more than 20 messages and still no progress, force finalize
-  if (messageCount > 20) {
-    console.log("⚠️ [SUPERVISOR] Loop detected (20+ messages) - forcing finalize");
-    // Generate context even for forced finalize
-    const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-    const userQuery = userMessage 
-      ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-      : 'Plan bunker route';
-    const intent = analyzeQueryIntent(userQuery);
-    const agentContext = generateAgentContext(intent, state);
+  // Check for weather agent stuck in loop (many messages, weather agent failed, no weather data)
+  const weatherAgentFailedStatus = state.agent_status?.weather_agent === 'failed';
+  const hasWeatherData = state.weather_forecast || state.weather_consumption;
+  const queryNeedsWeather = intent.needs_weather;
+  
+  // If weather agent failed and we have many messages, force finalize
+  if (messageCount > 15 && weatherAgentFailedStatus && !hasWeatherData && queryNeedsWeather) {
+    console.log("⚠️ [SUPERVISOR] Weather agent failed loop detected (15+ messages, agent failed) - forcing finalize");
+    return {
+      next_agent: "finalize",
+      agent_context: agentContext,
+      messages: [],
+    };
+  }
+  
+  // If we have more than 25 messages and still no progress, force finalize
+  if (messageCount > 25) {
+    console.log("⚠️ [SUPERVISOR] Loop detected (25+ messages) - forcing finalize");
     return {
       next_agent: "finalize",
       agent_context: agentContext,
@@ -317,19 +335,13 @@ export async function supervisorAgentNode(
   // Early detection: If we have 10+ messages and weather is needed but missing, likely stuck
   // (This catches stuck weather agent earlier)
   if (messageCount >= 10 && state.route_data && !state.weather_forecast && !state.weather_consumption) {
-    // Get intent first to decide what to do
-    const userMsg = state.messages.find((msg) => msg instanceof HumanMessage);
-    const query = userMsg 
-      ? (typeof userMsg.content === 'string' ? userMsg.content : String(userMsg.content))
-      : '';
-    const queryLower = query.toLowerCase();
-    const needsWeather = ['weather', 'forecast', 'consumption', 'conditions', 'wind', 'wave'].some(k => queryLower.includes(k));
-    const needsBunker = ['bunker', 'fuel', 'port', 'price', 'cheapest'].some(k => queryLower.includes(k));
+    // Check if query needs weather
+    const queryLower = userQuery.toLowerCase();
+    const queryNeedsWeatherCheck = ['weather', 'forecast', 'consumption', 'conditions', 'wind', 'wave'].some(k => queryLower.includes(k));
+    const queryNeedsBunkerCheck = ['bunker', 'fuel', 'port', 'price', 'cheapest'].some(k => queryLower.includes(k));
     
-    if (needsWeather && !needsBunker) {
+    if (queryNeedsWeatherCheck && !queryNeedsBunkerCheck) {
       console.log("⚠️ [SUPERVISOR] Early detection: Weather stuck (10+ messages, no weather data) - finalizing");
-      const intent = analyzeQueryIntent(query);
-      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
         agent_context: agentContext,
@@ -337,16 +349,6 @@ export async function supervisorAgentNode(
       };
     }
   }
-
-  // Get user query to analyze intent FIRST (before checking stuck agents)
-  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQuery = userMessage 
-    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-    : state.messages[0]?.content?.toString() || 'Plan bunker route';
-  
-  // NEW: Analyze intent and generate agent context
-  const intent = analyzeQueryIntent(userQuery);
-  const agentContext = generateAgentContext(intent, state);
   
   console.log('🔍 [SUPERVISOR] Intent analysis:', {
     needs_route: intent.needs_route,
@@ -399,15 +401,15 @@ export async function supervisorAgentNode(
   }).length;
   
   // Also check agent_status for weather_agent failures
-  const weatherAgentFailed = state.agent_status?.weather_agent === 'failed';
+  const weatherAgentFailedStatus2 = state.agent_status?.weather_agent === 'failed';
   const weatherAgentPartial = state.weather_agent_partial === true;
   
   // If weather is needed but we've tried multiple times with no progress, or agent failed
-  if (routeCompleteForQuery && weatherNeededButMissing && (weatherAgentAttempts >= 3 || weatherAgentFailed)) {
+  if (routeCompleteForQuery && weatherNeededButMissing && (weatherAgentAttempts >= 3 || weatherAgentFailedStatus2)) {
     // If weather was needed but agent is stuck, check if we should skip or finalize
     if (needsWeather && !needsBunker) {
       // User only asked for weather, not bunker - finalize with what we have
-      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - finalizing with route data only`);
+      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailedStatus2 ? ', agent failed' : ''}) - finalizing with route data only`);
       const intent = analyzeQueryIntent(userQuery);
       const agentContext = generateAgentContext(intent, state);
       return {
@@ -417,7 +419,7 @@ export async function supervisorAgentNode(
       };
     } else if (needsBunker) {
       // User asked for bunker too - skip weather and go to bunker
-      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailed ? ', agent failed' : ''}) - skipping to bunker`);
+      console.log(`⚠️ [SUPERVISOR] Weather agent stuck (${weatherAgentAttempts} attempts${weatherAgentFailedStatus2 ? ', agent failed' : ''}) - skipping to bunker`);
       const intent = analyzeQueryIntent(userQuery);
       const agentContext = generateAgentContext(intent, state);
       return {
@@ -1296,18 +1298,37 @@ export async function weatherAgentNode(
     };
   }
   
-  // Count how many times we've been called
-  const weatherAgentMessages = state.messages.filter(m => 
-    m.content?.toString().includes('[WEATHER-AGENT]')
-  ).length;
+  // Count how many times we've been called by checking AIMessages from weather agent
+  // Count AIMessages that don't have tool_calls (failed attempts)
+  const failedWeatherAttempts = state.messages.filter(m => {
+    if (m instanceof AIMessage) {
+      const content = m.content?.toString() || '';
+      const isWeatherAgent = content.includes('[WEATHER-AGENT]') || 
+                            (m.tool_calls && m.tool_calls.some((tc: any) => 
+                              tc.name === 'fetch_marine_weather' || 
+                              tc.name === 'calculate_weather_consumption'));
+      // Count as failed if it's a weather agent message without tool calls
+      return isWeatherAgent && (!m.tool_calls || m.tool_calls.length === 0);
+    }
+    return false;
+  }).length;
   
-  console.log(`🔢 [WEATHER-AGENT] Attempt number: ${weatherAgentMessages + 1}`);
+  console.log(`🔢 [WEATHER-AGENT] Failed attempts: ${failedWeatherAttempts}`);
   
-  // If we've been called 3+ times with no progress, return null and let supervisor skip us
-  if (weatherAgentMessages >= 3 && !state.weather_forecast) {
-    console.log("⚠️ [WEATHER-AGENT] Multiple attempts with no progress - returning to supervisor");
+  // HARD LIMIT: If we've failed 2+ times with no progress, mark as failed and return
+  // This prevents infinite loops
+  if (failedWeatherAttempts >= 2 && !state.weather_forecast) {
+    console.log("⚠️ [WEATHER-AGENT] Hard limit reached (2 failed attempts) - marking as failed and returning to supervisor");
     return {
-      messages: [new AIMessage("[WEATHER-AGENT] Unable to fetch weather data - continuing without weather analysis")],
+      agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
+      agent_errors: {
+        ...(state.agent_errors || {}),
+        weather_agent: {
+          error: 'Weather agent failed to call tools after multiple attempts. This may be due to LLM issues or tool execution problems.',
+          timestamp: Date.now(),
+        },
+      },
+      messages: [new AIMessage("[WEATHER-AGENT] Unable to fetch weather data after multiple attempts - continuing without weather analysis")],
     };
   }
   
@@ -1374,6 +1395,7 @@ export async function weatherAgentNode(
   
   // DIRECT APPROACH: If we have vessel timeline and no weather forecast yet, directly call the tool
   // This avoids LLM confusion and timeouts - we bypass the LLM and call the tool directly
+  // CRITICAL: This should ALWAYS be taken if vessel_timeline exists - it's the primary path
   if (state.vessel_timeline && state.vessel_timeline.length > 0 && !state.weather_forecast) {
     console.log(`🚀 [WEATHER-AGENT] Directly calling fetch_marine_weather with ${state.vessel_timeline.length} positions (bypassing LLM)`);
     try {
@@ -1401,8 +1423,28 @@ export async function weatherAgentNode(
         messages: [new AIMessage('[WEATHER-AGENT] Weather forecast fetched directly')]
       };
     } catch (error: any) {
-      console.error(`❌ [WEATHER-AGENT] Direct tool call failed: ${error.message}`);
-      // Fall through to LLM approach as fallback
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ [WEATHER-AGENT] Direct tool call failed: ${errorMessage}`);
+      
+      // If direct tool call fails and we've already tried once, mark as failed
+      // Don't fall through to LLM - it will just create a loop
+      if (failedWeatherAttempts >= 1) {
+        console.log("⚠️ [WEATHER-AGENT] Direct tool call failed after previous attempt - marking as failed");
+        return {
+          agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
+          agent_errors: {
+            ...(state.agent_errors || {}),
+            weather_agent: {
+              error: `Direct weather tool call failed: ${errorMessage}`,
+              timestamp: Date.now(),
+            },
+          },
+          messages: [new AIMessage(`[WEATHER-AGENT] Direct tool call failed: ${errorMessage} - returning to supervisor`)],
+        };
+      }
+      
+      // First failure - try LLM approach as fallback (but only once)
+      console.log("⚠️ [WEATHER-AGENT] Direct tool call failed, falling back to LLM approach (one attempt only)");
     }
   }
   
@@ -1510,8 +1552,27 @@ AFTER getting weather data, you may also call calculate_weather_consumption tool
     });
     
     // If still no tool calls after directive prompt, something is wrong
+    // Mark as failed if we've already tried once
     if (!response.tool_calls || response.tool_calls.length === 0) {
       console.log("⚠️ [WEATHER-AGENT] No tool calls in response!");
+      
+      // If this is the second+ attempt, mark as failed
+      if (failedWeatherAttempts >= 1) {
+        console.log("⚠️ [WEATHER-AGENT] LLM failed to call tools after previous attempt - marking as failed");
+        return {
+          agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
+          agent_errors: {
+            ...(state.agent_errors || {}),
+            weather_agent: {
+              error: 'LLM failed to call weather tools after multiple attempts. This may indicate an LLM configuration issue.',
+              timestamp: Date.now(),
+            },
+          },
+          messages: [new AIMessage("[WEATHER-AGENT] No tools called after multiple attempts - returning to supervisor")],
+        };
+      }
+      
+      // First attempt - return message and let supervisor retry once
       return {
         weather_forecast: null,
         weather_consumption: null,
