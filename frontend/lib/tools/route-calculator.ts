@@ -217,13 +217,25 @@ async function callMaritimeRouteApi(
     speed: speedKnots.toString(),
   });
 
+  // Set up timeout for fetch call (20 seconds)
+  // This prevents the API call from hanging indefinitely
+  const FETCH_TIMEOUT_MS = 20000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, FETCH_TIMEOUT_MS);
+
   try {
     const response = await fetch(`${apiUrl}?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
       },
+      signal: controller.signal,
     });
+    
+    // Clear timeout if request completes successfully
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -264,8 +276,19 @@ async function callMaritimeRouteApi(
       duration: data.duration?.value || 0, // Extract duration value if available
     };
   } catch (error) {
+    // Clear timeout in case of error
+    clearTimeout(timeoutId);
+    
     if (error instanceof RouteCalculationError) {
       throw error;
+    }
+    
+    // Handle AbortError (timeout)
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new RouteCalculationError(
+        `Maritime Route API request timed out after ${FETCH_TIMEOUT_MS / 1000} seconds. The API may be slow or unavailable.`,
+        'TIMEOUT_ERROR'
+      );
     }
     
     // Handle network errors
