@@ -779,19 +779,108 @@ export async function routeAgentNode(state: MultiAgentState) {
       
       console.error(`❌ [ROUTE-AGENT] Direct tool call failed: ${errorMessage}`);
       
-      // If timeout, mark as failed immediately to prevent retry loops
+      // If timeout, try cached route fallback before marking as failed
       if (isTimeout) {
+        console.log('🔄 [ROUTE-AGENT] Timeout occurred - attempting cached route fallback...');
+        
+        // Try to find cached route matching origin/destination
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
+          const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+          
+          // Find route matching origin and destination (try both directions)
+          const cachedRoute = cachedRoutes.routes.find(
+            (r: any) => 
+              (r.origin_port_code === originPort && r.destination_port_code === destinationPort) ||
+              (r.origin_port_code === destinationPort && r.destination_port_code === originPort)
+          );
+          
+          if (cachedRoute) {
+            console.log(`✅ [ROUTE-AGENT] Found cached route fallback: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+            const cachedRouteData = {
+              distance_nm: cachedRoute.distance_nm,
+              estimated_hours: cachedRoute.estimated_hours,
+              waypoints: cachedRoute.waypoints,
+              route_type: cachedRoute.route_type,
+              origin_port_code: cachedRoute.origin_port_code,
+              destination_port_code: cachedRoute.destination_port_code,
+              _from_cache: true,
+            };
+            
+            // If weather timeline needed, calculate it
+            if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
+              console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route fallback`);
+              try {
+                const timelineResult = await withTimeout(
+                  executeWeatherTimelineTool({
+                    waypoints: cachedRouteData.waypoints,
+                    vessel_speed_knots: 14,
+                    departure_datetime: departureDate,
+                    sampling_interval_hours: 12
+                  }),
+                  TIMEOUTS.ROUTE_CALCULATION,
+                  'Weather timeline calculation timed out'
+                );
+                
+                const agentDuration = Date.now() - agentStartTime;
+                recordAgentTime('route_agent', agentDuration);
+                recordAgentExecution('route_agent', agentDuration, true);
+                
+                return {
+                  ...stateUpdates,
+                  route_data: cachedRouteData,
+                  vessel_timeline: timelineResult,
+                  agent_status: { route_agent: 'success' },
+                  messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache (fallback after API timeout), timeline calculated')]
+                };
+              } catch (timelineError) {
+                // Timeline failed, but we still have route
+                console.warn('⚠️ [ROUTE-AGENT] Timeline calculation failed, but route available from cache');
+                const agentDuration = Date.now() - agentStartTime;
+                recordAgentTime('route_agent', agentDuration);
+                recordAgentExecution('route_agent', agentDuration, true);
+                
+                return {
+                  ...stateUpdates,
+                  route_data: cachedRouteData,
+                  agent_status: { route_agent: 'success' },
+                  messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache (fallback after API timeout), timeline unavailable')]
+                };
+              }
+            }
+            
+            // Route only (no timeline needed)
+            const agentDuration = Date.now() - agentStartTime;
+            recordAgentTime('route_agent', agentDuration);
+            recordAgentExecution('route_agent', agentDuration, true);
+            
+            return {
+              ...stateUpdates,
+              route_data: cachedRouteData,
+              agent_status: { route_agent: 'success' },
+              messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache (fallback after API timeout)')]
+            };
+          } else {
+            console.warn(`⚠️ [ROUTE-AGENT] No cached route found for ${originPort} → ${destinationPort}`);
+          }
+        } catch (cacheError) {
+          console.warn(`⚠️ [ROUTE-AGENT] Cache lookup failed: ${cacheError}`);
+        }
+        
+        // No cached route found - mark as failed
         const agentDuration = Date.now() - agentStartTime;
         recordAgentTime('route_agent', agentDuration);
         recordAgentExecution('route_agent', agentDuration, false);
         
-        console.error(`❌ [ROUTE-AGENT] Route calculation timed out - marking as failed to prevent retry loop`);
+        console.error(`❌ [ROUTE-AGENT] Route calculation timed out and no cached route available - marking as failed`);
         return {
           ...stateUpdates,
           agent_status: { route_agent: 'failed' },
           agent_errors: {
             route_agent: {
-              error: 'Route calculation timed out after 20 seconds. The maritime route API is experiencing delays.',
+              error: 'Route calculation timed out after 20 seconds. The maritime route API is experiencing delays. No cached route available for fallback.',
               timestamp: Date.now(),
             },
           },
@@ -801,8 +890,74 @@ export async function routeAgentNode(state: MultiAgentState) {
         };
       }
       
-      // For non-timeout errors, fall through to LLM approach as fallback
-      console.log('⚠️ [ROUTE-AGENT] Non-timeout error, falling back to LLM approach');
+      // For non-timeout errors, try cached route fallback
+      console.log('⚠️ [ROUTE-AGENT] Non-timeout error, trying cached route fallback...');
+      
+      // Try to find cached route matching origin/destination
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
+        const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+        const cachedRoute = cachedRoutes.routes.find(
+          (r: any) => 
+            (r.origin_port_code === originPort && r.destination_port_code === destinationPort) ||
+            (r.origin_port_code === destinationPort && r.destination_port_code === originPort) // Try reverse too
+        );
+        
+        if (cachedRoute) {
+          console.log(`✅ [ROUTE-AGENT] Found cached route fallback: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+          const cachedRouteData = {
+            distance_nm: cachedRoute.distance_nm,
+            estimated_hours: cachedRoute.estimated_hours,
+            waypoints: cachedRoute.waypoints,
+            route_type: cachedRoute.route_type,
+            origin_port_code: cachedRoute.origin_port_code,
+            destination_port_code: cachedRoute.destination_port_code,
+            _from_cache: true,
+          };
+          
+          // If weather timeline needed, calculate it
+          if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
+            console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route fallback`);
+            try {
+              const timelineResult = await withTimeout(
+                executeWeatherTimelineTool({
+                  waypoints: cachedRouteData.waypoints,
+                  vessel_speed_knots: 14,
+                  departure_datetime: departureDate,
+                  sampling_interval_hours: 12
+                }),
+                TIMEOUTS.ROUTE_CALCULATION,
+                'Weather timeline calculation timed out'
+              );
+              
+              return {
+                ...stateUpdates,
+                route_data: cachedRouteData,
+                vessel_timeline: timelineResult,
+                agent_status: { route_agent: 'success' },
+                messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache (fallback), timeline calculated')]
+              };
+            } catch (timelineError) {
+              // Timeline failed, but we still have route
+              console.warn('⚠️ [ROUTE-AGENT] Timeline calculation failed, but route available');
+            }
+          }
+          
+          return {
+            ...stateUpdates,
+            route_data: cachedRouteData,
+            agent_status: { route_agent: 'success' },
+            messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache (fallback)')]
+          };
+        }
+      } catch (cacheError) {
+        console.warn(`⚠️ [ROUTE-AGENT] Cache lookup failed: ${cacheError}`);
+      }
+      
+      // No cache found, fall through to LLM approach
+      console.log('⚠️ [ROUTE-AGENT] No cached route found, falling back to LLM approach');
     }
   }
 
