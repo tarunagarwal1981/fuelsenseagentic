@@ -1521,12 +1521,21 @@ export async function finalizeNode(state: MultiAgentState) {
   const agentStatus = state.agent_status || {};
   const hasErrors = Object.keys(agentErrors).length > 0;
   
+  // Build user-friendly error context
   let errorContext = '';
   if (hasErrors) {
-    const errorList = Object.entries(agentErrors)
-      .map(([agent, err]) => `- ${agent}: ${err.error}`)
-      .join('\n');
-    errorContext = `\n\n⚠️ Note: Some agents encountered errors:\n${errorList}\nPlease acknowledge these limitations in your response.`;
+    const routeError = agentErrors.route_agent;
+    const weatherError = agentErrors.weather_agent;
+    const bunkerError = agentErrors.bunker_agent;
+    
+    if (routeError) {
+      const isTimeout = routeError.error.includes('timeout') || routeError.error.includes('timed out');
+      errorContext = `\n\n⚠️ IMPORTANT: The route calculation service is currently unavailable${isTimeout ? ' (timed out after 20 seconds)' : ''}. This prevents us from:\n- Calculating the optimal route between ports\n- Identifying bunker ports along the route\n- Providing accurate distance and time estimates\n\nPlease try again in a few moments, or contact support if the issue persists.`;
+    } else if (weatherError) {
+      errorContext = `\n\n⚠️ Note: Weather data could not be retrieved. This may affect fuel consumption estimates.`;
+    } else if (bunkerError) {
+      errorContext = `\n\n⚠️ Note: Bunker port analysis encountered an issue. Some pricing data may be incomplete.`;
+    }
   }
 
   // Build state context summary
@@ -1640,7 +1649,13 @@ Create a comprehensive, well-structured recommendation that includes:
 
 ${hasErrors ? 'IMPORTANT: Clearly indicate which data is missing and how it affects the recommendation. Be transparent about limitations.' : ''}
 
-Be clear, concise, and actionable.`;
+Be clear, concise, and actionable.
+
+IMPORTANT: If route calculation failed, provide a helpful but concise explanation. Focus on:
+1. What went wrong (route service unavailable)
+2. What this means for the user (cannot provide bunker recommendations without route)
+3. What they can do (retry in a few moments, or use general port knowledge)
+4. Keep it brief - avoid overly technical details or lengthy disclaimers.`;
   } else {
     // Route-only query or general query
     systemPrompt = `You are the Route Planning Agent. Provide information about the requested route.
