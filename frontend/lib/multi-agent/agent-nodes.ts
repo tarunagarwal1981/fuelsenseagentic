@@ -57,6 +57,60 @@ import {
 } from './tools';
 
 // ============================================================================
+// Cached Routes Helper
+// ============================================================================
+
+/**
+ * Cached routes data cache - loaded once at module initialization
+ */
+interface CachedRoute {
+  id: string;
+  origin_port_code: string;
+  destination_port_code: string;
+  origin_name: string;
+  destination_name: string;
+  description: string;
+  distance_nm: number;
+  estimated_hours: number;
+  route_type: string;
+  waypoints: Array<{ lat: number; lon: number }>;
+  cached_at: string;
+  popularity: 'high' | 'medium' | 'low';
+}
+
+interface CachedRoutesData {
+  routes: CachedRoute[];
+  collected_at?: string;
+  total_routes?: number;
+}
+
+let cachedRoutesCache: CachedRoutesData | null = null;
+
+/**
+ * Loads cached routes data from the cached-routes.json file
+ * Caches the data for subsequent lookups
+ * Works in both Node.js and Edge runtime
+ */
+async function loadCachedRoutes(): Promise<CachedRoutesData> {
+  if (cachedRoutesCache) {
+    return cachedRoutesCache;
+  }
+
+  try {
+    // Use dynamic import for JSON file (works with resolveJsonModule in tsconfig)
+    const routesModule = await import('@/lib/data/cached-routes.json');
+    // JSON imports return the data directly, not as default export
+    const routes = routesModule.default || routesModule;
+    
+    cachedRoutesCache = routes as CachedRoutesData;
+    return cachedRoutesCache;
+  } catch (error) {
+    console.error('❌ [ROUTE-AGENT] Failed to load cached routes:', error);
+    throw new Error(`Failed to load cached routes: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// ============================================================================
 // LLM Configuration
 // ============================================================================
 
@@ -646,11 +700,11 @@ export async function routeAgentNode(state: MultiAgentState) {
   const selectedRouteId = state.selected_route_id;
   if (!state.route_data && selectedRouteId) {
     try {
-      const fs = require('fs');
-      const path = require('path');
-      const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
-      const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
-      const cachedRoute = cachedRoutes.routes.find((r: any) => r.id === selectedRouteId);
+      const cachedRoutes = await loadCachedRoutes();
+      if (!cachedRoutes || !cachedRoutes.routes) {
+        throw new Error('Cached routes data is invalid');
+      }
+      const cachedRoute = cachedRoutes.routes.find((r) => r.id === selectedRouteId);
       if (cachedRoute) {
         console.log(`✅ [ROUTE-AGENT] Using cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
         const cachedRouteData = {
@@ -895,10 +949,10 @@ export async function routeAgentNode(state: MultiAgentState) {
       
       // Try to find cached route matching origin/destination
       try {
-        const fs = require('fs');
-        const path = require('path');
-        const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
-        const cachedRoutes = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+        const cachedRoutes = await loadCachedRoutes();
+        if (!cachedRoutes || !cachedRoutes.routes) {
+          throw new Error('Cached routes data is invalid');
+        }
         const cachedRoute = cachedRoutes.routes.find(
           (r: any) => 
             (r.origin_port_code === originPort && r.destination_port_code === destinationPort) ||

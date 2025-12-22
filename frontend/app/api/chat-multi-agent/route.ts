@@ -165,10 +165,9 @@ export async function POST(req: Request) {
           let initialRouteData = null;
           if (selectedRouteId) {
             try {
-              const fs = require('fs');
-              const path = require('path');
-              const cachedRoutesPath = path.join(process.cwd(), 'frontend/lib/data/cached-routes.json');
-              const cachedRoutesData = JSON.parse(fs.readFileSync(cachedRoutesPath, 'utf-8'));
+              // Use dynamic import for JSON file (works in serverless environments)
+              const cachedRoutesModule = await import('@/lib/data/cached-routes.json');
+              const cachedRoutesData = cachedRoutesModule.default || cachedRoutesModule;
               const cachedRoute = cachedRoutesData.routes.find(
                 (r: any) => r.id === selectedRouteId
               );
