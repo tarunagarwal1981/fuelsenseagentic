@@ -1467,11 +1467,59 @@ export async function weatherAgentNode(
       console.log(`✅ [WEATHER-AGENT] Direct tool call successful, got ${Array.isArray(weatherResult) ? weatherResult.length : 0} weather points`);
       
       // Return the weather forecast directly in state - bypass tools node
-      return {
+      // Then check if we need to calculate consumption directly too
+      const stateWithForecast = {
         weather_forecast: weatherResult,
-        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' },
+        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' as const },
         messages: [new AIMessage('[WEATHER-AGENT] Weather forecast fetched directly')]
       };
+      
+      // DIRECT CONSUMPTION CALCULATION
+      if (needsConsumption && !state.weather_consumption) {
+        console.log(`🚀 [WEATHER-AGENT] Directly calling calculate_weather_consumption (bypassing LLM)`);
+        try {
+          const weatherDataForTool = weatherResult.map((w: any) => ({
+            datetime: w.datetime,
+            weather: {
+              wave_height_m: w.weather.wave_height_m,
+              wind_speed_knots: w.weather.wind_speed_knots,
+              wind_direction_deg: w.weather.wind_direction_deg,
+              sea_state: w.weather.sea_state
+            }
+          }));
+          
+          const routeHours = state.route_data?.estimated_hours || 600;
+          const baseConsumptionMT = (routeHours / 24) * 35;
+          
+          const vesselHeadingDeg = 45; // Simple default for now
+          
+          const { executeWeatherConsumptionTool } = await import('@/lib/tools/weather-consumption');
+          
+          const consumptionResult = await withTimeout(
+            executeWeatherConsumptionTool({
+              weather_data: weatherDataForTool,
+              base_consumption_mt: baseConsumptionMT,
+              vessel_heading_deg: vesselHeadingDeg
+            }),
+            TIMEOUTS.AGENT,
+            'Weather consumption tool timed out'
+          );
+          
+          console.log(`✅ [WEATHER-AGENT] Direct consumption calculation successful`);
+          
+          return {
+            ...stateWithForecast,
+            weather_consumption: consumptionResult,
+            messages: [new AIMessage('[WEATHER-AGENT] Weather forecast and consumption calculated directly')]
+          };
+        } catch (error: any) {
+          console.error(`❌ [WEATHER-AGENT] Direct consumption calculation failed: ${error.message}`);
+          // Return with forecast only, consumption will be calculated later if needed
+          return stateWithForecast;
+        }
+      }
+      
+      return stateWithForecast;
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`❌ [WEATHER-AGENT] Direct tool call failed: ${errorMessage}`);
@@ -1495,6 +1543,50 @@ export async function weatherAgentNode(
       
       // First failure - try LLM approach as fallback (but only once)
       console.log("⚠️ [WEATHER-AGENT] Direct tool call failed, falling back to LLM approach (one attempt only)");
+    }
+  }
+  
+  // DIRECT CONSUMPTION CALCULATION (when forecast already exists)
+  if (state.weather_forecast && !state.weather_consumption && needsConsumption) {
+    console.log(`🚀 [WEATHER-AGENT] Directly calling calculate_weather_consumption (bypassing LLM)`);
+    try {
+      const weatherDataForTool = state.weather_forecast.map((w: any) => ({
+        datetime: w.datetime,
+        weather: {
+          wave_height_m: w.weather.wave_height_m,
+          wind_speed_knots: w.weather.wind_speed_knots,
+          wind_direction_deg: w.weather.wind_direction_deg,
+          sea_state: w.weather.sea_state
+        }
+      }));
+      
+      const routeHours = state.route_data?.estimated_hours || 600;
+      const baseConsumptionMT = (routeHours / 24) * 35;
+      
+      const vesselHeadingDeg = 45; // Simple default for now
+      
+      const { executeWeatherConsumptionTool } = await import('@/lib/tools/weather-consumption');
+      
+      const consumptionResult = await withTimeout(
+        executeWeatherConsumptionTool({
+          weather_data: weatherDataForTool,
+          base_consumption_mt: baseConsumptionMT,
+          vessel_heading_deg: vesselHeadingDeg
+        }),
+        TIMEOUTS.AGENT,
+        'Weather consumption tool timed out'
+      );
+      
+      console.log(`✅ [WEATHER-AGENT] Direct consumption calculation successful`);
+      
+      return {
+        weather_consumption: consumptionResult,
+        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' as const },
+        messages: [new AIMessage('[WEATHER-AGENT] Weather consumption calculated directly')]
+      };
+    } catch (error: any) {
+      console.error(`❌ [WEATHER-AGENT] Direct consumption calculation failed: ${error.message}`);
+      // Fall through to LLM approach
     }
   }
   
