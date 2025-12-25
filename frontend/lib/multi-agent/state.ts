@@ -9,6 +9,7 @@
 import { Annotation } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { Coordinates, Port, FuelType } from '@/lib/types';
+import type { PriceFetcherOutput } from '@/lib/tools/price-fetcher';
 
 // ============================================================================
 // Type Definitions
@@ -458,13 +459,16 @@ export const MultiAgentStateAnnotation = Annotation.Root({
 
   /**
    * Port fuel prices
+   * Stores PriceFetcherOutput format (with prices_by_port object)
+   * This matches what the price fetcher tool returns and what bunker analyzer expects
    */
-  port_prices: Annotation<PortPrice[] | null>({
+  port_prices: Annotation<PriceFetcherOutput | null>({
     reducer: (x, y) => {
       // New value overwrites old if provided
       const result = y !== null && y !== undefined ? y : x;
       if (result) {
-        console.log('🔄 Port prices reducer: updating prices', result.length, 'ports');
+        const portCount = result.prices_by_port ? Object.keys(result.prices_by_port).length : 0;
+        console.log('🔄 Port prices reducer: updating prices', portCount, 'ports');
       }
       return result;
     },

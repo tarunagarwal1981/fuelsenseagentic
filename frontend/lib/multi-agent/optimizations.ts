@@ -256,6 +256,7 @@ const MAX_MESSAGE_HISTORY = 20;
 
 /**
  * Trim message history to keep only recent messages
+ * CRITICAL: Ensures tool_use/tool_result pairs are kept together
  */
 export function trimMessageHistory(messages: any[]): any[] {
   if (messages.length <= MAX_MESSAGE_HISTORY) {
@@ -268,10 +269,99 @@ export function trimMessageHistory(messages: any[]): any[] {
     ...messages.slice(-(MAX_MESSAGE_HISTORY - 1)), // Keep last N-1 messages
   ];
 
+  // CRITICAL: Ensure all AIMessages with tool_calls have their corresponding ToolMessages
+  // If an AIMessage with tool_calls is included, we must include all its ToolMessages
+  // Simple approach: Remove any AIMessage with tool_calls if we can't verify all ToolMessages are present
+  const { AIMessage, ToolMessage } = require('@langchain/core/messages');
+  
+  const validated: any[] = [trimmed[0]]; // Keep first message
+  
+  for (let i = 1; i < trimmed.length; i++) {
+    const msg = trimmed[i];
+    
+    // If this is an AIMessage with tool_calls, check if all ToolMessages are present
+    if (msg.constructor.name === 'AIMessage' && msg.tool_calls && msg.tool_calls.length > 0) {
+      const toolCallIds = new Set(msg.tool_calls.map((tc: any) => tc.id || tc.tool_call_id));
+      
+      // Look ahead to find all ToolMessages for these tool_calls
+      const foundToolCallIds = new Set<string>();
+      for (let j = i + 1; j < trimmed.length; j++) {
+        const nextMsg = trimmed[j];
+        // If we hit another AIMessage, stop looking (tool results must be immediately after)
+        if (nextMsg.constructor.name === 'AIMessage') {
+          break;
+        }
+        if (nextMsg.constructor.name === 'ToolMessage' && nextMsg.tool_call_id) {
+          if (toolCallIds.has(nextMsg.tool_call_id)) {
+            foundToolCallIds.add(nextMsg.tool_call_id);
+          }
+        }
+      }
+      
+      // If not all tool results are present, skip this AIMessage to avoid API errors
+      if (foundToolCallIds.size < toolCallIds.size) {
+        console.warn(`⚠️ [MEMORY] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size} tool results)`);
+        continue; // Skip this message
+      }
+    }
+    
+    validated.push(msg);
+  }
+
   console.log(
-    `🧹 [MEMORY] Trimmed message history: ${messages.length} → ${trimmed.length}`
+    `🧹 [MEMORY] Trimmed message history: ${messages.length} → ${validated.length}`
   );
-  return trimmed;
+  return validated;
+}
+
+/**
+ * Validate and filter messages to ensure tool_use/tool_result pairs are complete
+ * Removes any AIMessage with tool_calls that doesn't have all corresponding ToolMessages
+ */
+export function validateMessagePairs(messages: any[]): any[] {
+  const { AIMessage, ToolMessage, SystemMessage } = require('@langchain/core/messages');
+  
+  const validated: any[] = [];
+  
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    
+    // Always include SystemMessages and HumanMessages
+    if (msg instanceof SystemMessage || msg.constructor.name === 'HumanMessage') {
+      validated.push(msg);
+      continue;
+    }
+    
+    // If this is an AIMessage with tool_calls, verify all ToolMessages are present
+    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && msg.tool_calls && msg.tool_calls.length > 0) {
+      const toolCallIds = new Set(msg.tool_calls.map((tc: any) => tc.id || tc.tool_call_id).filter(Boolean));
+      
+      // Look ahead to find all ToolMessages for these tool_calls
+      const foundToolCallIds = new Set<string>();
+      for (let j = i + 1; j < messages.length; j++) {
+        const nextMsg = messages[j];
+        // Stop if we hit another AIMessage (tool results must be immediately after)
+        if (nextMsg instanceof AIMessage || nextMsg.constructor.name === 'AIMessage') {
+          break;
+        }
+        if ((nextMsg instanceof ToolMessage || nextMsg.constructor.name === 'ToolMessage') && nextMsg.tool_call_id) {
+          if (toolCallIds.has(nextMsg.tool_call_id)) {
+            foundToolCallIds.add(nextMsg.tool_call_id);
+          }
+        }
+      }
+      
+      // Only include this AIMessage if all tool results are present
+      if (foundToolCallIds.size < toolCallIds.size) {
+        console.warn(`⚠️ [MESSAGE-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size})`);
+        continue; // Skip this AIMessage
+      }
+    }
+    
+    validated.push(msg);
+  }
+  
+  return validated;
 }
 
 /**

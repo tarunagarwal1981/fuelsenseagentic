@@ -162,6 +162,10 @@ Rules:
 3. Don't assign tools if their output already exists in state
 4. Respect when_to_use and when_not_to_use conditions from tool metadata
 5. Order agents so prerequisites are produced before they're needed
+6. IMPORTANT: If the query requires bunker analysis (fuel planning), the weather_agent MUST be assigned BOTH:
+   - fetch_marine_weather (to get weather forecast)
+   - calculate_weather_consumption (to calculate weather-adjusted fuel consumption)
+   This is required because bunker analysis needs weather consumption data to provide accurate recommendations.
 
 Return a JSON object with this structure:
 {
