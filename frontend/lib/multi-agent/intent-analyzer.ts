@@ -93,6 +93,12 @@ export function generateAgentContext(
       needs_weather_timeline: intent.needs_weather || intent.needs_bunker,
       // Port info might be needed for bunker queries (future enhancement)
       needs_port_info: intent.needs_bunker,
+      // Legacy fallback: empty tools means use all tools
+      required_tools: [],
+      task_description: intent.needs_route 
+        ? 'Calculate route between ports' 
+        : 'Route calculation not required',
+      priority: 'critical' as const,
     },
     weather_agent: {
       // Consumption calculation is only needed for bunker planning
@@ -100,6 +106,12 @@ export function generateAgentContext(
       needs_consumption: intent.needs_bunker,
       // Port weather check is only needed if bunker ports have been found
       needs_port_weather: intent.needs_bunker && !!state.bunker_ports && state.bunker_ports.length > 0,
+      // Legacy fallback: empty tools means use all tools
+      required_tools: [],
+      task_description: intent.needs_weather
+        ? 'Fetch weather forecasts and calculate consumption'
+        : 'Weather analysis not required',
+      priority: intent.needs_bunker ? ('critical' as const) : ('important' as const),
     },
     bunker_agent: {
       // Weather consumption needed for accurate bunker cost analysis
@@ -107,6 +119,12 @@ export function generateAgentContext(
       needs_weather_consumption: intent.needs_weather && intent.needs_bunker,
       // Port weather check needed for bunker feasibility
       needs_port_weather: intent.needs_bunker,
+      // Legacy fallback: empty tools means use all tools
+      required_tools: [],
+      task_description: intent.needs_bunker
+        ? 'Find bunker ports and analyze fuel options'
+        : 'Bunker analysis not required',
+      priority: 'critical' as const,
     },
     finalize: {
       // Pass complexity to finalize for appropriate synthesis

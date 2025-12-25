@@ -28,6 +28,8 @@ import {
 } from './monitoring';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
+import { AgentRegistry } from './registry';
+import { generateExecutionPlan, type SupervisorPlan } from './supervisor-planner';
 
 // Import tool execute functions
 import { executeRouteCalculatorTool } from '@/lib/tools/route-calculator';
@@ -114,8 +116,8 @@ async function loadCachedRoutes(): Promise<CachedRoutesData> {
 // LLM Configuration
 // ============================================================================
 
-// Validate API key is present
-if (!process.env.ANTHROPIC_API_KEY) {
+// Validate API key is present (skip in test mode)
+if (!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test') {
   throw new Error(
     'ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.'
   );
@@ -307,9 +309,104 @@ export async function supervisorAgentNode(
     ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
     : state.messages[0]?.content?.toString() || 'Plan bunker route';
   
-  // NEW: Analyze intent and generate agent context EARLY (needed for loop detection)
+  // ========================================================================
+  // Registry-Based Planning (NEW)
+  // ========================================================================
+  const USE_REGISTRY_PLANNING = process.env.USE_REGISTRY_PLANNING !== 'false';
+  let executionPlan: SupervisorPlan | null = null;
+  let planningSource: 'registry_llm' | 'legacy_keywords' = 'legacy_keywords';
+  
+  if (USE_REGISTRY_PLANNING) {
+    try {
+      const availableAgents = AgentRegistry.getAllAgents();
+      executionPlan = await generateExecutionPlan(userQuery, state, availableAgents);
+      planningSource = 'registry_llm';
+      console.log('✅ [SUPERVISOR] Generated execution plan:', {
+        agents: executionPlan.execution_order,
+        reasoning: executionPlan.reasoning.substring(0, 100),
+        estimated_time: executionPlan.estimated_total_time
+      });
+    } catch (error) {
+      console.error('❌ [SUPERVISOR] Plan generation failed, using legacy routing:', error);
+      // executionPlan stays null, will use legacy routing
+    }
+  }
+  
+  // Analyze intent (needed for both paths)
   const intent = analyzeQueryIntent(userQuery);
-  const agentContext = generateAgentContext(intent, state);
+  
+  // Build agent context from plan OR legacy
+  let agentContext: import('./state').AgentContext;
+  
+  if (executionPlan) {
+    // Build context from execution plan
+    agentContext = {
+      route_agent: executionPlan.execution_order.includes('route_agent') ? {
+        needs_weather_timeline: intent.needs_weather || intent.needs_bunker,
+        needs_port_info: intent.needs_bunker,
+        required_tools: executionPlan.agent_tool_assignments['route_agent'] || [],
+        task_description: executionPlan.reasoning,
+        priority: 'critical' as const
+      } : undefined,
+      weather_agent: executionPlan.execution_order.includes('weather_agent') ? {
+        needs_consumption: intent.needs_bunker,
+        needs_port_weather: intent.needs_bunker && !!state.bunker_ports && state.bunker_ports.length > 0,
+        required_tools: executionPlan.agent_tool_assignments['weather_agent'] || [],
+        task_description: executionPlan.reasoning,
+        priority: intent.needs_bunker ? 'critical' as const : 'important' as const
+      } : undefined,
+      bunker_agent: executionPlan.execution_order.includes('bunker_agent') ? {
+        needs_weather_consumption: intent.needs_weather && intent.needs_bunker,
+        needs_port_weather: intent.needs_bunker,
+        required_tools: executionPlan.agent_tool_assignments['bunker_agent'] || [],
+        task_description: executionPlan.reasoning,
+        priority: 'critical' as const
+      } : undefined,
+      finalize: {
+        complexity: intent.complexity,
+        needs_weather_analysis: intent.needs_weather,
+        needs_bunker_analysis: intent.needs_bunker,
+      }
+    };
+  } else {
+    // Legacy path: use existing generateAgentContext
+    const legacyContext = generateAgentContext(intent, state);
+    // Add required_tools as empty arrays for backwards compatibility
+    agentContext = {
+      route_agent: legacyContext.route_agent ? {
+        ...legacyContext.route_agent,
+        required_tools: [],
+        task_description: '',
+        priority: 'critical' as const
+      } : undefined,
+      weather_agent: legacyContext.weather_agent ? {
+        ...legacyContext.weather_agent,
+        required_tools: [],
+        task_description: '',
+        priority: 'important' as const
+      } : undefined,
+      bunker_agent: legacyContext.bunker_agent ? {
+        ...legacyContext.bunker_agent,
+        required_tools: [],
+        task_description: '',
+        priority: 'critical' as const
+      } : undefined,
+      finalize: legacyContext.finalize
+    };
+  }
+  
+  // Log planning metrics
+  const cacheHit = executionPlan !== null && planningSource === 'registry_llm';
+  console.log('📊 [SUPERVISOR-METRICS]', {
+    planning_source: planningSource,
+    agents_planned: executionPlan?.execution_order.length || 0,
+    total_tools_assigned: executionPlan 
+      ? Object.values(executionPlan.agent_tool_assignments)
+          .reduce((sum, tools) => sum + tools.length, 0)
+      : 0,
+    estimated_time: executionPlan?.estimated_total_time,
+    cache_hit: cacheHit
+  });
 
   // ADD THIS: Loop detection - more aggressive
   const messageCount = state.messages.length;
@@ -376,7 +473,7 @@ export async function supervisorAgentNode(
   // For route-only queries: route is complete if route_data exists (vessel_timeline not needed)
   // For weather/bunker queries: route is complete if both route_data AND vessel_timeline exist
   const routeCompleteForQuery = state.route_data && (
-    !agentContext.route_agent.needs_weather_timeline || state.vessel_timeline
+    !agentContext.route_agent?.needs_weather_timeline || state.vessel_timeline
   );
   const needsRoute = intent.needs_route && !routeCompleteForQuery;
   const needsWeather = intent.needs_weather;
@@ -453,12 +550,6 @@ export async function supervisorAgentNode(
     // Weather agent has partial data, continue to next step if needed
     if (needsBunker && !state.bunker_analysis) {
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
-      const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-      const userQuery = userMessage 
-        ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-        : 'Plan bunker route';
-      const intent = analyzeQueryIntent(userQuery);
-      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "bunker_agent",
         agent_context: agentContext,
@@ -466,12 +557,6 @@ export async function supervisorAgentNode(
       };
     } else {
       console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
-      const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-      const userQuery = userMessage 
-        ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-        : 'Plan bunker route';
-      const intent = analyzeQueryIntent(userQuery);
-      const agentContext = generateAgentContext(intent, state);
       return {
         next_agent: "finalize",
         agent_context: agentContext,
@@ -487,7 +572,47 @@ export async function supervisorAgentNode(
   console.log(`   - Needs bunker: ${needsBunker}`);
   console.log(`   - Query: "${userQuery.substring(0, 100)}"`);
   
+  // ========================================================================
+  // Prefer Execution Plan if Available
+  // ========================================================================
+  if (executionPlan && executionPlan.execution_order.length > 0) {
+    // Find first agent in execution order that hasn't completed its work
+    for (const agentName of executionPlan.execution_order) {
+      const tools = executionPlan.agent_tool_assignments[agentName] || [];
+      if (tools.length === 0) {
+        // Agent has no tools assigned, skip it
+        continue;
+      }
+      
+      // Check if agent's work is already done
+      const agentDone = 
+        (agentName === 'route_agent' && routeCompleteForQuery) ||
+        (agentName === 'weather_agent' && state.weather_forecast && (!needsBunker || state.weather_consumption)) ||
+        (agentName === 'bunker_agent' && state.bunker_analysis);
+      
+      if (!agentDone) {
+        console.log(`🎯 [SUPERVISOR] Using execution plan: routing to ${agentName}`);
+        return {
+          next_agent: agentName,
+          agent_context: agentContext,
+          messages: [],
+        };
+      }
+    }
+    
+    // All agents in plan are done, finalize
+    console.log('🎯 [SUPERVISOR] Execution plan complete → finalize');
+    return {
+      next_agent: "finalize",
+      agent_context: agentContext,
+      messages: [],
+    };
+  }
+  
+  // ========================================================================
   // DETERMINISTIC DECISION LOGIC - Based on actual needs, not fixed sequence
+  // (Legacy fallback when execution plan is not available)
+  // ========================================================================
   
   // 1. If route is needed and not available, get route first
   // BUT: Check if route_agent has already failed - if so, finalize with error instead of retrying
@@ -662,11 +787,35 @@ export async function routeAgentNode(state: MultiAgentState) {
   console.log('🗺️ [ROUTE-AGENT] Node: Starting route calculation...');
   const agentStartTime = Date.now();
 
-  // NEW: Get agent context from supervisor
+  // Get agent context from supervisor
   const context = state.agent_context?.route_agent;
   const needsWeatherTimeline = context?.needs_weather_timeline ?? false;
+  const requiredTools = context?.required_tools || [];
   
-  console.log(`📋 [ROUTE-AGENT] Context: needs_weather_timeline=${needsWeatherTimeline}`);
+  console.log(`📋 [ROUTE-AGENT] Context: needs_weather_timeline=${needsWeatherTimeline}, required_tools=${requiredTools.join(', ') || 'none'}`);
+  
+  // Map tool names to actual tool objects
+  const toolMap: Record<string, any> = {
+    'calculate_route': calculateRouteTool,
+    'calculate_weather_timeline': calculateWeatherTimelineTool,
+  };
+  
+  // Determine which tools to use
+  let routeTools: any[] = [calculateRouteTool, calculateWeatherTimelineTool]; // Default to all tools
+  
+  if (requiredTools.length > 0) {
+    console.log(`✅ [ROUTE-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
+    routeTools = requiredTools
+      .map(toolName => toolMap[toolName])
+      .filter(Boolean); // Remove undefined
+    
+    if (routeTools.length === 0) {
+      console.warn('⚠️ [ROUTE-AGENT] Supervisor specified tools but none matched, using all tools as fallback');
+      routeTools = [calculateRouteTool, calculateWeatherTimelineTool];
+    }
+  } else {
+    console.log(`ℹ️ [ROUTE-AGENT] No tools specified by supervisor, using all available tools`);
+  }
 
   // First, check if we have tool results to extract
   const extractedData = extractRouteDataFromMessages(state.messages);
@@ -1025,15 +1174,10 @@ export async function routeAgentNode(state: MultiAgentState) {
     }
   }
 
-  // NEW: Use tiered LLM (Gemini Flash for simple tool calling)
+  // Use tiered LLM (GPT-4o-mini for simple tool calling)
   const routeAgentLLM = LLMFactory.getLLMForAgent('route_agent', state.agent_context || undefined);
   
-  // NEW: Only include weather timeline tool if needed
-  const routeTools: any[] = [calculateRouteTool];
-  if (needsWeatherTimeline) {
-    routeTools.push(calculateWeatherTimelineTool);
-  }
-  
+  // routeTools already determined above based on required_tools from context
   const llmWithTools = (routeAgentLLM as any).bindTools(routeTools);
 
   // NEW: Update system prompt based on context
@@ -1385,37 +1529,43 @@ export async function weatherAgentNode(
     };
   }
   
-  // NEW: Get agent context from supervisor
+  // Get agent context from supervisor
   const context = state.agent_context?.weather_agent;
   const needsConsumption = context?.needs_consumption ?? false;
   const needsPortWeather = context?.needs_port_weather ?? false;
+  const requiredTools = context?.required_tools || [];
   
-  console.log(`📋 [WEATHER-AGENT] Context: needs_consumption=${needsConsumption}, needs_port_weather=${needsPortWeather}`);
+  console.log(`📋 [WEATHER-AGENT] Context: needs_consumption=${needsConsumption}, needs_port_weather=${needsPortWeather}, required_tools=${requiredTools.join(', ') || 'none'}`);
   
-  // NEW: Use tiered LLM (Gemini Flash for simple tool calling)
+  // Use tiered LLM (GPT-4o-mini for simple tool calling)
   const weatherAgentLLM = LLMFactory.getLLMForAgent('weather_agent', state.agent_context || undefined);
   
-  // Build tools based on context AND state - only include tools that are actually needed
-  // If weather_forecast exists, don't include fetch_marine_weather
-  const needsForecast = !state.weather_forecast;
-  const needsConsumptionCalc = state.weather_forecast && needsConsumption && !state.weather_consumption;
+  // Map tool names to actual tool objects
+  const toolMap: Record<string, any> = {
+    'fetch_marine_weather': fetchMarineWeatherTool,
+    'calculate_weather_consumption': calculateWeatherConsumptionTool,
+    'check_bunker_port_weather': checkPortWeatherTool,
+  };
   
-  const weatherTools = [
-    // Only include fetch_marine_weather if forecast doesn't exist
-    ...(needsForecast ? [fetchMarineWeatherTool] : []),
-    // Only include consumption tool if context says it's needed AND forecast exists
-    ...(needsConsumptionCalc ? [calculateWeatherConsumptionTool] : []),
-    // Only include port weather check if context says it's needed and ports exist
-    ...(needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? [checkPortWeatherTool] : []),
-  ];
+  // Determine which tools to use
+  let weatherTools: any[] = [fetchMarineWeatherTool, calculateWeatherConsumptionTool, checkPortWeatherTool]; // Default to all tools
+  
+  if (requiredTools.length > 0) {
+    console.log(`✅ [WEATHER-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
+    weatherTools = requiredTools
+      .map(toolName => toolMap[toolName])
+      .filter(Boolean); // Remove undefined
+    
+    if (weatherTools.length === 0) {
+      console.warn('⚠️ [WEATHER-AGENT] Supervisor specified tools but none matched, using all tools as fallback');
+      weatherTools = [fetchMarineWeatherTool, calculateWeatherConsumptionTool, checkPortWeatherTool];
+    }
+  } else {
+    console.log(`ℹ️ [WEATHER-AGENT] No tools specified by supervisor, using all available tools`);
+  }
   
   console.log(`🔧 [WEATHER-AGENT] Tool selection: ${weatherTools.length} tools`);
-  console.log(`🔧 [WEATHER-AGENT] - fetch_marine_weather: ${needsForecast ? 'included (forecast needed)' : 'excluded (forecast exists)'}`);
-  console.log(`🔧 [WEATHER-AGENT] - calculate_weather_consumption: ${needsConsumptionCalc ? 'included (consumption needed)' : 'excluded (not needed or already done)'}`);
-  console.log(`🔧 [WEATHER-AGENT] - check_bunker_port_weather: ${needsPortWeather && state.bunker_ports && state.bunker_ports.length > 0 ? 'included' : 'excluded'}`);
-  
-  // Check what data is available
-  console.log("🔧 [WEATHER-AGENT] Tools available:", weatherTools.map(t => t.name));
+  console.log(`🔧 [WEATHER-AGENT] Tools: ${weatherTools.map(t => t.name).join(', ')}`);
   
   console.log("📊 [WEATHER-AGENT] State available:", {
     vessel_timeline: !!state.vessel_timeline,
@@ -1432,19 +1582,8 @@ export async function weatherAgentNode(
     };
   }
   
-  // If we already have weather forecast, check if we need to calculate consumption
-  if (state.weather_forecast && !state.weather_consumption) {
-    // Only calculate consumption if context says it's needed
-    if (needsConsumption) {
-      console.log("✅ [WEATHER-AGENT] Weather forecast exists, need to calculate consumption (from context)");
-      // Continue to LLM call to calculate consumption
-    } else {
-      console.log("✅ [WEATHER-AGENT] Weather forecast exists, consumption not needed (from context) - done");
-      return {
-        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
-      };
-    }
-  } else if (state.weather_forecast && state.weather_consumption) {
+  // If we already have all weather data, we're done
+  if (state.weather_forecast && state.weather_consumption) {
     console.log("✅ [WEATHER-AGENT] Weather data already complete, skipping");
     return {
       agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
@@ -1677,8 +1816,9 @@ Total positions: ${state.vessel_timeline.length}
 Full vessel_timeline array:
 ${JSON.stringify(vesselTimelineForAgent, null, 2)}
 
-${needsForecast ? 'You MUST use this data to call fetch_marine_weather tool immediately.' : ''}
-${needsConsumptionCalc ? 'You MUST use this data to call calculate_weather_consumption tool immediately.' : ''}
+${requiredTools.length > 0 
+  ? `You MUST call these tools: ${requiredTools.join(', ')}. Use the vessel_timeline data provided above.`
+  : 'You MUST use this data to call the appropriate weather tools immediately.'}
 DO NOT ask for this data - it is provided above.
 Call the tool now with the vessel_timeline data provided above.`
     );
@@ -1841,6 +1981,12 @@ export async function bunkerAgentNode(state: MultiAgentState) {
   console.log('⚓ [BUNKER-AGENT] Node: Starting bunker analysis...');
   const agentStartTime = Date.now();
 
+  // Get agent context from supervisor
+  const context = state.agent_context?.bunker_agent;
+  const requiredTools = context?.required_tools || [];
+  
+  console.log(`📋 [BUNKER-AGENT] Context: required_tools=${requiredTools.join(', ') || 'none'}`);
+
   // FIRST: Check if we have tool results to extract (like route and weather agents do)
   console.log(`🔍 [BUNKER-AGENT] Checking for tool results in ${state.messages.length} messages`);
   const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
@@ -1873,9 +2019,33 @@ export async function bunkerAgentNode(state: MultiAgentState) {
     };
   }
 
-  // NEW: Use tiered LLM (GPT-4o-mini for complex tool calling)
+  // Use tiered LLM (Claude Haiku 4.5 for complex tool calling)
   const bunkerAgentLLM = LLMFactory.getLLMForAgent('bunker_agent', state.agent_context || undefined);
-  const bunkerTools: any[] = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool];
+  
+  // Map tool names to actual tool objects
+  const toolMap: Record<string, any> = {
+    'find_bunker_ports': findBunkerPortsTool,
+    'get_fuel_prices': getFuelPricesTool,
+    'analyze_bunker_options': analyzeBunkerOptionsTool,
+  };
+  
+  // Determine which tools to use
+  let bunkerTools: any[] = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool]; // Default to all tools
+  
+  if (requiredTools.length > 0) {
+    console.log(`✅ [BUNKER-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
+    bunkerTools = requiredTools
+      .map(toolName => toolMap[toolName])
+      .filter(Boolean); // Remove undefined
+    
+    if (bunkerTools.length === 0) {
+      console.warn('⚠️ [BUNKER-AGENT] Supervisor specified tools but none matched, using all tools as fallback');
+      bunkerTools = [findBunkerPortsTool, getFuelPricesTool, analyzeBunkerOptionsTool];
+    }
+  } else {
+    console.log(`ℹ️ [BUNKER-AGENT] No tools specified by supervisor, using all available tools`);
+  }
+  
   const llmWithTools = (bunkerAgentLLM as any).bindTools(bunkerTools);
 
   const systemPrompt = `You are the Bunker Agent. Your role is to:
@@ -2225,4 +2395,161 @@ Provide a clear summary of the route information.`;
     throw error;
   }
 }
+
+// ============================================================================
+// Agent Registry Registration
+// ============================================================================
+
+// Register Route Agent
+AgentRegistry.registerAgent({
+  agent_name: 'route_agent',
+  description: 'Calculates maritime routes between ports and generates vessel position timeline for weather analysis',
+  available_tools: [
+    {
+      tool_name: 'calculate_route',
+      description: 'Calculate maritime route between origin and destination ports',
+      when_to_use: [
+        'route_data is missing from state',
+        'User query includes origin and destination ports',
+        'Need distance, duration, or route geometry'
+      ],
+      when_not_to_use: [
+        'route_data already exists in state',
+        'No origin or destination specified'
+      ],
+      prerequisites: ['origin_port', 'destination_port'],
+      produces: ['route_data']
+    },
+    {
+      tool_name: 'calculate_weather_timeline',
+      description: 'Generate vessel position timeline from route for weather analysis',
+      when_to_use: [
+        'route_data exists but vessel_timeline is missing',
+        'Need weather data along route',
+        'Need bunker planning with weather considerations'
+      ],
+      when_not_to_use: [
+        'vessel_timeline already exists',
+        'route_data is missing',
+        'Query does not need weather analysis'
+      ],
+      prerequisites: ['route_data', 'vessel_speed'],
+      produces: ['vessel_timeline']
+    }
+  ],
+  prerequisites: ['origin_port', 'destination_port'],
+  outputs: ['route_data', 'vessel_timeline']
+});
+
+// Register Weather Agent
+AgentRegistry.registerAgent({
+  agent_name: 'weather_agent',
+  description: 'Fetches marine weather forecasts, calculates weather-adjusted fuel consumption, and validates bunker port weather safety',
+  available_tools: [
+    {
+      tool_name: 'fetch_marine_weather',
+      description: 'Fetch marine weather forecast from Open-Meteo API for vessel positions along route',
+      when_to_use: [
+        'weather_forecast is missing from state',
+        'vessel_timeline exists with positions',
+        'Need weather data for fuel consumption or safety analysis'
+      ],
+      when_not_to_use: [
+        'weather_forecast already exists',
+        'vessel_timeline is missing',
+        'Query does not require weather analysis'
+      ],
+      prerequisites: ['vessel_timeline'],
+      produces: ['weather_forecast']
+    },
+    {
+      tool_name: 'calculate_weather_consumption',
+      description: 'Calculate weather-adjusted fuel consumption based on forecast',
+      when_to_use: [
+        'weather_forecast exists',
+        'weather_consumption is missing',
+        'Need accurate fuel consumption for bunker planning'
+      ],
+      when_not_to_use: [
+        'weather_forecast is missing',
+        'weather_consumption already exists',
+        'Query is only about route or basic weather'
+      ],
+      prerequisites: ['weather_forecast', 'vessel_consumption'],
+      produces: ['weather_consumption']
+    },
+    {
+      tool_name: 'check_bunker_port_weather',
+      description: 'Check weather safety conditions at bunker ports',
+      when_to_use: [
+        'bunker_ports exist in state',
+        'Need to validate port safety for bunkering operations'
+      ],
+      when_not_to_use: [
+        'bunker_ports is missing',
+        'Query does not involve bunker operations'
+      ],
+      prerequisites: ['bunker_ports'],
+      produces: ['port_weather_status']
+    }
+  ],
+  prerequisites: ['vessel_timeline'],
+  outputs: ['weather_forecast', 'weather_consumption', 'port_weather_status']
+});
+
+// Register Bunker Agent
+AgentRegistry.registerAgent({
+  agent_name: 'bunker_agent',
+  description: 'Finds bunker ports along route, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis',
+  available_tools: [
+    {
+      tool_name: 'find_bunker_ports',
+      description: 'Find available bunker ports along the vessel route',
+      when_to_use: [
+        'bunker_ports is missing from state',
+        'route_data exists',
+        'Need to identify where vessel can refuel'
+      ],
+      when_not_to_use: [
+        'bunker_ports already exists',
+        'route_data is missing',
+        'Query does not involve bunker planning'
+      ],
+      prerequisites: ['route_data'],
+      produces: ['bunker_ports']
+    },
+    {
+      tool_name: 'get_fuel_prices',
+      description: 'Fetch current fuel prices at bunker ports',
+      when_to_use: [
+        'bunker_ports exist',
+        'fuel_prices is missing',
+        'Need pricing data for bunker analysis'
+      ],
+      when_not_to_use: [
+        'bunker_ports is missing',
+        'fuel_prices already exists'
+      ],
+      prerequisites: ['bunker_ports'],
+      produces: ['port_prices']
+    },
+    {
+      tool_name: 'analyze_bunker_options',
+      description: 'Analyze and rank bunker options based on cost, weather, and operational factors',
+      when_to_use: [
+        'bunker_ports and port_prices exist',
+        'bunker_analysis is missing',
+        'Need recommendation on optimal bunker strategy'
+      ],
+      when_not_to_use: [
+        'bunker_ports or port_prices is missing',
+        'bunker_analysis already exists'
+      ],
+      prerequisites: ['bunker_ports', 'port_prices', 'weather_consumption'],
+      produces: ['bunker_analysis']
+    }
+  ],
+  prerequisites: ['route_data'],
+  outputs: ['bunker_ports', 'port_prices', 'bunker_analysis']
+});
 

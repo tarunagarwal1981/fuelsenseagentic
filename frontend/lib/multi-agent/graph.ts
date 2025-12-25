@@ -13,6 +13,8 @@ import {
   MultiAgentStateAnnotation,
   type MultiAgentState,
 } from './state';
+// Import agent-nodes to trigger agent registrations
+import './agent-nodes';
 import {
   supervisorAgentNode,
   routeAgentNode,
@@ -25,6 +27,21 @@ import {
   weatherAgentTools,
   bunkerAgentTools,
 } from './tools';
+import { AgentRegistry } from './registry';
+
+// ============================================================================
+// Registry Validation
+// ============================================================================
+
+// Validate registry is populated before graph compilation
+const registeredAgents = AgentRegistry.getAllAgents();
+console.log(`📚 [REGISTRY] Loaded ${registeredAgents.length} agents:`, 
+  registeredAgents.map(a => a.agent_name).join(', ')
+);
+
+if (registeredAgents.length === 0) {
+  throw new Error('Agent registry is empty - agents failed to register. Check agent-nodes.ts registrations.');
+}
 
 // ============================================================================
 // Router Functions

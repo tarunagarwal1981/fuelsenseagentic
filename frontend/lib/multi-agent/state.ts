@@ -19,23 +19,41 @@ import type { Coordinates, Port, FuelType } from '@/lib/types';
  * Contains intent-based instructions for each agent
  */
 export interface AgentContext {
-  route_agent: {
+  route_agent?: {
     /** Whether weather timeline is needed (for weather/bunker queries) */
     needs_weather_timeline: boolean;
     /** Whether port information is needed (for bunker queries) */
     needs_port_info?: boolean;
+    /** Tool names this agent should bind (from supervisor plan) */
+    required_tools: string[];
+    /** Task description from supervisor */
+    task_description: string;
+    /** Priority level for this agent's work */
+    priority: 'critical' | 'important' | 'optional';
   };
-  weather_agent: {
+  weather_agent?: {
     /** Whether weather consumption calculation is needed (for bunker planning) */
     needs_consumption: boolean;
     /** Whether port weather check is needed (if bunker ports exist) */
     needs_port_weather: boolean;
+    /** Tool names this agent should bind (from supervisor plan) */
+    required_tools: string[];
+    /** Task description from supervisor */
+    task_description: string;
+    /** Priority level for this agent's work */
+    priority: 'critical' | 'important' | 'optional';
   };
-  bunker_agent: {
+  bunker_agent?: {
     /** Whether weather consumption is needed for accurate bunker analysis */
     needs_weather_consumption: boolean;
     /** Whether port weather check is needed */
     needs_port_weather: boolean;
+    /** Tool names this agent should bind (from supervisor plan) */
+    required_tools: string[];
+    /** Task description from supervisor */
+    task_description: string;
+    /** Priority level for this agent's work */
+    priority: 'critical' | 'important' | 'optional';
   };
   finalize: {
     /** Query complexity level */
