@@ -98,8 +98,8 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
                 key={route.id}
                 className={`p-3 cursor-pointer transition-all hover:shadow-md ${
                   isSelected
-                    ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-400"
-                    : "border hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800"
+                    ? "border-2 border-blue-500 bg-gradient-to-br from-green-50/30 to-orange-50/20 dark:from-green-950/10 dark:to-orange-950/10 dark:border-blue-400"
+                    : "border hover:border-green-300/40 dark:hover:border-green-600/20 hover:bg-green-50/20 dark:hover:bg-green-950/10 dark:border-gray-700 dark:bg-gray-800"
                 }`}
                 onClick={() => onRouteSelect(route.id)}
               >

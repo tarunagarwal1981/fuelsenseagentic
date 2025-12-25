@@ -21,8 +21,10 @@ import {
   X,
   Sun,
   Moon,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
   ChevronRight,
-  Settings,
 } from "lucide-react";
 import { ResultsTable } from "./results-table";
 import { RouteSelector } from "./route-selector";
@@ -75,6 +77,13 @@ interface PerformanceMetrics {
   agentsCalled: string[];
 }
 
+interface AgentLog {
+  timestamp: Date;
+  agent: string;
+  action: string;
+  status: 'start' | 'complete' | 'error';
+}
+
 export function ChatInterfaceMultiAgent() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -96,6 +105,10 @@ export function ChatInterfaceMultiAgent() {
   const [showSidebar, setShowSidebar] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [routesExpanded, setRoutesExpanded] = useState(true);
+  const [agentLogExpanded, setAgentLogExpanded] = useState(true);
+  const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
     id: string;
     origin_port_code: string;
@@ -113,6 +126,7 @@ export function ChatInterfaceMultiAgent() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const agentLogEndRef = useRef<HTMLDivElement>(null);
 
   // Dark mode effect
   useEffect(() => {
@@ -122,6 +136,13 @@ export function ChatInterfaceMultiAgent() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Auto-scroll agent log
+  useEffect(() => {
+    if (agentLogEndRef.current) {
+      agentLogEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [agentLogs]);
 
   // Helper function to get port details
   const getPortDetails = (portCode: string) => {
@@ -182,6 +203,16 @@ export function ChatInterfaceMultiAgent() {
     }
   };
 
+  // Add agent log entry
+  const addAgentLog = (agent: string, action: string, status: 'start' | 'complete' | 'error') => {
+    setAgentLogs(prev => [...prev, {
+      timestamp: new Date(),
+      agent,
+      action,
+      status,
+    }]);
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -203,7 +234,8 @@ export function ChatInterfaceMultiAgent() {
     setAgentActivities([]);
     setPerformanceMetrics(null);
     setAnalysisData(null);
-    setShowSidebar(false); // Close sidebar when new query starts
+    setShowSidebar(false);
+    addAgentLog("supervisor", "Starting analysis...", "start");
 
     const startTime = Date.now();
 
@@ -231,6 +263,7 @@ export function ChatInterfaceMultiAgent() {
       
       if (selectedRouteId && useMultiAgent) {
         console.log(`🎯 [MULTI-AGENT-FRONTEND] Using cached route: ${selectedRouteId}`);
+        addAgentLog("system", `Using cached route: ${selectedRouteId}`, "complete");
       }
       
       const response = await fetch(endpoint, {
@@ -260,6 +293,7 @@ export function ChatInterfaceMultiAgent() {
             console.error('❌ [MULTI-AGENT-FRONTEND] Could not parse error response');
           }
         }
+        addAgentLog("system", `Error: ${errorMessage}`, "error");
         throw new Error(errorMessage);
       }
 
@@ -310,6 +344,7 @@ export function ChatInterfaceMultiAgent() {
                     });
                     setCurrentAgent("route_agent");
                     setAgentActivities([...activities]);
+                    addAgentLog("route_agent", "Route calculation completed", "complete");
                     break;
 
                   case "weather_complete":
@@ -321,6 +356,7 @@ export function ChatInterfaceMultiAgent() {
                     });
                     setCurrentAgent("weather_agent");
                     setAgentActivities([...activities]);
+                    addAgentLog("weather_agent", "Weather analysis completed", "complete");
                     break;
 
                   case "bunker_complete":
@@ -332,11 +368,13 @@ export function ChatInterfaceMultiAgent() {
                     });
                     setCurrentAgent("bunker_agent");
                     setAgentActivities([...activities]);
+                    addAgentLog("bunker_agent", "Bunker analysis completed", "complete");
                     break;
 
                   case "final_complete":
                     assistantMessage = data.recommendation || "Analysis completed.";
                     setCurrentAgent(null);
+                    addAgentLog("supervisor", "Final recommendation ready", "complete");
                     // Auto-open sidebar when results are ready
                     if (routeData || bunkerData || weatherData) {
                       setShowSidebar(true);
@@ -344,6 +382,7 @@ export function ChatInterfaceMultiAgent() {
                     break;
 
                   case "error":
+                    addAgentLog("system", `Error: ${data.error || "Unknown error"}`, "error");
                     throw new Error(data.error || "Unknown error");
                 }
               } catch (parseError) {
@@ -449,38 +488,164 @@ export function ChatInterfaceMultiAgent() {
   ];
 
   return (
-    <div className="flex h-full bg-gray-50 dark:bg-gray-900">
-      {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${
-        showSidebar ? 'lg:mr-80' : ''
-      }`}>
+    <div className="flex h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
+      {/* Left Sidebar - 25% width, collapsible */}
+      <div className={`${
+        leftSidebarCollapsed ? 'w-12' : 'w-[25%] min-w-[280px]'
+      } flex flex-col border-r border-green-200/20 dark:border-green-900/10 bg-gradient-to-b from-green-50/15 via-white to-orange-50/15 dark:from-green-950/5 dark:via-gray-800 dark:to-orange-950/5 transition-all duration-300 flex-shrink-0`}>
+        {/* Sidebar Header */}
+        <div className="h-14 border-b border-green-200/20 dark:border-green-900/10 flex items-center justify-between px-4 flex-shrink-0">
+          {!leftSidebarCollapsed && (
+            <h2 className="text-sm font-semibold dark:text-white">Tools & Activity</h2>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 ml-auto"
+            onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
+          >
+            {leftSidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+
+        {!leftSidebarCollapsed && (
+          <div className="flex-1 overflow-y-auto">
+            {/* Cached Routes Section - Collapsible */}
+            <div className="border-b border-green-200/30 dark:border-green-900/15">
+              <button
+                onClick={() => setRoutesExpanded(!routesExpanded)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Route className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium dark:text-white">Cached Routes</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {cachedRoutes.length}
+                  </Badge>
+                </div>
+                {routesExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                )}
+              </button>
+              
+              {routesExpanded && (
+                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
+                  <RouteSelector
+                    routes={cachedRoutes}
+                    selectedRouteId={selectedRouteId}
+                    onRouteSelect={(routeId) => {
+                      setSelectedRouteId(routeId);
+                      addAgentLog("system", `Route ${routeId} selected`, "complete");
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Agent Activity Log - Collapsible */}
+            <div className="border-b border-green-200/30 dark:border-green-900/15">
+              <button
+                onClick={() => setAgentLogExpanded(!agentLogExpanded)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-orange-50/30 dark:hover:bg-orange-950/10 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm font-medium dark:text-white">Agent Activity</span>
+                  {agentLogs.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {agentLogs.length}
+                    </Badge>
+                  )}
+                </div>
+                {agentLogExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                )}
+              </button>
+              
+              {agentLogExpanded && (
+                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
+                  <div className="space-y-1.5">
+                    {agentLogs.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        No activity yet
+                      </p>
+                    ) : (
+                      agentLogs.map((log, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex items-start gap-2 p-2 rounded-lg text-xs ${
+                            log.status === 'complete' 
+                              ? 'bg-green-50/40 dark:bg-green-950/20 border-l-2 border-green-300/50 dark:border-green-600/30' 
+                              : log.status === 'error' 
+                              ? 'bg-red-50/40 dark:bg-red-950/20 border-l-2 border-red-300/50 dark:border-red-600/30'
+                              : 'bg-orange-50/30 dark:bg-orange-950/15 border-l-2 border-orange-300/40 dark:border-orange-600/20'
+                          }`}
+                        >
+                          <div className={`flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${
+                            log.status === 'complete' ? 'bg-green-500' :
+                            log.status === 'error' ? 'bg-red-500' :
+                            'bg-orange-500 animate-pulse'
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="font-medium dark:text-white">
+                                {getAgentLabel(log.agent)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {log.timestamp.toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground">{log.action}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    <div ref={agentLogEndRef} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Performance Metrics */}
+            {performanceMetrics && (
+              <div className="p-4">
+                <PerformanceMetricsPane metrics={performanceMetrics} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Right Chat Area - 75% width */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Minimal Header */}
-        <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 py-2 h-14 flex-shrink-0">
+        <div className="h-14 border-b border-green-200/20 dark:border-green-900/10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm flex items-center justify-between px-4 flex-shrink-0">
           <div className="flex items-center gap-2">
             <Ship className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            <h1 className="text-lg font-semibold dark:text-white">FuelSense 360</h1>
-            <Badge variant="secondary" className="text-xs hidden sm:inline-flex">
-              {useMultiAgent ? "🤖 Multi-Agent" : "🔷 Single-Agent"}
+            <h1 className="text-base font-semibold dark:text-white">FuelSense 360</h1>
+            <Badge variant="secondary" className="text-xs">
+              {useMultiAgent ? "Multi-Agent" : "Single-Agent"}
             </Badge>
           </div>
           
           <div className="flex items-center gap-2">
-            {/* Dark mode toggle */}
             <Button
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0"
               onClick={() => setDarkMode(!darkMode)}
-              title="Toggle dark mode"
             >
-              {darkMode ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
             
-            {/* Menu button */}
             <div className="relative">
               <Button
                 variant="ghost"
@@ -491,13 +656,9 @@ export function ChatInterfaceMultiAgent() {
                 <Menu className="h-4 w-4" />
               </Button>
               
-              {/* Dropdown menu */}
               {showMenu && (
                 <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowMenu(false)}
-                  />
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                   <div className="absolute right-0 top-10 z-20 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1">
                     <button
                       onClick={() => {
@@ -539,145 +700,131 @@ export function ChatInterfaceMultiAgent() {
           </div>
         </div>
 
-        {/* Floating Agent Status */}
-        {currentAgent && (
-          <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-30 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-200 dark:border-gray-700">
-              <Loader2 className="h-4 w-4 animate-spin text-purple-600 dark:text-purple-400" />
-              <span className="text-sm font-medium dark:text-white">
-                {getAgentLabel(currentAgent)} is working...
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 min-h-0">
-          {/* Quick Action Buttons - Show when no input and minimal messages */}
-          {!input && messages.length <= 1 && (
-            <div className="max-w-3xl mx-auto mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Messages Area - Tight spacing, modern design */}
+        <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white via-green-50/5 to-orange-50/5 dark:from-gray-900 dark:via-green-950/5 dark:to-orange-950/5">
+          <div className="max-w-4xl mx-auto px-4 py-4">
+            {/* Quick Prompts - Only show when empty */}
+            {messages.length <= 1 && !input && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                 {quickPrompts.map((prompt, idx) => (
                   <button
                     key={idx}
                     onClick={() => setInput(prompt)}
-                    className="text-left p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-sm dark:text-gray-300 dark:bg-gray-800"
+                    className="text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-green-300/50 dark:hover:border-green-600/30 hover:bg-gradient-to-br hover:from-green-50/30 hover:to-orange-50/20 dark:hover:from-green-950/10 dark:hover:to-orange-950/10 transition-all text-sm dark:text-gray-300 dark:bg-gray-800"
                   >
                     {prompt}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  message.role === "user"
-                    ? "bg-blue-50/30 dark:bg-blue-900/10 justify-end"
-                    : "justify-start"
-                }`}
-              >
-                {message.role === "assistant" && (
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+            {/* Messages - Very tight spacing */}
+            <div className="space-y-1">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`group flex gap-3 py-2 ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {message.role === "assistant" && (
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
                       <Bot className="h-4 w-4 text-white" />
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <div className="flex-1 min-w-0">
-                  <div
-                    className={`rounded-2xl px-4 py-3 ${
-                      message.role === "user"
-                        ? "bg-blue-600 text-white ml-auto max-w-[85%]"
-                        : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm max-w-[90%] dark:text-gray-100"
-                    }`}
-                  >
-                    <div className="whitespace-pre-wrap [&_*]:my-1 [&_*:first-child]:mt-0 [&_*:last-child]:mb-0">
+                  <div className={`flex-1 min-w-0 max-w-[85%] ${
+                    message.role === "user" ? "flex justify-end" : ""
+                  }`}>
+                    <div
+                      className={`rounded-2xl px-4 py-2.5 ${
+                        message.role === "user"
+                          ? "bg-blue-600 text-white"
+                          : "bg-white dark:bg-gray-800 border border-green-200/20 dark:border-green-900/15 shadow-sm dark:text-gray-100"
+                      }`}
+                    >
                       <ReactMarkdown
+                        className="prose prose-sm dark:prose-invert max-w-none"
                         components={{
-                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          p: ({ children }) => <p className="mb-1 last:mb-0 text-sm leading-relaxed">{children}</p>,
                           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                           em: ({ children }) => <em className="italic">{children}</em>,
-                          h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0">{children}</h1>,
-                          h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3 first:mt-0">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-base font-semibold mb-2 mt-2 first:mt-0">{children}</h3>,
-                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                          li: ({ children }) => <li className="ml-2">{children}</li>,
-                          code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-sm font-mono">{children}</code>,
-                          pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-2 overflow-x-auto">{children}</pre>,
-                          blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-2">{children}</blockquote>,
+                          h1: ({ children }) => <h1 className="text-lg font-bold mb-1 mt-2 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-base font-bold mb-1 mt-1.5 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-1 first:mt-0">{children}</h3>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-sm">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-sm">{children}</ol>,
+                          li: ({ children }) => <li className="ml-1 text-sm">{children}</li>,
+                          code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                          pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
                           a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
                         }}
                       >
                         {message.content}
                       </ReactMarkdown>
                     </div>
-                    <p
-                      className={`text-xs mt-2 ${
-                        message.role === "user"
-                          ? "text-blue-100"
-                          : "text-gray-500 dark:text-gray-400"
-                      }`}
-                      suppressHydrationWarning
-                    >
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
                   </div>
-                </div>
 
-                {message.role === "user" && (
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
+                  {message.role === "user" && (
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
                       <User className="h-4 w-4 text-white" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Compact Agent Thinking Indicator */}
-            {isLoading && (
-              <div className="flex items-start gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-white" />
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-medium dark:text-gray-300">Thinking...</span>
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
-                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
-                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
-                    </div>
-                  </div>
-                  {agentActivities.length > 0 && (
-                    <div className="flex gap-2 flex-wrap">
-                      {agentActivities.map((activity, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs">
-                          {getAgentIcon(activity.agent)}
-                          {getAgentLabel(activity.agent)}
-                        </Badge>
-                      ))}
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              ))}
 
-            <div ref={messagesEndRef} />
+              {/* Thinking Indicator - Compact */}
+              {isLoading && (
+                <div className="flex gap-3 py-2">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="bg-gradient-to-br from-green-50/20 via-white to-orange-50/20 dark:from-green-950/10 dark:via-gray-800 dark:to-orange-950/10 border border-green-200/30 dark:border-green-900/20 rounded-2xl px-4 py-2.5 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
+                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+                        </div>
+                        <span className="text-sm text-muted-foreground">Thinking...</span>
+                      </div>
+                      {agentActivities.length > 0 && (
+                        <div className="flex gap-1.5 flex-wrap mt-2">
+                          {agentActivities.map((activity, idx) => (
+                            <Badge 
+                              key={idx} 
+                              variant="outline" 
+                              className={`text-xs ${
+                                activity.agent === 'route_agent' 
+                                  ? 'bg-blue-50/50 border-blue-200/50 text-blue-700/70'
+                                  : activity.agent === 'weather_agent'
+                                  ? 'bg-green-50/40 border-green-200/40 text-green-700/60'
+                                  : activity.agent === 'bunker_agent'
+                                  ? 'bg-orange-50/40 border-orange-200/40 text-orange-700/60'
+                                  : 'bg-purple-50/40 border-purple-200/40 text-purple-700/60'
+                              }`}
+                            >
+                              {getAgentIcon(activity.agent)}
+                              {getAgentLabel(activity.agent)}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
           </div>
         </div>
 
-        {/* Floating Input Bar */}
-        <div className="sticky bottom-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
-          <div className="max-w-3xl mx-auto w-full">
+        {/* Input Bar - Sticky */}
+        <div className="border-t border-green-200/20 dark:border-green-900/10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-4 flex-shrink-0">
+          <div className="max-w-4xl mx-auto">
             <form onSubmit={handleSubmit} className="flex items-end gap-2">
               <div className="flex-1 relative">
                 <textarea
@@ -685,7 +832,7 @@ export function ChatInterfaceMultiAgent() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask about routes, weather, or bunker options..."
-                  className="w-full min-h-[60px] max-h-[200px] px-4 py-3 pr-12 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  className="w-full min-h-[52px] max-h-[180px] px-4 py-3 pr-12 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-green-400/20 focus:border-orange-300/30 dark:focus:ring-green-600/15 dark:focus:border-orange-600/15 text-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -706,24 +853,15 @@ export function ChatInterfaceMultiAgent() {
                 </Button>
               </div>
             </form>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-              Press Enter to send, Shift+Enter for new line
-            </p>
           </div>
         </div>
       </div>
 
-      {/* Collapsible Results Sidebar */}
+      {/* Results Sidebar - Right side, collapsible */}
       {showSidebar && analysisData && (
         <>
-          {/* Mobile overlay */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-            onClick={() => setShowSidebar(false)}
-          />
-          
-          {/* Sidebar */}
-          <div className="fixed lg:sticky top-0 right-0 h-full w-full lg:w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto z-50 lg:z-10">
+          <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setShowSidebar(false)} />
+          <div className="fixed lg:sticky top-0 right-0 h-full w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto z-50 lg:z-10">
             <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between z-10">
               <h3 className="font-semibold dark:text-white">Analysis Results</h3>
               <Button
@@ -737,16 +875,6 @@ export function ChatInterfaceMultiAgent() {
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Route Selector */}
-              <RouteSelector
-                routes={cachedRoutes}
-                selectedRouteId={selectedRouteId}
-                onRouteSelect={(routeId) => {
-                  setSelectedRouteId(routeId);
-                  console.log(`🎯 [MULTI-AGENT-FRONTEND] Route selected: ${routeId}`);
-                }}
-              />
-
               {/* Weather Impact Summary */}
               {analysisData.weather_data && (
                 <Card className="p-4 bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800">
@@ -964,19 +1092,6 @@ export function ChatInterfaceMultiAgent() {
         >
           <ChevronRight className="h-4 w-4 mr-2" />
           View Results
-        </Button>
-      )}
-
-      {/* Performance Metrics Floating Button - Desktop only */}
-      {performanceMetrics && !showSidebar && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="fixed bottom-20 right-4 z-30 shadow-lg hidden lg:flex"
-          onClick={() => setShowSidebar(true)}
-          title="View performance metrics"
-        >
-          <Activity className="h-4 w-4" />
         </Button>
       )}
     </div>
