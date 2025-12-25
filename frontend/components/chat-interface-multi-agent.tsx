@@ -3,7 +3,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,6 +17,12 @@ import {
   Fuel,
   Clock,
   Activity,
+  Menu,
+  X,
+  Sun,
+  Moon,
+  ChevronRight,
+  Settings,
 } from "lucide-react";
 import { ResultsTable } from "./results-table";
 import { RouteSelector } from "./route-selector";
@@ -34,7 +39,7 @@ const MapViewer = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[600px] bg-muted rounded-lg flex items-center justify-center">
+      <div className="w-full h-[400px] bg-muted rounded-lg flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     ),
@@ -88,6 +93,9 @@ export function ChatInterfaceMultiAgent() {
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [useMultiAgent, setUseMultiAgent] = useState(true);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
     id: string;
     origin_port_code: string;
@@ -104,6 +112,16 @@ export function ChatInterfaceMultiAgent() {
   }>);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Dark mode effect
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   // Helper function to get port details
   const getPortDetails = (portCode: string) => {
@@ -122,15 +140,15 @@ export function ChatInterfaceMultiAgent() {
   const getAgentIcon = (agent: string) => {
     switch (agent) {
       case "route_agent":
-        return <Route className="h-4 w-4" />;
+        return <Route className="h-3 w-3" />;
       case "weather_agent":
-        return <Cloud className="h-4 w-4" />;
+        return <Cloud className="h-3 w-3" />;
       case "bunker_agent":
-        return <Fuel className="h-4 w-4" />;
+        return <Fuel className="h-3 w-3" />;
       case "supervisor":
-        return <Activity className="h-4 w-4" />;
+        return <Activity className="h-3 w-3" />;
       default:
-        return <Bot className="h-4 w-4" />;
+        return <Bot className="h-3 w-3" />;
     }
   };
 
@@ -164,8 +182,8 @@ export function ChatInterfaceMultiAgent() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     console.log("🚀 [MULTI-AGENT-FRONTEND] Starting chat submission");
@@ -185,6 +203,7 @@ export function ChatInterfaceMultiAgent() {
     setAgentActivities([]);
     setPerformanceMetrics(null);
     setAnalysisData(null);
+    setShowSidebar(false); // Close sidebar when new query starts
 
     const startTime = Date.now();
 
@@ -227,14 +246,12 @@ export function ChatInterfaceMultiAgent() {
       );
 
       if (!response.ok) {
-        // Try to parse error response as JSON
         let errorMessage = `API error: ${response.status}`;
         try {
           const errorData = await response.json();
           console.error('❌ [MULTI-AGENT-FRONTEND] API Error:', errorData);
           errorMessage = errorData.error || errorMessage;
         } catch (parseError) {
-          // If JSON parsing fails, try to get text
           try {
             const errorText = await response.text();
             console.error('❌ [MULTI-AGENT-FRONTEND] API Error (text):', errorText);
@@ -269,7 +286,7 @@ export function ChatInterfaceMultiAgent() {
           buffer += chunk;
 
           const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
             if (line.startsWith("data: ")) {
@@ -320,6 +337,10 @@ export function ChatInterfaceMultiAgent() {
                   case "final_complete":
                     assistantMessage = data.recommendation || "Analysis completed.";
                     setCurrentAgent(null);
+                    // Auto-open sidebar when results are ready
+                    if (routeData || bunkerData || weatherData) {
+                      setShowSidebar(true);
+                    }
                     break;
 
                   case "error":
@@ -327,7 +348,6 @@ export function ChatInterfaceMultiAgent() {
                 }
               } catch (parseError) {
                 console.error("❌ [MULTI-AGENT-FRONTEND] Parse error:", parseError, "Data:", dataStr.substring(0, 200));
-                // Continue processing other events
               }
             }
           }
@@ -346,7 +366,7 @@ export function ChatInterfaceMultiAgent() {
           prices: bunkerData?.recommendations?.map((r: any) => ({
             port_code: r.port_code,
             prices: {
-              VLSFO: r.fuel_cost_usd / 1000, // Approximate
+              VLSFO: r.fuel_cost_usd / 1000,
             },
           })),
           analysis: bunkerData,
@@ -373,9 +393,6 @@ export function ChatInterfaceMultiAgent() {
 
         setCurrentAgent(null);
       } else {
-        // Single-agent uses streaming (existing logic)
-        // This would need the streaming logic from chat-interface-langgraph
-        // For now, we'll just show a message
         setMessages((prev) => [
           ...prev,
           {
@@ -390,7 +407,6 @@ export function ChatInterfaceMultiAgent() {
       console.error("❌ [MULTI-AGENT-FRONTEND] Error in chat submission:", error);
       setCurrentAgent(null);
       
-      // Show user-friendly error message
       const errorMessage = error instanceof Error 
         ? error.message 
         : "An error occurred. Please try again.";
@@ -412,7 +428,6 @@ export function ChatInterfaceMultiAgent() {
 
   // Helper to extract port codes from message
   const extractPortCode = (message: string, keyword: string): string | undefined => {
-    // Simple extraction - can be improved
     const lowerMessage = message.toLowerCase();
     const keywordIndex = lowerMessage.indexOf(keyword);
     if (keywordIndex === -1) return undefined;
@@ -425,116 +440,160 @@ export function ChatInterfaceMultiAgent() {
     return undefined;
   };
 
+  // Quick action prompts
+  const quickPrompts = [
+    "Calculate route from Singapore to Rotterdam",
+    "Find best bunker ports with weather analysis",
+    "Compare fuel prices across ports",
+    "Get weather forecast for route",
+  ];
+
   return (
-    <div className="flex flex-row h-full max-w-7xl mx-auto p-4 overflow-hidden gap-4">
-      {/* Main Content Area */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Header */}
-        <div className="mb-4 flex-shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-3">
-            <Ship className="h-8 w-8 text-blue-600" />
-            <h1 className="text-3xl font-bold">FuelSense 360</h1>
-            <Badge
-              variant="secondary"
-              className={`${
-                useMultiAgent
-                  ? "bg-gradient-to-r from-purple-100 to-blue-100 text-purple-800"
-                  : "bg-gray-100 text-gray-800"
-              }`}
-            >
+    <div className="flex h-full bg-gray-50 dark:bg-gray-900">
+      {/* Main Chat Area */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${
+        showSidebar ? 'lg:mr-80' : ''
+      }`}>
+        {/* Minimal Header */}
+        <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 py-2 h-14 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Ship className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <h1 className="text-lg font-semibold dark:text-white">FuelSense 360</h1>
+            <Badge variant="secondary" className="text-xs hidden sm:inline-flex">
               {useMultiAgent ? "🤖 Multi-Agent" : "🔷 Single-Agent"}
             </Badge>
           </div>
+          
           <div className="flex items-center gap-2">
+            {/* Dark mode toggle */}
             <Button
-              variant={useMultiAgent ? "default" : "outline"}
+              variant="ghost"
               size="sm"
-              onClick={() => setUseMultiAgent(true)}
+              className="h-8 w-8 p-0"
+              onClick={() => setDarkMode(!darkMode)}
+              title="Toggle dark mode"
             >
-              Multi-Agent
+              {darkMode ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </Button>
-            <Button
-              variant={!useMultiAgent ? "default" : "outline"}
-              size="sm"
-              onClick={() => setUseMultiAgent(false)}
-            >
-              Single-Agent
-            </Button>
-            <Link href="/chat-langgraph">
-              <Button variant="outline" size="sm">
-                LangGraph UI
+            
+            {/* Menu button */}
+            <div className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setShowMenu(!showMenu)}
+              >
+                <Menu className="h-4 w-4" />
               </Button>
-            </Link>
-          </div>
-        </div>
-        <p className="text-muted-foreground">
-          {useMultiAgent
-            ? "AI-powered bunker optimization with specialized agents (Route, Weather, Bunker)"
-            : "AI-powered bunker optimization powered by LangGraph"}
-        </p>
-      </div>
-
-      {/* Agent Activity Indicator */}
-      {(currentAgent || agentActivities.length > 0) && (
-        <Card className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-purple-600" />
-              <span className="font-semibold text-sm">Agent Activity:</span>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {agentActivities.map((activity, idx) => (
-                <Badge
-                  key={idx}
-                  className={`${getAgentColor(activity.agent)} text-white flex items-center gap-1`}
-                >
-                  {getAgentIcon(activity.agent)}
-                  {getAgentLabel(activity.agent)}
-                  {activity.toolCalls > 0 && (
-                    <span className="ml-1">({activity.toolCalls})</span>
-                  )}
-                </Badge>
-              ))}
-              {currentAgent && (
-                <Badge
-                  className={`${getAgentColor(currentAgent)} text-white flex items-center gap-1 animate-pulse`}
-                >
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {getAgentLabel(currentAgent)}
-                </Badge>
+              
+              {/* Dropdown menu */}
+              {showMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowMenu(false)}
+                  />
+                  <div className="absolute right-0 top-10 z-20 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1">
+                    <button
+                      onClick={() => {
+                        setUseMultiAgent(true);
+                        setShowMenu(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                        useMultiAgent ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
+                    >
+                      Multi-Agent Mode
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUseMultiAgent(false);
+                        setShowMenu(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                        !useMultiAgent ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
+                    >
+                      Single-Agent Mode
+                    </button>
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                    <Link href="/chat-langgraph">
+                      <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        LangGraph UI
+                      </button>
+                    </Link>
+                    <Link href="/compare">
+                      <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                        Compare Versions
+                      </button>
+                    </Link>
+                  </div>
+                </>
               )}
             </div>
           </div>
-        </Card>
-      )}
+        </div>
 
-      {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto mb-4 min-h-0">
+        {/* Floating Agent Status */}
+        {currentAgent && (
+          <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-30 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-full shadow-lg border border-gray-200 dark:border-gray-700">
+              <Loader2 className="h-4 w-4 animate-spin text-purple-600 dark:text-purple-400" />
+              <span className="text-sm font-medium dark:text-white">
+                {getAgentLabel(currentAgent)} is working...
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Messages Area */}
-        <Card className="mb-4">
-          <div className="p-4">
-            <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex gap-3 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <div className="flex-shrink-0">
-                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                        <Bot className="h-5 w-5 text-white" />
-                      </div>
-                    </div>
-                  )}
+        <div className="flex-1 overflow-y-auto px-4 py-6 min-h-0">
+          {/* Quick Action Buttons - Show when no input and minimal messages */}
+          {!input && messages.length <= 1 && (
+            <div className="max-w-3xl mx-auto mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {quickPrompts.map((prompt, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setInput(prompt)}
+                    className="text-left p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-sm dark:text-gray-300 dark:bg-gray-800"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
+          <div className="max-w-3xl mx-auto space-y-6">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  message.role === "user"
+                    ? "bg-blue-50/30 dark:bg-blue-900/10 justify-end"
+                    : "justify-start"
+                }`}
+              >
+                {message.role === "assistant" && (
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+                      <Bot className="h-4 w-4 text-white" />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
                   <div
-                    className={`rounded-lg px-4 py-2 max-w-[80%] ${
+                    className={`rounded-2xl px-4 py-3 ${
                       message.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-muted"
+                        ? "bg-blue-600 text-white ml-auto max-w-[85%]"
+                        : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm max-w-[90%] dark:text-gray-100"
                     }`}
                   >
                     <div className="whitespace-pre-wrap [&_*]:my-1 [&_*:first-child]:mt-0 [&_*:last-child]:mb-0">
@@ -551,7 +610,7 @@ export function ChatInterfaceMultiAgent() {
                           li: ({ children }) => <li className="ml-2">{children}</li>,
                           code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-sm font-mono">{children}</code>,
                           pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-2 overflow-x-auto">{children}</pre>,
-                          blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 italic my-2">{children}</blockquote>,
+                          blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-2">{children}</blockquote>,
                           a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
                         }}
                       >
@@ -559,314 +618,367 @@ export function ChatInterfaceMultiAgent() {
                       </ReactMarkdown>
                     </div>
                     <p
-                      className="text-xs opacity-70 mt-1"
+                      className={`text-xs mt-2 ${
+                        message.role === "user"
+                          ? "text-blue-100"
+                          : "text-gray-500 dark:text-gray-400"
+                      }`}
                       suppressHydrationWarning
                     >
                       {message.timestamp.toLocaleTimeString()}
                     </p>
                   </div>
+                </div>
 
-                  {message.role === "user" && (
-                    <div className="flex-shrink-0">
-                      <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
-                        <User className="h-5 w-5 text-white" />
-                      </div>
+                {message.role === "user" && (
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
+                      <User className="h-4 w-4 text-white" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Compact Agent Thinking Indicator */}
+            {isLoading && (
+              <div className="flex items-start gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                    <Bot className="h-4 w-4 text-white" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm font-medium dark:text-gray-300">Thinking...</span>
+                    <div className="flex gap-1">
+                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
+                      <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+                    </div>
+                  </div>
+                  {agentActivities.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {agentActivities.map((activity, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {getAgentIcon(activity.agent)}
+                          {getAgentLabel(activity.agent)}
+                        </Badge>
+                      ))}
                     </div>
                   )}
                 </div>
-              ))}
-
-              {/* Loading indicator */}
-              {isLoading && !currentAgent && (
-                <div className="flex gap-3 justify-start">
-                  <div className="flex-shrink-0">
-                    <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
-                      <Loader2 className="h-5 w-5 text-white animate-spin" />
-                    </div>
-                  </div>
-                  <div className="rounded-lg px-4 py-2 bg-purple-50 border border-purple-200">
-                    <p className="text-sm text-purple-800">
-                      Processing with multi-agent system...
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          </div>
-        </Card>
-
-        {/* Full Analysis Results */}
-        {(analysisData?.route || analysisData?.analysis) && (
-          <div className="space-y-4 mb-4">
-            {/* Weather Impact Summary */}
-            {analysisData.weather_data && (
-              <Card className="p-4 bg-cyan-50 border-cyan-200">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Cloud className="h-5 w-5 text-cyan-600" />
-                  Weather Impact
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Base Consumption</p>
-                    <p className="font-semibold text-lg">
-                      {analysisData.weather_data.base_consumption_mt?.toFixed(2) ||
-                        "N/A"}{" "}
-                      MT
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Adjusted Consumption</p>
-                    <p className="font-semibold text-lg">
-                      {analysisData.weather_data.adjusted_consumption_mt?.toFixed(
-                        2
-                      ) || "N/A"}{" "}
-                      MT
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Additional Fuel</p>
-                    <p className="font-semibold text-lg text-orange-600">
-                      +
-                      {analysisData.weather_data.additional_fuel_mt?.toFixed(2) ||
-                        "N/A"}{" "}
-                      MT
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Increase</p>
-                    <p className="font-semibold text-lg text-red-600">
-                      +
-                      {analysisData.weather_data.increase_percent?.toFixed(2) ||
-                        "N/A"}
-                      %
-                    </p>
-                  </div>
-                </div>
-                {analysisData.weather_data.alerts_count > 0 && (
-                  <div className="mt-3 p-2 bg-yellow-100 rounded text-sm">
-                    ⚠️ {analysisData.weather_data.alerts_count} weather alert(s)
-                    detected
-                  </div>
-                )}
-              </Card>
+              </div>
             )}
 
-            {/* Quick Stats */}
-            {analysisData?.analysis?.recommendations &&
-              analysisData.analysis.recommendations.length > 0 && (
-                <Card className="p-4">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Ship className="h-5 w-5" />
-                    Analysis Summary
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Floating Input Bar */}
+        <div className="sticky bottom-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
+          <div className="max-w-3xl mx-auto w-full">
+            <form onSubmit={handleSubmit} className="flex items-end gap-2">
+              <div className="flex-1 relative">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask about routes, weather, or bunker options..."
+                  className="w-full min-h-[60px] max-h-[200px] px-4 py-3 pr-12 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  disabled={isLoading}
+                  rows={1}
+                />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-2 bottom-2 h-8 w-8 p-0"
+                  disabled={!input.trim() || isLoading}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </form>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+              Press Enter to send, Shift+Enter for new line
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible Results Sidebar */}
+      {showSidebar && analysisData && (
+        <>
+          {/* Mobile overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            onClick={() => setShowSidebar(false)}
+          />
+          
+          {/* Sidebar */}
+          <div className="fixed lg:sticky top-0 right-0 h-full w-full lg:w-80 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 overflow-y-auto z-50 lg:z-10">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between z-10">
+              <h3 className="font-semibold dark:text-white">Analysis Results</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setShowSidebar(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              {/* Route Selector */}
+              <RouteSelector
+                routes={cachedRoutes}
+                selectedRouteId={selectedRouteId}
+                onRouteSelect={(routeId) => {
+                  setSelectedRouteId(routeId);
+                  console.log(`🎯 [MULTI-AGENT-FRONTEND] Route selected: ${routeId}`);
+                }}
+              />
+
+              {/* Weather Impact Summary */}
+              {analysisData.weather_data && (
+                <Card className="p-4 bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
+                    <Cloud className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                    Weather Impact
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground">Best Port</p>
-                      <p className="font-semibold text-lg">
-                        {analysisData.analysis.best_option?.port_name || "N/A"}
+                      <p className="text-muted-foreground text-xs">Base Consumption</p>
+                      <p className="font-semibold text-lg dark:text-white">
+                        {analysisData.weather_data.base_consumption_mt?.toFixed(2) || "N/A"} MT
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Total Cost</p>
-                      <p className="font-semibold text-lg">
-                        $
-                        {(
-                          analysisData.analysis.best_option?.total_cost_usd ||
-                          analysisData.analysis.best_option?.total_cost ||
-                          0
-                        ).toLocaleString(undefined, {
-                          maximumFractionDigits: 0,
-                        })}
+                      <p className="text-muted-foreground text-xs">Adjusted</p>
+                      <p className="font-semibold text-lg dark:text-white">
+                        {analysisData.weather_data.adjusted_consumption_mt?.toFixed(2) || "N/A"} MT
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Savings</p>
-                      <p className="font-semibold text-lg text-green-600">
-                        $
-                        {(
-                          analysisData.analysis.max_savings_usd ||
-                          analysisData.analysis.max_savings ||
-                          0
-                        ).toLocaleString(undefined, {
-                          maximumFractionDigits: 0,
-                        })}
+                      <p className="text-muted-foreground text-xs">Additional Fuel</p>
+                      <p className="font-semibold text-lg text-orange-600 dark:text-orange-400">
+                        +{analysisData.weather_data.additional_fuel_mt?.toFixed(2) || "N/A"} MT
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Options Found</p>
-                      <p className="font-semibold text-lg">
-                        {analysisData.analysis.recommendations.length}
+                      <p className="text-muted-foreground text-xs">Increase</p>
+                      <p className="font-semibold text-lg text-red-600 dark:text-red-400">
+                        +{analysisData.weather_data.increase_percent?.toFixed(2) || "N/A"}%
                       </p>
                     </div>
                   </div>
+                  {analysisData.weather_data.alerts_count > 0 && (
+                    <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/20 rounded text-sm">
+                      ⚠️ {analysisData.weather_data.alerts_count} weather alert(s) detected
+                    </div>
+                  )}
                 </Card>
               )}
 
-            {/* Map */}
-            {analysisData.route && (() => {
-              const originPort = getPortDetails(
-                analysisData.route.origin_port_code
-              );
-              const destinationPort = getPortDetails(
-                analysisData.route.destination_port_code
-              );
-
-              if (!originPort || !destinationPort) {
-                return (
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
-                      <Anchor className="h-5 w-5" />
-                      Route Map
+              {/* Quick Stats */}
+              {analysisData?.analysis?.recommendations &&
+                analysisData.analysis.recommendations.length > 0 && (
+                  <Card className="p-4 dark:bg-gray-700">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
+                      <Ship className="h-5 w-5" />
+                      Analysis Summary
                     </h3>
-                    <div className="w-full h-[600px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
-                      <div className="text-center">
-                        <p className="text-muted-foreground mb-2">
-                          Port data not found
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Best Port</p>
+                        <p className="font-semibold text-lg dark:text-white">
+                          {analysisData.analysis.best_option?.port_name || "N/A"}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          Origin: {analysisData.route.origin_port_code} |
-                          Destination: {analysisData.route.destination_port_code}
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Total Cost</p>
+                        <p className="font-semibold text-lg dark:text-white">
+                          ${(
+                            analysisData.analysis.best_option?.total_cost_usd ||
+                            analysisData.analysis.best_option?.total_cost ||
+                            0
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Savings</p>
+                        <p className="font-semibold text-lg text-green-600 dark:text-green-400">
+                          ${(
+                            analysisData.analysis.max_savings_usd ||
+                            analysisData.analysis.max_savings ||
+                            0
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Options</p>
+                        <p className="font-semibold text-lg dark:text-white">
+                          {analysisData.analysis.recommendations.length}
                         </p>
                       </div>
                     </div>
                   </Card>
-                );
-              }
+                )}
 
-              return (
-                <Card className="p-4">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Anchor className="h-5 w-5" />
-                    Route Map
-                  </h3>
-                  <MapViewer
-                    route={analysisData.route}
-                    originPort={originPort}
-                    destinationPort={destinationPort}
-                    bunkerPorts={
-                      (analysisData.analysis?.recommendations
-                        ?.map((rec: any) => {
+              {/* Map */}
+              {analysisData.route && (() => {
+                const originPort = getPortDetails(analysisData.route.origin_port_code);
+                const destinationPort = getPortDetails(analysisData.route.destination_port_code);
+
+                if (!originPort || !destinationPort) {
+                  return (
+                    <Card className="p-4 dark:bg-gray-700">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
+                        <Anchor className="h-5 w-5" />
+                        Route Map
+                      </h3>
+                      <div className="w-full h-[400px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
+                        <div className="text-center">
+                          <p className="text-muted-foreground mb-2">Port data not found</p>
+                          <p className="text-sm text-muted-foreground">
+                            Origin: {analysisData.route.origin_port_code} | Destination: {analysisData.route.destination_port_code}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                }
+
+                return (
+                  <Card className="p-4 dark:bg-gray-700">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
+                      <Anchor className="h-5 w-5" />
+                      Route Map
+                    </h3>
+                    <MapViewer
+                      route={analysisData.route}
+                      originPort={originPort}
+                      destinationPort={destinationPort}
+                      bunkerPorts={
+                        (analysisData.analysis?.recommendations?.map((rec: any) => {
                           const portDetails = getPortDetails(rec.port_code);
                           if (!portDetails) return null;
                           return {
                             ...portDetails,
                             ...rec,
-                            coordinates:
-                              portDetails.coordinates || {
-                                lat: rec.latitude || portDetails.latitude,
-                                lon: rec.longitude || portDetails.longitude,
-                              },
+                            coordinates: portDetails.coordinates || {
+                              lat: rec.latitude || portDetails.latitude,
+                              lon: rec.longitude || portDetails.longitude,
+                            },
                           };
-                        })
-                        .filter((p: any) => p !== null)) ||
-                      (analysisData.ports?.map((p: any) => {
-                        const portCode = p.code || p.port_code;
-                        const portDetails = getPortDetails(portCode);
-                        if (!portDetails) return null;
-                        return {
-                          ...portDetails,
-                          ...p,
-                          port_code: portCode,
-                          port_name: p.name || portDetails.name,
-                          coordinates:
-                            portDetails.coordinates || {
+                        }).filter((p: any) => p !== null)) ||
+                        (analysisData.ports?.map((p: any) => {
+                          const portCode = p.code || p.port_code;
+                          const portDetails = getPortDetails(portCode);
+                          if (!portDetails) return null;
+                          return {
+                            ...portDetails,
+                            ...p,
+                            port_code: portCode,
+                            port_name: p.name || portDetails.name,
+                            coordinates: portDetails.coordinates || {
                               lat: p.latitude || portDetails.latitude,
                               lon: p.longitude || portDetails.longitude,
                             },
-                        };
-                      }).filter((p: any) => p !== null)) ||
-                      []
+                          };
+                        }).filter((p: any) => p !== null)) ||
+                        []
+                      }
+                    />
+                  </Card>
+                );
+              })()}
+
+              {/* Results Table */}
+              {(analysisData.analysis?.recommendations ||
+                (analysisData.ports && analysisData.prices)) && (
+                <div className="overflow-x-auto">
+                  <ResultsTable
+                    recommendations={
+                      analysisData.analysis?.recommendations
+                        ? analysisData.analysis.recommendations.map((rec: any) => ({
+                            port_code: rec.port_code,
+                            port_name: rec.port_name || rec.port_code,
+                            rank: rec.rank || 0,
+                            fuel_price_per_mt:
+                              rec.fuel_price_per_mt ||
+                              (rec.fuel_cost_usd || rec.fuel_cost || 0) /
+                                (rec.fuel_quantity_mt || 1000),
+                            fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
+                            deviation_nm:
+                              rec.deviation_nm ||
+                              rec.distance_from_route_nm ||
+                              0,
+                            deviation_hours: rec.deviation_hours || 0,
+                            deviation_days: rec.deviation_days || 0,
+                            deviation_fuel_consumption_mt:
+                              rec.deviation_fuel_consumption_mt || 0,
+                            deviation_fuel_cost:
+                              rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
+                            total_cost: rec.total_cost || rec.total_cost_usd || 0,
+                            savings_vs_most_expensive:
+                              rec.savings_vs_most_expensive ||
+                              rec.savings_vs_worst_usd ||
+                              0,
+                            savings_percentage: rec.savings_percentage || 0,
+                            data_freshness_hours: rec.data_freshness_hours || 0,
+                            is_price_stale: rec.is_price_stale || false,
+                          }))
+                        : []
                     }
+                    fuelQuantity={1000}
+                    fuelType="VLSFO"
                   />
-                </Card>
-              );
-            })()}
-
-            {/* Results Table */}
-            {(analysisData.analysis?.recommendations ||
-              (analysisData.ports && analysisData.prices)) && (
-              <ResultsTable
-                recommendations={
-                  analysisData.analysis?.recommendations
-                    ? analysisData.analysis.recommendations.map((rec: any) => ({
-                        port_code: rec.port_code,
-                        port_name: rec.port_name || rec.port_code,
-                        rank: rec.rank || 0,
-                        fuel_price_per_mt:
-                          rec.fuel_price_per_mt ||
-                          (rec.fuel_cost_usd || rec.fuel_cost || 0) /
-                            (rec.fuel_quantity_mt || 1000),
-                        fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
-                        deviation_nm:
-                          rec.deviation_nm ||
-                          rec.distance_from_route_nm ||
-                          0,
-                        deviation_hours: rec.deviation_hours || 0,
-                        deviation_days: rec.deviation_days || 0,
-                        deviation_fuel_consumption_mt:
-                          rec.deviation_fuel_consumption_mt || 0,
-                        deviation_fuel_cost:
-                          rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
-                        total_cost: rec.total_cost || rec.total_cost_usd || 0,
-                        savings_vs_most_expensive:
-                          rec.savings_vs_most_expensive ||
-                          rec.savings_vs_worst_usd ||
-                          0,
-                        savings_percentage: rec.savings_percentage || 0,
-                        data_freshness_hours: rec.data_freshness_hours || 0,
-                        is_price_stale: rec.is_price_stale || false,
-                      }))
-                    : []
-                }
-                fuelQuantity={1000}
-                fuelType="VLSFO"
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Input Area */}
-      <Card className="flex-shrink-0">
-        <form onSubmit={handleSubmit} className="p-4">
-          <div className="flex gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about bunker optimization..."
-              disabled={isLoading}
-              className="flex-1"
-            />
-            <Button type="submit" disabled={isLoading || !input.trim()}>
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
+                </div>
               )}
-            </Button>
+
+              {/* Performance Metrics */}
+              {performanceMetrics && (
+                <PerformanceMetricsPane metrics={performanceMetrics} />
+              )}
+            </div>
           </div>
-        </form>
-      </Card>
-      </div>
+        </>
+      )}
 
-      {/* Right Side Pane - Route Selector & Performance Metrics */}
-      <div className="w-80 flex-shrink-0 overflow-y-auto space-y-4">
-        {/* Route Selector - Always visible */}
-        <RouteSelector
-          routes={cachedRoutes}
-          selectedRouteId={selectedRouteId}
-          onRouteSelect={(routeId) => {
-            setSelectedRouteId(routeId);
-            console.log(`🎯 [MULTI-AGENT-FRONTEND] Route selected: ${routeId}`);
-          }}
-        />
+      {/* Sidebar Toggle Button - Show when results available but sidebar closed */}
+      {!showSidebar && (analysisData?.route || analysisData?.analysis) && (
+        <Button
+          variant="default"
+          size="sm"
+          className="fixed bottom-20 right-4 z-30 shadow-lg lg:hidden"
+          onClick={() => setShowSidebar(true)}
+        >
+          <ChevronRight className="h-4 w-4 mr-2" />
+          View Results
+        </Button>
+      )}
 
-        {/* Performance Metrics - Compact, collapsible */}
-        <PerformanceMetricsPane metrics={performanceMetrics} />
-      </div>
+      {/* Performance Metrics Floating Button - Desktop only */}
+      {performanceMetrics && !showSidebar && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="fixed bottom-20 right-4 z-30 shadow-lg hidden lg:flex"
+          onClick={() => setShowSidebar(true)}
+          title="View performance metrics"
+        >
+          <Activity className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 }
-

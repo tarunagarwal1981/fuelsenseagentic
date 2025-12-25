@@ -66,8 +66,8 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Route className="h-5 w-5 text-blue-600" />
-        <h3 className="font-semibold text-sm">Cached Routes</h3>
+        <Route className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+        <h3 className="font-semibold text-sm dark:text-white">Cached Routes</h3>
         <Badge variant="secondary" className="text-xs">
           {routes.length}
         </Badge>
@@ -80,7 +80,7 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
           placeholder="Search routes..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-8 h-9 text-sm"
+          className="pl-8 h-9 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
         />
       </div>
 
@@ -98,8 +98,8 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
                 key={route.id}
                 className={`p-3 cursor-pointer transition-all hover:shadow-md ${
                   isSelected
-                    ? "border-2 border-blue-500 bg-blue-50"
-                    : "border hover:border-gray-300"
+                    ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-400"
+                    : "border hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800"
                 }`}
                 onClick={() => onRouteSelect(route.id)}
               >
@@ -108,8 +108,8 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <MapPin className="h-3.5 w-3.5 text-blue-600 flex-shrink-0" />
-                        <span className="font-semibold text-sm truncate">
+                        <MapPin className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                        <span className="font-semibold text-sm truncate dark:text-white">
                           {route.origin_name} → {route.destination_name}
                         </span>
                       </div>
