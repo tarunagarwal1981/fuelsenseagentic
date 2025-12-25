@@ -4,10 +4,10 @@
  * Provides cost-effective LLM selection based on task complexity.
  * Uses cheapest model that can handle the task effectively.
  * 
- * Tier Strategy:
- * - Simple tool calling: Gemini Flash (70% cheaper than Haiku)
- * - Complex tool calling: GPT-4o-mini (40% cheaper than Haiku)
- * - Synthesis: Claude Haiku 4.5 (best value, excellent synthesis)
+ * Conservative Tier Strategy:
+ * - Simple tool calling (Route/Weather): GPT-4o-mini (40% cheaper than Haiku, proven tool calling)
+ * - Complex tool calling (Bunker): Claude Haiku 4.5 (keep current for reliability)
+ * - Synthesis (Finalize): Claude Haiku 4.5 (best value, excellent synthesis)
  * 
  * All models fallback to Haiku 4.5 if APIs unavailable.
  */
@@ -16,9 +16,22 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { AgentContext } from './state';
 
-// Note: Currently using Haiku 4.5 for all tasks to avoid build-time module resolution issues
-// Optional dependencies (@langchain/openai, @langchain/google-genai) can be added later
-// by installing them and updating the factory to use dynamic imports at runtime
+// Lazy load OpenAI to avoid build-time module resolution issues
+let ChatOpenAI: any = null;
+
+function getChatOpenAI() {
+  if (!ChatOpenAI) {
+    try {
+      // Use require for runtime loading (works in Node.js and Edge runtime)
+      const openaiModule = require('@langchain/openai');
+      ChatOpenAI = openaiModule.ChatOpenAI;
+    } catch (error) {
+      console.warn('⚠️ [LLM-FACTORY] @langchain/openai not available, will fallback to Claude');
+      return null;
+    }
+  }
+  return ChatOpenAI;
+}
 
 /**
  * Task types for LLM selection
@@ -53,10 +66,19 @@ export class LLMFactory {
         
       case 'simple_tool':
         // Route/Weather agents: Simple tool calling
-        // Use Gemini Flash (70% cheaper than Haiku, excellent for simple tool calls)
-        // For now, always use Haiku - optional packages can be added later if needed
-        // This avoids build-time module resolution issues
-        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for simple tool calling');
+        // Use GPT-4o-mini (40% cheaper than Haiku, excellent tool calling)
+        const OpenAI = getChatOpenAI();
+        if (OpenAI && process.env.OPENAI_API_KEY) {
+          console.log('🤖 [LLM-FACTORY] Using GPT-4o-mini for simple tool calling (Route/Weather agents)');
+          return new OpenAI({
+            model: 'gpt-4o-mini',
+            temperature: 0,
+            apiKey: process.env.OPENAI_API_KEY,
+          });
+        }
+        
+        // Fallback to Haiku if OpenAI unavailable
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for simple tool calling (fallback - OpenAI unavailable)');
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
@@ -65,10 +87,8 @@ export class LLMFactory {
         
       case 'complex_tool':
         // Bunker agent: Complex nested schemas
-        // Use GPT-4o-mini (40% cheaper than Haiku, excellent tool calling)
-        // For now, always use Haiku - optional packages can be added later if needed
-        // This avoids build-time module resolution issues
-        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for complex tool calling');
+        // Keep on Claude Haiku 4.5 for reliability (conservative approach)
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for complex tool calling (Bunker agent)');
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,

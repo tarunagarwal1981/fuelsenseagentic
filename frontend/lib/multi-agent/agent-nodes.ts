@@ -121,14 +121,22 @@ if (!process.env.ANTHROPIC_API_KEY) {
   );
 }
 
-// Create LLM instance with Claude Sonnet 4
-const MODEL = process.env.LLM_MODEL || 'claude-sonnet-4-20250514';
+// NOTE: All agents now use LLMFactory.getLLMForAgent() for tiered model selection
+// This allows Route/Weather agents to use GPT-4o-mini (cheaper) while keeping
+// Bunker/Finalize on Claude Haiku 4.5 (reliable). The baseLLM below is kept for
+// backward compatibility but is no longer used.
+// 
+// Tiered Strategy:
+// - Route/Weather: GPT-4o-mini (if OPENAI_API_KEY set) or Claude Haiku 4.5 (fallback)
+// - Bunker/Finalize: Claude Haiku 4.5 (always)
+const MODEL = process.env.LLM_MODEL || 'claude-haiku-4-5-20251001';
 
-const baseLLM = new ChatAnthropic({
-  model: MODEL,
-  temperature: 0,
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Unused - kept for reference only. All agents use LLMFactory now.
+// const baseLLM = new ChatAnthropic({
+//   model: MODEL,
+//   temperature: 0,
+//   apiKey: process.env.ANTHROPIC_API_KEY,
+// });
 
 // ============================================================================
 // Tool Definitions

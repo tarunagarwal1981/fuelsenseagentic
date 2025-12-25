@@ -8,7 +8,7 @@ If you're seeing network errors when using the chat interface, it's likely becau
 
 ### 1. ANTHROPIC_API_KEY (REQUIRED)
 
-This is **critical** - without it, the API routes will fail.
+This is **critical** - without it, the API routes will fail. Used for Bunker Agent and Finalize Node.
 
 **How to set it:**
 
@@ -22,7 +22,30 @@ This is **critical** - without it, the API routes will fail.
    - **Scopes**: Select "All scopes" or "Production, Deploy previews, Branch deploys"
 6. Click **Save**
 
-### 2. Optional Environment Variables
+### 2. OPENAI_API_KEY (OPTIONAL - Recommended for Cost Savings)
+
+**Highly recommended** - Enables GPT-4o-mini for Route and Weather agents, reducing costs by ~85% for those agents.
+
+**How to set it:**
+
+1. Go to [Netlify Dashboard](https://app.netlify.com)
+2. Select your site
+3. Go to **Site settings** → **Environment variables**
+4. Click **Add variable**
+5. Set:
+   - **Key**: `OPENAI_API_KEY`
+   - **Value**: Your OpenAI API key (starts with `sk-...`)
+   - **Scopes**: Select "All scopes" or "Production, Deploy previews, Branch deploys"
+6. Click **Save**
+
+**Note:** If `OPENAI_API_KEY` is not set, the system will automatically fallback to Claude Haiku 4.5 for Route/Weather agents. The app will work fine, but you won't get the cost savings.
+
+**Get your OpenAI API key:**
+- Go to https://platform.openai.com/api-keys
+- Create a new API key
+- Copy it to Netlify environment variables
+
+### 3. Optional Environment Variables
 
 These are optional but recommended:
 
@@ -38,6 +61,7 @@ These are optional but recommended:
 
 - **LLM_MODEL**: Model to use (optional, defaults to `claude-haiku-4-5-20251001`)
   - Value: `claude-haiku-4-5-20251001` (or other Claude model)
+  - Note: This is only used as a fallback. The tiered LLM system will use GPT-4o-mini for Route/Weather if `OPENAI_API_KEY` is set.
 
 ## After Setting Variables
 
@@ -88,9 +112,27 @@ After setting environment variables and redeploying:
 
 ## Quick Checklist
 
-- [ ] `ANTHROPIC_API_KEY` is set in Netlify
-- [ ] Variable is set for "All scopes" or at least "Production"
+- [ ] `ANTHROPIC_API_KEY` is set in Netlify (REQUIRED)
+- [ ] `OPENAI_API_KEY` is set in Netlify (OPTIONAL - for cost savings)
+- [ ] Variables are set for "All scopes" or at least "Production"
 - [ ] Site has been redeployed after setting variables
 - [ ] Build logs show no errors
 - [ ] Chat interface works (no network errors)
+- [ ] Check logs to verify GPT-4o-mini is being used for Route/Weather agents (if OPENAI_API_KEY is set)
+
+## Tiered LLM Strategy
+
+The application now uses a tiered LLM approach for cost optimization:
+
+- **Route Agent**: GPT-4o-mini (if `OPENAI_API_KEY` set) or Claude Haiku 4.5 (fallback)
+- **Weather Agent**: GPT-4o-mini (if `OPENAI_API_KEY` set) or Claude Haiku 4.5 (fallback)
+- **Bunker Agent**: Claude Haiku 4.5 (always - complex schemas need reliability)
+- **Finalize Node**: Claude Haiku 4.5 (always - synthesis quality matters)
+
+**Expected Cost Savings:** ~24-30% reduction in LLM costs when `OPENAI_API_KEY` is configured.
+
+**How to verify it's working:**
+Check your application logs for these messages:
+- `🤖 [LLM-FACTORY] Using GPT-4o-mini for simple tool calling` ← Cost savings active
+- `🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for simple tool calling (fallback)` ← OpenAI unavailable
 
