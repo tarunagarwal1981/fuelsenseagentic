@@ -543,6 +543,7 @@ export function ChatInterfaceMultiAgent() {
                       setSelectedRouteId(routeId);
                       addAgentLog("system", `Route ${routeId} selected`, "complete");
                     }}
+                    hideHeader={true}
                   />
                 </div>
               )}
@@ -647,14 +648,14 @@ export function ChatInterfaceMultiAgent() {
             </Button>
             
             <div className="relative">
-              <Button
+            <Button
                 variant="ghost"
-                size="sm"
+              size="sm"
                 className="h-8 w-8 p-0"
                 onClick={() => setShowMenu(!showMenu)}
-              >
+            >
                 <Menu className="h-4 w-4" />
-              </Button>
+            </Button>
               
               {showMenu && (
                 <>
@@ -683,66 +684,66 @@ export function ChatInterfaceMultiAgent() {
                       Single-Agent Mode
                     </button>
                     <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
-                    <Link href="/chat-langgraph">
+            <Link href="/chat-langgraph">
                       <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
-                        LangGraph UI
+                LangGraph UI
                       </button>
                     </Link>
                     <Link href="/compare">
                       <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
                         Compare Versions
                       </button>
-                    </Link>
-                  </div>
+            </Link>
+          </div>
                 </>
               )}
-            </div>
-          </div>
         </div>
+      </div>
+            </div>
 
         {/* Messages Area - Tight spacing, modern design */}
         <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white via-green-50/5 to-orange-50/5 dark:from-gray-900 dark:via-green-950/5 dark:to-orange-950/5">
-          <div className="max-w-4xl mx-auto px-4 py-4">
-            {/* Quick Prompts - Only show when empty */}
+          <div className="max-w-4xl mx-auto px-4 py-2">
+            {/* Quick Prompts - Compact, only show when empty */}
             {messages.length <= 1 && !input && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-2">
                 {quickPrompts.map((prompt, idx) => (
                   <button
-                    key={idx}
+                  key={idx}
                     onClick={() => setInput(prompt)}
-                    className="text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-green-300/50 dark:hover:border-green-600/30 hover:bg-gradient-to-br hover:from-green-50/30 hover:to-orange-50/20 dark:hover:from-green-950/10 dark:hover:to-orange-950/10 transition-all text-sm dark:text-gray-300 dark:bg-gray-800"
+                    className="text-left p-2 rounded-md border border-gray-200 dark:border-gray-700 hover:border-green-300/50 dark:hover:border-green-600/30 hover:bg-gradient-to-br hover:from-green-50/30 hover:to-orange-50/20 dark:hover:from-green-950/10 dark:hover:to-orange-950/10 transition-all text-xs dark:text-gray-300 dark:bg-gray-800"
                   >
                     {prompt}
                   </button>
                 ))}
-              </div>
+            </div>
             )}
 
             {/* Messages - Very tight spacing */}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {messages.map((message, index) => (
                 <div
                   key={index}
-                  className={`group flex gap-3 py-2 ${
+                  className={`group flex gap-2 py-1 ${
                     message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
-                      <Bot className="h-4 w-4 text-white" />
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+                      <Bot className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
 
                   <div className={`flex-1 min-w-0 max-w-[85%] ${
                     message.role === "user" ? "flex justify-end" : ""
                   }`}>
-                    <div
-                      className={`rounded-2xl px-4 py-2.5 ${
-                        message.role === "user"
-                          ? "bg-blue-600 text-white"
+                  <div
+                      className={`rounded-xl px-3 py-2 ${
+                      message.role === "user"
+                        ? "bg-blue-600 text-white"
                           : "bg-white dark:bg-gray-800 border border-green-200/20 dark:border-green-900/15 shadow-sm dark:text-gray-100"
-                      }`}
-                    >
+                    }`}
+                  >
                       <ReactMarkdown
                         className="prose prose-sm dark:prose-invert max-w-none"
                         components={{
@@ -767,8 +768,8 @@ export function ChatInterfaceMultiAgent() {
                   </div>
 
                   {message.role === "user" && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
-                      <User className="h-4 w-4 text-white" />
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center">
+                      <User className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
                 </div>
@@ -776,18 +777,18 @@ export function ChatInterfaceMultiAgent() {
 
               {/* Thinking Indicator - Compact */}
               {isLoading && (
-                <div className="flex gap-3 py-2">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-white" />
+                <div className="flex gap-2 py-1">
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                    <Bot className="h-3.5 w-3.5 text-white" />
                   </div>
                   <div className="flex-1">
-                    <div className="bg-gradient-to-br from-green-50/20 via-white to-orange-50/20 dark:from-green-950/10 dark:via-gray-800 dark:to-orange-950/10 border border-green-200/30 dark:border-green-900/20 rounded-2xl px-4 py-2.5 shadow-sm">
+                    <div className="bg-gradient-to-br from-green-50/20 via-white to-orange-50/20 dark:from-green-950/10 dark:via-gray-800 dark:to-orange-950/10 border border-green-200/30 dark:border-green-900/20 rounded-xl px-3 py-2 shadow-sm">
                       <div className="flex items-center gap-2">
                         <div className="flex gap-1">
                           <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
                           <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
                           <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
-                        </div>
+                  </div>
                         <span className="text-sm text-muted-foreground">Thinking...</span>
                       </div>
                       {agentActivities.length > 0 && (
@@ -875,127 +876,127 @@ export function ChatInterfaceMultiAgent() {
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Weather Impact Summary */}
-              {analysisData.weather_data && (
+            {/* Weather Impact Summary */}
+            {analysisData.weather_data && (
                 <Card className="p-4 bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800">
                   <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
                     <Cloud className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-                    Weather Impact
-                  </h3>
+                  Weather Impact
+                </h3>
                   <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
+                  <div>
                       <p className="text-muted-foreground text-xs">Base Consumption</p>
                       <p className="font-semibold text-lg dark:text-white">
                         {analysisData.weather_data.base_consumption_mt?.toFixed(2) || "N/A"} MT
-                      </p>
-                    </div>
-                    <div>
+                    </p>
+                  </div>
+                  <div>
                       <p className="text-muted-foreground text-xs">Adjusted</p>
                       <p className="font-semibold text-lg dark:text-white">
                         {analysisData.weather_data.adjusted_consumption_mt?.toFixed(2) || "N/A"} MT
-                      </p>
-                    </div>
-                    <div>
+                    </p>
+                  </div>
+                  <div>
                       <p className="text-muted-foreground text-xs">Additional Fuel</p>
                       <p className="font-semibold text-lg text-orange-600 dark:text-orange-400">
                         +{analysisData.weather_data.additional_fuel_mt?.toFixed(2) || "N/A"} MT
-                      </p>
-                    </div>
-                    <div>
+                    </p>
+                  </div>
+                  <div>
                       <p className="text-muted-foreground text-xs">Increase</p>
                       <p className="font-semibold text-lg text-red-600 dark:text-red-400">
                         +{analysisData.weather_data.increase_percent?.toFixed(2) || "N/A"}%
-                      </p>
-                    </div>
+                    </p>
                   </div>
-                  {analysisData.weather_data.alerts_count > 0 && (
+                </div>
+                {analysisData.weather_data.alerts_count > 0 && (
                     <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/20 rounded text-sm">
                       ⚠️ {analysisData.weather_data.alerts_count} weather alert(s) detected
-                    </div>
-                  )}
-                </Card>
-              )}
+                  </div>
+                )}
+              </Card>
+            )}
 
-              {/* Quick Stats */}
-              {analysisData?.analysis?.recommendations &&
-                analysisData.analysis.recommendations.length > 0 && (
+            {/* Quick Stats */}
+            {analysisData?.analysis?.recommendations &&
+              analysisData.analysis.recommendations.length > 0 && (
                   <Card className="p-4 dark:bg-gray-700">
                     <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
-                      <Ship className="h-5 w-5" />
-                      Analysis Summary
-                    </h3>
+                    <Ship className="h-5 w-5" />
+                    Analysis Summary
+                  </h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
+                    <div>
                         <p className="text-muted-foreground text-xs">Best Port</p>
                         <p className="font-semibold text-lg dark:text-white">
-                          {analysisData.analysis.best_option?.port_name || "N/A"}
-                        </p>
-                      </div>
-                      <div>
+                        {analysisData.analysis.best_option?.port_name || "N/A"}
+                      </p>
+                    </div>
+                    <div>
                         <p className="text-muted-foreground text-xs">Total Cost</p>
                         <p className="font-semibold text-lg dark:text-white">
                           ${(
-                            analysisData.analysis.best_option?.total_cost_usd ||
-                            analysisData.analysis.best_option?.total_cost ||
-                            0
+                          analysisData.analysis.best_option?.total_cost_usd ||
+                          analysisData.analysis.best_option?.total_cost ||
+                          0
                           ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                      <div>
+                      </p>
+                    </div>
+                    <div>
                         <p className="text-muted-foreground text-xs">Savings</p>
                         <p className="font-semibold text-lg text-green-600 dark:text-green-400">
                           ${(
-                            analysisData.analysis.max_savings_usd ||
-                            analysisData.analysis.max_savings ||
-                            0
+                          analysisData.analysis.max_savings_usd ||
+                          analysisData.analysis.max_savings ||
+                          0
                           ).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
-                      <div>
+                      </p>
+                    </div>
+                    <div>
                         <p className="text-muted-foreground text-xs">Options</p>
                         <p className="font-semibold text-lg dark:text-white">
-                          {analysisData.analysis.recommendations.length}
+                        {analysisData.analysis.recommendations.length}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+            {/* Map */}
+            {analysisData.route && (() => {
+                const originPort = getPortDetails(analysisData.route.origin_port_code);
+                const destinationPort = getPortDetails(analysisData.route.destination_port_code);
+
+              if (!originPort || !destinationPort) {
+                return (
+                    <Card className="p-4 dark:bg-gray-700">
+                      <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
+                      <Anchor className="h-5 w-5" />
+                      Route Map
+                    </h3>
+                      <div className="w-full h-[400px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
+                      <div className="text-center">
+                          <p className="text-muted-foreground mb-2">Port data not found</p>
+                        <p className="text-sm text-muted-foreground">
+                            Origin: {analysisData.route.origin_port_code} | Destination: {analysisData.route.destination_port_code}
                         </p>
                       </div>
                     </div>
                   </Card>
-                )}
+                );
+              }
 
-              {/* Map */}
-              {analysisData.route && (() => {
-                const originPort = getPortDetails(analysisData.route.origin_port_code);
-                const destinationPort = getPortDetails(analysisData.route.destination_port_code);
-
-                if (!originPort || !destinationPort) {
-                  return (
-                    <Card className="p-4 dark:bg-gray-700">
-                      <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
-                        <Anchor className="h-5 w-5" />
-                        Route Map
-                      </h3>
-                      <div className="w-full h-[400px] bg-muted rounded-lg flex items-center justify-center border-2 border-dashed">
-                        <div className="text-center">
-                          <p className="text-muted-foreground mb-2">Port data not found</p>
-                          <p className="text-sm text-muted-foreground">
-                            Origin: {analysisData.route.origin_port_code} | Destination: {analysisData.route.destination_port_code}
-                          </p>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                }
-
-                return (
+              return (
                   <Card className="p-4 dark:bg-gray-700">
                     <h3 className="font-semibold mb-3 flex items-center gap-2 dark:text-white">
-                      <Anchor className="h-5 w-5" />
-                      Route Map
-                    </h3>
-                    <MapViewer
-                      route={analysisData.route}
-                      originPort={originPort}
-                      destinationPort={destinationPort}
-                      bunkerPorts={
+                    <Anchor className="h-5 w-5" />
+                    Route Map
+                  </h3>
+                  <MapViewer
+                    route={analysisData.route}
+                    originPort={originPort}
+                    destinationPort={destinationPort}
+                    bunkerPorts={
                         (analysisData.analysis?.recommendations?.map((rec: any) => {
                           const portDetails = getPortDetails(rec.port_code);
                           if (!portDetails) return null;
@@ -1003,82 +1004,82 @@ export function ChatInterfaceMultiAgent() {
                             ...portDetails,
                             ...rec,
                             coordinates: portDetails.coordinates || {
-                              lat: rec.latitude || portDetails.latitude,
-                              lon: rec.longitude || portDetails.longitude,
-                            },
+                                lat: rec.latitude || portDetails.latitude,
+                                lon: rec.longitude || portDetails.longitude,
+                              },
                           };
                         }).filter((p: any) => p !== null)) ||
-                        (analysisData.ports?.map((p: any) => {
-                          const portCode = p.code || p.port_code;
-                          const portDetails = getPortDetails(portCode);
-                          if (!portDetails) return null;
-                          return {
-                            ...portDetails,
-                            ...p,
-                            port_code: portCode,
-                            port_name: p.name || portDetails.name,
+                      (analysisData.ports?.map((p: any) => {
+                        const portCode = p.code || p.port_code;
+                        const portDetails = getPortDetails(portCode);
+                        if (!portDetails) return null;
+                        return {
+                          ...portDetails,
+                          ...p,
+                          port_code: portCode,
+                          port_name: p.name || portDetails.name,
                             coordinates: portDetails.coordinates || {
                               lat: p.latitude || portDetails.latitude,
                               lon: p.longitude || portDetails.longitude,
                             },
-                          };
-                        }).filter((p: any) => p !== null)) ||
-                        []
-                      }
-                    />
-                  </Card>
-                );
-              })()}
-
-              {/* Results Table */}
-              {(analysisData.analysis?.recommendations ||
-                (analysisData.ports && analysisData.prices)) && (
-                <div className="overflow-x-auto">
-                  <ResultsTable
-                    recommendations={
-                      analysisData.analysis?.recommendations
-                        ? analysisData.analysis.recommendations.map((rec: any) => ({
-                            port_code: rec.port_code,
-                            port_name: rec.port_name || rec.port_code,
-                            rank: rec.rank || 0,
-                            fuel_price_per_mt:
-                              rec.fuel_price_per_mt ||
-                              (rec.fuel_cost_usd || rec.fuel_cost || 0) /
-                                (rec.fuel_quantity_mt || 1000),
-                            fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
-                            deviation_nm:
-                              rec.deviation_nm ||
-                              rec.distance_from_route_nm ||
-                              0,
-                            deviation_hours: rec.deviation_hours || 0,
-                            deviation_days: rec.deviation_days || 0,
-                            deviation_fuel_consumption_mt:
-                              rec.deviation_fuel_consumption_mt || 0,
-                            deviation_fuel_cost:
-                              rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
-                            total_cost: rec.total_cost || rec.total_cost_usd || 0,
-                            savings_vs_most_expensive:
-                              rec.savings_vs_most_expensive ||
-                              rec.savings_vs_worst_usd ||
-                              0,
-                            savings_percentage: rec.savings_percentage || 0,
-                            data_freshness_hours: rec.data_freshness_hours || 0,
-                            is_price_stale: rec.is_price_stale || false,
-                          }))
-                        : []
+                        };
+                      }).filter((p: any) => p !== null)) ||
+                      []
                     }
-                    fuelQuantity={1000}
-                    fuelType="VLSFO"
                   />
-                </div>
-              )}
+                </Card>
+              );
+            })()}
+
+            {/* Results Table */}
+            {(analysisData.analysis?.recommendations ||
+              (analysisData.ports && analysisData.prices)) && (
+                <div className="overflow-x-auto">
+              <ResultsTable
+                recommendations={
+                  analysisData.analysis?.recommendations
+                    ? analysisData.analysis.recommendations.map((rec: any) => ({
+                        port_code: rec.port_code,
+                        port_name: rec.port_name || rec.port_code,
+                        rank: rec.rank || 0,
+                        fuel_price_per_mt:
+                          rec.fuel_price_per_mt ||
+                          (rec.fuel_cost_usd || rec.fuel_cost || 0) /
+                            (rec.fuel_quantity_mt || 1000),
+                        fuel_cost: rec.fuel_cost || rec.fuel_cost_usd || 0,
+                        deviation_nm:
+                          rec.deviation_nm ||
+                          rec.distance_from_route_nm ||
+                          0,
+                        deviation_hours: rec.deviation_hours || 0,
+                        deviation_days: rec.deviation_days || 0,
+                        deviation_fuel_consumption_mt:
+                          rec.deviation_fuel_consumption_mt || 0,
+                        deviation_fuel_cost:
+                          rec.deviation_fuel_cost || rec.deviation_cost_usd || 0,
+                        total_cost: rec.total_cost || rec.total_cost_usd || 0,
+                        savings_vs_most_expensive:
+                          rec.savings_vs_most_expensive ||
+                          rec.savings_vs_worst_usd ||
+                          0,
+                        savings_percentage: rec.savings_percentage || 0,
+                        data_freshness_hours: rec.data_freshness_hours || 0,
+                        is_price_stale: rec.is_price_stale || false,
+                      }))
+                    : []
+                }
+                fuelQuantity={1000}
+                fuelType="VLSFO"
+              />
+          </div>
+        )}
 
               {/* Performance Metrics */}
               {performanceMetrics && (
                 <PerformanceMetricsPane metrics={performanceMetrics} />
               )}
-            </div>
           </div>
+      </div>
         </>
       )}
 

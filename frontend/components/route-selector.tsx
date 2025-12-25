@@ -30,9 +30,10 @@ interface RouteSelectorProps {
   routes: CachedRoute[];
   selectedRouteId: string | null;
   onRouteSelect: (routeId: string) => void;
+  hideHeader?: boolean;
 }
 
-export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteSelectorProps) {
+export function RouteSelector({ routes, selectedRouteId, onRouteSelect, hideHeader = false }: RouteSelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredRoutes = routes.filter((route) => {
@@ -64,14 +65,16 @@ export function RouteSelector({ routes, selectedRouteId, onRouteSelect }: RouteS
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Route className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-        <h3 className="font-semibold text-sm dark:text-white">Cached Routes</h3>
-        <Badge variant="secondary" className="text-xs">
-          {routes.length}
-        </Badge>
-      </div>
+      {/* Header - Only show if not hidden */}
+      {!hideHeader && (
+        <div className="flex items-center gap-2">
+          <Route className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <h3 className="font-semibold text-sm dark:text-white">Cached Routes</h3>
+          <Badge variant="secondary" className="text-xs">
+            {routes.length}
+          </Badge>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">
