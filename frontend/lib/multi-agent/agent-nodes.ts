@@ -60,6 +60,33 @@ import {
 } from './tools';
 
 // ============================================================================
+// Circuit Breaker Helper
+// ============================================================================
+
+/**
+ * Count how many times each agent has been called
+ * Used for circuit breaker to prevent infinite loops
+ */
+function countAgentCalls(messages: any[]): Record<string, number> {
+  const counts: Record<string, number> = {
+    route_agent: 0,
+    weather_agent: 0,
+    bunker_agent: 0,
+  };
+
+  for (const msg of messages) {
+    if (msg instanceof AIMessage) {
+      const content = msg.content?.toString() || '';
+      if (content.includes('[ROUTE-AGENT]')) counts.route_agent++;
+      if (content.includes('[WEATHER-AGENT]')) counts.weather_agent++;
+      if (content.includes('[BUNKER-AGENT]')) counts.bunker_agent++;
+    }
+  }
+
+  return counts;
+}
+
+// ============================================================================
 // Cached Routes Helper
 // ============================================================================
 
@@ -311,6 +338,31 @@ export async function supervisorAgentNode(
     : state.messages[0]?.content?.toString() || 'Plan bunker route';
   
   // ========================================================================
+  // Circuit Breaker Check (NEW)
+  // ========================================================================
+  const agentCallCounts = countAgentCalls(state.messages);
+  console.log('📊 [SUPERVISOR] Agent call counts:', agentCallCounts);
+
+  // Check if we're stuck in a loop with any agent
+  for (const [agent, count] of Object.entries(agentCallCounts)) {
+    if (count >= 3) {
+      console.error(
+        `❌ [SUPERVISOR] Circuit breaker: ${agent} called ${count} times without progress`
+      );
+      
+      // Mark this agent as failed
+      if (!state.agent_status) state.agent_status = {};
+      state.agent_status[agent] = 'failed';
+      
+      if (!state.agent_errors) state.agent_errors = {};
+      state.agent_errors[agent] = {
+        error: `Circuit breaker triggered: ${agent} called ${count} times without completing`,
+        timestamp: Date.now(),
+      };
+    }
+  }
+  
+  // ========================================================================
   // Registry-Based Planning (NEW)
   // ========================================================================
   const USE_REGISTRY_PLANNING = process.env.USE_REGISTRY_PLANNING !== 'false';
@@ -496,6 +548,40 @@ export async function supervisorAgentNode(
   const needsRoute = intent.needs_route && !routeCompleteForQuery;
   const needsWeather = intent.needs_weather;
   const needsBunker = intent.needs_bunker;
+
+  // ========================================================================
+  // Comprehensive State Analysis Logging
+  // ========================================================================
+  const hasRoute = !!state.route_data;
+  const hasTimeline = !!state.vessel_timeline;
+  const hasWeather = !!state.weather_forecast;
+  const hasBunker = !!state.bunker_analysis;
+  
+  console.log('═'.repeat(80));
+  console.log('📊 [SUPERVISOR] Complete State Analysis:');
+  console.log('─'.repeat(80));
+  console.log('📦 Data Available:');
+  console.log(`   • Route: ${hasRoute ? '✅' : '❌'} ${state.route_data ? `(${state.route_data.distance_nm} nm)` : ''}`);
+  console.log(`   • Timeline: ${hasTimeline ? '✅' : '❌'} ${state.vessel_timeline ? `(${state.vessel_timeline.length} positions)` : ''}`);
+  console.log(`   • Weather Forecast: ${hasWeather ? '✅' : '❌'} ${state.weather_forecast ? `(${state.weather_forecast.length} points)` : ''}`);
+  console.log(`   • Weather Consumption: ${state.weather_consumption ? '✅' : '❌'}`);
+  console.log(`   • Bunker Analysis: ${hasBunker ? '✅' : '❌'}`);
+  console.log('─'.repeat(80));
+  console.log('🎯 Query Requirements:');
+  console.log(`   • Needs Route: ${needsRoute ? '✅' : '❌'}`);
+  console.log(`   • Needs Weather: ${needsWeather ? '✅' : '❌'}`);
+  console.log(`   • Needs Bunker: ${needsBunker ? '✅' : '❌'}`);
+  console.log('─'.repeat(80));
+  console.log('🔄 Agent Status:');
+  if (state.agent_status && Object.keys(state.agent_status).length > 0) {
+    Object.entries(state.agent_status).forEach(([agent, status]) => {
+      const icon = status === 'success' ? '✅' : status === 'failed' ? '❌' : '⏳';
+      console.log(`   • ${agent}: ${icon} ${status}`);
+    });
+  } else {
+    console.log('   • No agents executed yet');
+  }
+  console.log('═'.repeat(80));
 
   // NEW LOGIC: Check if weather agent is stuck
   // Better detection: If route is complete, weather is needed, but weather data doesn't exist
@@ -685,6 +771,12 @@ export async function supervisorAgentNode(
         continue;
       }
       
+      // Check if agent has failed - if so, skip to next agent
+      if (state.agent_status?.[agentName] === 'failed') {
+        console.warn(`⚠️ [SUPERVISOR] ${agentName} has failed, skipping to next agent in plan`);
+        continue;
+      }
+      
       // Check if agent's work is already done
       const agentDone = 
         (agentName === 'route_agent' && routeCompleteForQuery) ||
@@ -757,6 +849,28 @@ export async function supervisorAgentNode(
     const needsWeatherConsumption = needsBunker && needsWeather && !state.weather_consumption && state.weather_forecast;
     
     if (needsWeatherForecast || needsWeatherConsumption) {
+      // Check if weather_agent has failed
+      if (state.agent_status?.weather_agent === 'failed') {
+        console.warn('⚠️ [SUPERVISOR] Weather agent failed, skipping to next step');
+        
+        // Skip to bunker if needed, otherwise finalize
+        if (needsBunker && !state.bunker_analysis) {
+          console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, go to bunker');
+          return {
+            next_agent: 'bunker_agent',
+            agent_context: agentContext,
+            messages: [],
+          };
+        } else {
+          console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, finalize with partial data');
+          return {
+            next_agent: 'finalize',
+            agent_context: agentContext,
+            messages: [],
+          };
+        }
+      }
+      
       // DATA VALIDATION: Check prerequisites before routing
       const validation = validateAgentPrerequisites('weather_agent');
       if (!validation.valid) {
@@ -786,6 +900,17 @@ export async function supervisorAgentNode(
       
       // If bunker is also needed, check if consumption is needed
       if (needsBunker && !state.weather_consumption) {
+        // Check if weather_agent has failed
+        if (state.agent_status?.weather_agent === 'failed') {
+          console.warn('⚠️ [SUPERVISOR] Weather agent failed, skipping consumption calculation and going to bunker');
+          // Skip weather consumption, go directly to bunker
+          return {
+            next_agent: 'bunker_agent',
+            agent_context: agentContext,
+            messages: [],
+          };
+        }
+        
         // Consumption is needed for bunker planning
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
         return {
@@ -797,6 +922,16 @@ export async function supervisorAgentNode(
       
       // Weather and consumption complete, bunker needed
       if (needsBunker && state.weather_consumption && !state.bunker_analysis) {
+        // Check if bunker_agent has failed
+        if (state.agent_status?.bunker_agent === 'failed') {
+          console.warn('⚠️ [SUPERVISOR] Bunker agent failed, finalizing with available data');
+          return {
+            next_agent: 'finalize',
+            agent_context: agentContext,
+            messages: [],
+          };
+        }
+        
         // DATA VALIDATION: Check prerequisites before routing
         const validation = validateAgentPrerequisites('bunker_agent');
         if (!validation.valid) {
@@ -821,6 +956,16 @@ export async function supervisorAgentNode(
       const weatherComplete = !needsWeather || (state.weather_forecast && state.weather_consumption);
       
       if (weatherNotNeeded || weatherComplete) {
+        // Check if bunker_agent has failed
+        if (state.agent_status?.bunker_agent === 'failed') {
+          console.warn('⚠️ [SUPERVISOR] Bunker agent failed, finalizing with available data');
+          return {
+            next_agent: 'finalize',
+            agent_context: agentContext,
+            messages: [],
+          };
+        }
+        
         // DATA VALIDATION: Check prerequisites before routing
         const validation = validateAgentPrerequisites('bunker_agent');
         if (!validation.valid) {
@@ -1199,6 +1344,10 @@ You MUST call these tools. Do not explain - just call the tools.`;
     } else {
       console.warn('⚠️ [ROUTE-AGENT] No tool calls made! LLM response:', typeof response.content === 'string' ? response.content.substring(0, 200) : 'Non-string content');
     }
+
+    console.log(`✅ [ROUTE-AGENT] Completed successfully`);
+    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
+    console.log(`   • Duration: ${agentDuration}ms`);
 
     return { ...stateUpdates, messages: [response], agent_status: { route_agent: 'success' } };
   } catch (error) {
@@ -1792,6 +1941,11 @@ Call the tool now with the data provided above.`;
       }
     }
     
+    const agentDuration = Date.now() - agentStartTime;
+    console.log(`✅ [WEATHER-AGENT] Completed successfully`);
+    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
+    console.log(`   • Duration: ${agentDuration}ms`);
+    
     return {
       messages: [response as any],
     };
@@ -2060,6 +2214,10 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
     if (response.tool_calls && response.tool_calls.length > 0) {
       console.log(`🔧 [BUNKER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
     }
+
+    console.log(`✅ [BUNKER-AGENT] Completed successfully`);
+    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
+    console.log(`   • Duration: ${agentDuration}ms`);
 
     // Return both the LLM response and any state updates from extracted data
     return { 

@@ -315,52 +315,59 @@ export function trimMessageHistory(messages: any[]): any[] {
 }
 
 /**
- * Validate and filter messages to ensure tool_use/tool_result pairs are complete
- * Removes any AIMessage with tool_calls that doesn't have all corresponding ToolMessages
+ * Validate message pairs - ONLY remove orphaned ToolMessages
+ * 
+ * CRITICAL: Do NOT remove AIMessages with tool_calls that haven't executed yet!
+ * Flow: AIMessage with tool_calls → Router routes to tools → Tools execute → ToolMessages created
+ * If we remove AIMessage before execution, router never sees the tool_calls!
  */
 export function validateMessagePairs(messages: any[]): any[] {
-  const { AIMessage, ToolMessage, SystemMessage } = require('@langchain/core/messages');
+  const { AIMessage, ToolMessage, SystemMessage, HumanMessage } = require('@langchain/core/messages');
   
-  const validated: any[] = [];
+  // Step 1: Collect all valid tool call IDs from AIMessages
+  const validToolCallIds = new Set<string>();
   
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    
-    // Always include SystemMessages and HumanMessages
-    if (msg instanceof SystemMessage || msg.constructor.name === 'HumanMessage') {
-      validated.push(msg);
-      continue;
-    }
-    
-    // If this is an AIMessage with tool_calls, verify all ToolMessages are present
-    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && msg.tool_calls && msg.tool_calls.length > 0) {
-      const toolCallIds = new Set(msg.tool_calls.map((tc: any) => tc.id || tc.tool_call_id).filter(Boolean));
-      
-      // Look ahead to find all ToolMessages for these tool_calls
-      const foundToolCallIds = new Set<string>();
-      for (let j = i + 1; j < messages.length; j++) {
-        const nextMsg = messages[j];
-        // Stop if we hit another AIMessage (tool results must be immediately after)
-        if (nextMsg instanceof AIMessage || nextMsg.constructor.name === 'AIMessage') {
-          break;
-        }
-        if ((nextMsg instanceof ToolMessage || nextMsg.constructor.name === 'ToolMessage') && nextMsg.tool_call_id) {
-          if (toolCallIds.has(nextMsg.tool_call_id)) {
-            foundToolCallIds.add(nextMsg.tool_call_id);
-          }
+  for (const msg of messages) {
+    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && msg.tool_calls) {
+      for (const toolCall of msg.tool_calls) {
+        const id = toolCall.id || toolCall.tool_call_id;
+        if (id) {
+          validToolCallIds.add(id);
         }
       }
-      
-      // Only include this AIMessage if all tool results are present
-      if (foundToolCallIds.size < toolCallIds.size) {
-        console.warn(`⚠️ [MESSAGE-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size})`);
-        continue; // Skip this AIMessage
-      }
     }
-    
-    validated.push(msg);
   }
-  
+
+  // Step 2: Filter messages - keep ALL AIMessages, remove only orphaned ToolMessages
+  const validated = messages.filter((msg) => {
+    // ALWAYS keep AIMessages (they need to execute!)
+    if (msg instanceof AIMessage || msg.constructor.name === 'AIMessage') {
+      return true;
+    }
+
+    // ALWAYS keep HumanMessages and SystemMessages
+    if (msg instanceof HumanMessage || msg instanceof SystemMessage || 
+        msg.constructor.name === 'HumanMessage' || msg.constructor.name === 'SystemMessage') {
+      return true;
+    }
+
+    // For ToolMessages, only keep if they have a valid parent AIMessage
+    if (msg instanceof ToolMessage || msg.constructor.name === 'ToolMessage') {
+      if (!msg.tool_call_id || !validToolCallIds.has(msg.tool_call_id)) {
+        console.warn(
+          `⚠️ [MESSAGE-VALIDATION] Removing orphaned ToolMessage: ${msg.tool_call_id || 'unknown'}`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  console.log(
+    `✅ [MESSAGE-VALIDATION] Validated ${messages.length} → ${validated.length} messages (kept all AIMessages, removed ${messages.length - validated.length} orphans)`
+  );
+
   return validated;
 }
 

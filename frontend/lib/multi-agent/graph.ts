@@ -118,13 +118,14 @@ function shouldEscapeToSupervisor(state: MultiAgentState): boolean {
  * Agent Tool Router
  * 
  * Routes agent to tools if tool calls are present, otherwise back to supervisor.
+ * 
+ * IMPORTANT: Looks at recent AIMessages (not just last message) to find tool_calls
  */
 function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   const messages = state.messages;
-  const lastMessage = messages[messages.length - 1];
 
   console.log(
-    `🔀 [AGENT-TOOL-ROUTER] Decision point - Messages: ${messages.length}, Last message type: ${lastMessage.constructor.name}`
+    `🔀 [AGENT-TOOL-ROUTER] Decision point - Messages: ${messages.length}`
   );
 
   // NEW: Add escape hatch for repeated agent calls
@@ -133,38 +134,35 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   }
 
   // Safety check: prevent infinite loops
-  // Lower threshold to catch loops earlier (50 instead of 100)
   if (messages.length > 50) {
     console.warn(
       `⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor to prevent infinite loop`
     );
     return 'supervisor';
   }
-  
-  // Additional check: If last message is an AIMessage without tool calls and we have many messages,
-  // likely stuck in a loop - force supervisor to handle it
-  if (messages.length > 20 && lastMessage instanceof AIMessage && 
-      (!lastMessage.tool_calls || lastMessage.tool_calls.length === 0)) {
-    const content = lastMessage.content?.toString() || '';
-    // If it's a weather agent message without tool calls, we're stuck
-    if (content.includes('[WEATHER-AGENT]') || content.includes('No tools called')) {
-      console.warn(
-        `⚠️ [AGENT-TOOL-ROUTER] Detected weather agent loop (${messages.length} messages, no tool calls) - forcing supervisor`
-      );
-      return 'supervisor';
-    }
+
+  // NEW: Look at the last 5 messages to find the most recent AIMessage
+  // This handles cases where SystemMessages or other messages are added after agent response
+  const recentMessages = messages.slice(-5);
+  const lastAIMessage = recentMessages
+    .reverse()
+    .find((msg) => msg instanceof AIMessage) as AIMessage | undefined;
+
+  if (!lastAIMessage) {
+    console.log('🔀 [AGENT-TOOL-ROUTER] No AIMessage found in recent messages, returning to supervisor');
+    return 'supervisor';
   }
 
-  // Check if LLM called a tool (only AIMessage has tool_calls)
-  if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+  // Check if this AIMessage has tool calls
+  if (lastAIMessage.tool_calls && lastAIMessage.tool_calls.length > 0) {
     console.log(
-      `🔀 [AGENT-TOOL-ROUTER] Going to tools node - Tool calls: ${lastMessage.tool_calls.length}, First tool: ${lastMessage.tool_calls[0].name}`
+      `🔀 [AGENT-TOOL-ROUTER] Going to tools node - Tool calls: ${lastAIMessage.tool_calls.length}, Tools: ${lastAIMessage.tool_calls.map((tc) => tc.name).join(', ')}`
     );
     return 'tools';
   }
 
-  // No tool calls - return to supervisor for next routing decision
-  console.log('🔀 [AGENT-TOOL-ROUTER] No tool calls, returning to supervisor');
+  // No tool calls - agent is done, return to supervisor
+  console.log('🔀 [AGENT-TOOL-ROUTER] No tool calls in last AIMessage, returning to supervisor');
   return 'supervisor';
 }
 
