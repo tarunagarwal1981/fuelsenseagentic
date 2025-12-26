@@ -1974,36 +1974,16 @@ DO NOT respond with explanatory text. CALL THE REQUIRED TOOL IMMEDIATELY.`;
     
     // Use the same variables declared earlier for tool selection
     // Create explicit state context message
-    // CRITICAL FIX: Instruct LLM to batch tool calls instead of sending all positions at once
+    // CRITICAL FIX: Simplified instructions - tool handles batching automatically
     let stateContextText = `CRITICAL STATE DATA:
       
 vessel_timeline is available:
 Total positions: ${state.vessel_timeline.length}
-Sample positions (structure example - showing ${vesselTimelineForAgent.length} of ${state.vessel_timeline.length}):
+Sample positions (structure example):
 ${JSON.stringify(vesselTimelineForAgent, null, 2)}
 
-🚨 CRITICAL INSTRUCTION FOR fetch_marine_weather:
-You have ${state.vessel_timeline.length} total positions in vessel_timeline.
-DO NOT send all ${state.vessel_timeline.length} positions in a single tool call.
-Instead, you MUST call fetch_marine_weather MULTIPLE TIMES with batches of 25 positions each.
-
-Batching strategy:
-1. Split the ${state.vessel_timeline.length} positions into batches of 25
-2. Call fetch_marine_weather for batch 1 (positions 0-24)
-3. Call fetch_marine_weather for batch 2 (positions 25-49)
-4. Continue until all positions are processed
-5. The tool will return weather data for each batch
-6. After all batches complete, call calculate_weather_consumption with ALL combined weather data
-
-Example: If you have 142 positions, make 6 tool calls:
-- Call 1: positions 0-24 (25 positions)
-- Call 2: positions 25-49 (25 positions)
-- Call 3: positions 50-74 (25 positions)
-- Call 4: positions 75-99 (25 positions)
-- Call 5: positions 100-124 (25 positions)
-- Call 6: positions 125-141 (17 positions)
-
-Use the full vessel_timeline array from state (not just the sample above) when making tool calls.`;
+Call fetch_marine_weather with ALL ${state.vessel_timeline.length} positions from vessel_timeline.
+The tool automatically handles batching internally - just pass all positions in one call.`;
 
     // If weather forecast exists and consumption is needed, include it
     if ((state.weather_forecast || extractedData.weather_forecast) && needsConsumption && !state.weather_consumption) {
@@ -2019,9 +1999,7 @@ The weather_data parameter should be an array of objects with datetime and weath
       ? `You MUST call these tools: ${requiredTools.join(', ')}. Use the data provided above.`
       : 'You MUST use this data to call the appropriate weather tools immediately.'}
 DO NOT ask for this data - it is provided above.
-Call the tool now with the data provided above.
-
-REMEMBER: For fetch_marine_weather, call it multiple times with batches of 25 positions each.`;
+Call the tool now with the data provided above.`;
     
     const stateContextMessage = new HumanMessage(stateContextText);
     
