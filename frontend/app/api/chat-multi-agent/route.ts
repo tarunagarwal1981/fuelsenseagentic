@@ -189,6 +189,8 @@ export async function POST(req: Request) {
           }
 
           // Stream graph execution
+          // Increased recursion limit to 60 for complex multi-agent queries
+          // Complex queries with multiple agents and tool calls may need more iterations
           const streamResult = await multiAgentApp.stream(
             {
               messages: [humanMessage],
@@ -209,7 +211,7 @@ export async function POST(req: Request) {
             },
             {
               streamMode: 'values',
-              recursionLimit: 30, // Prevents infinite loops in graph execution
+              recursionLimit: 60, // Increased from 30 to handle complex multi-agent workflows
             }
           );
 
