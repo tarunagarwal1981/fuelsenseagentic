@@ -52,6 +52,7 @@ async function testMultiAgent() {
         agent_status: {},
         agent_context: null,
         selected_route_id: null,
+        weather_agent_partial: false,
       };
       
       const result = await multiAgentApp.invoke(initialState, {
