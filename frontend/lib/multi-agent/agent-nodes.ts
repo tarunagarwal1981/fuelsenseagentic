@@ -1322,35 +1322,35 @@ NOTE: You only need to calculate the route. Weather timeline is not needed for t
 You MUST call these tools. Do not explain - just call the tools.`;
 
   try {
-    // Build messages with system prompt and trimmed conversation history
-    // CRITICAL: Anthropic API requires that AIMessage with tool_use is immediately followed by ToolMessages
-    // Strategy: Include all messages from the last HumanMessage onwards to preserve tool_use/tool_result pairs
-    const trimmedMessages = trimMessageHistory(state.messages);
+    // Build messages with system prompt and conversation history
+    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Find the last HumanMessage (user query) - this is our starting point
-    const lastHumanMessageIndex = trimmedMessages.findLastIndex(
-      (msg) => msg instanceof HumanMessage
+    // Step 1: Get all messages (don't trim yet - we need full context for validation)
+    const allMessages = state.messages;
+
+    // Step 2: Remove SystemMessages (we'll add our own)
+    let messagesWithoutSystem = allMessages.filter(
+      (msg) => !(msg instanceof SystemMessage) && 
+               msg.constructor.name !== 'SystemMessage'
     );
-    
-    // Include all messages from the last HumanMessage onwards
-    // This preserves the complete flow: HumanMessage -> AIMessage (with tool_use) -> ToolMessages (with tool_result)
+
+    // Step 3: Validate COMPLETE messages (this needs full message array!)
+    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
+
+    // Step 4: NOW find last HumanMessage and slice if needed
+    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
+    );
+
+    // Step 5: Take messages from last human query onward
     const messagesToInclude = lastHumanMessageIndex >= 0
-      ? trimmedMessages.slice(lastHumanMessageIndex)
-      : trimmedMessages; // Fallback: use all messages
-    
-    // Filter out SystemMessages (we'll add our own at the beginning)
-    // Keep all other message types (HumanMessage, AIMessage, ToolMessage) to preserve tool call pairs
-    let filteredMessages = messagesToInclude.filter(
-      (msg) => !(msg instanceof SystemMessage)
-    );
-    
-    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
-    // Do NOT apply to the response we return to state!
-    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
-    
+      ? validatedMessages.slice(lastHumanMessageIndex)
+      : validatedMessages.slice(-20);  // Fallback: last 20 messages
+
+    // Step 6: Build final message array for LLM
     const messages = [
       new SystemMessage(systemPrompt),
-      ...messagesForLLM,  // Use validated messages for LLM input
+      ...messagesToInclude,
     ];
 
     const response: any = await withTimeout(
@@ -1829,19 +1829,29 @@ DO NOT respond with explanatory text. CALL THE REQUIRED TOOL IMMEDIATELY.`;
   }
 
   try {
-    // Build messages with system prompt and trimmed conversation history
-    // CRITICAL: Start fresh - only include user query and route agent results
-    // Exclude previous weather agent attempts to avoid message corruption
-    const trimmedMessages = trimMessageHistory(state.messages);
+    // Build messages with system prompt and conversation history
+    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Find the last HumanMessage (user query) - this is our starting point
-    const lastHumanMessageIndex = trimmedMessages.findLastIndex(
-      (msg) => msg instanceof HumanMessage
+    // Step 1: Get all messages (don't trim yet - we need full context for validation)
+    const allMessages = state.messages;
+
+    // Step 2: Remove SystemMessages (we'll add our own)
+    let messagesWithoutSystem = allMessages.filter(
+      (msg) => !(msg instanceof SystemMessage) && 
+               msg.constructor.name !== 'SystemMessage'
+    );
+
+    // Step 3: Validate COMPLETE messages (this needs full message array!)
+    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
+
+    // Step 4: NOW find last HumanMessage and slice if needed
+    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
     );
     
     // SIMPLIFIED: Only include user query and vessel timeline - nothing else
     // This gives the LLM a clean context without confusing route agent responses
-    const userMessage = trimmedMessages[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
+    const userMessage = validatedMessages[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
     
     // Get user query for message
     const userQueryForMessage = userMessage instanceof HumanMessage 
@@ -2209,32 +2219,31 @@ Finally, use analyze_bunker_options to rank all options.
 Be thorough and ensure you complete the full bunker optimization analysis.`;
 
   try {
-    // Build messages with system prompt and trimmed conversation history
-    // CRITICAL: Anthropic API requires that AIMessage with tool_use is immediately followed by ToolMessages
-    // Strategy: Include all messages from the last HumanMessage onwards to preserve tool_use/tool_result pairs
-    const trimmedMessages = trimMessageHistory(state.messages);
+    // Build messages with system prompt and conversation history
+    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Find the last HumanMessage (user query) - this is our starting point
-    const lastHumanMessageIndex = trimmedMessages.findLastIndex(
-      (msg) => msg instanceof HumanMessage
+    // Step 1: Get all messages (don't trim yet - we need full context for validation)
+    const allMessages = state.messages;
+
+    // Step 2: Remove SystemMessages (we'll add our own)
+    let messagesWithoutSystem = allMessages.filter(
+      (msg) => !(msg instanceof SystemMessage) && 
+               msg.constructor.name !== 'SystemMessage'
     );
-    
-    // Include all messages from the last HumanMessage onwards
-    // This preserves the complete flow: HumanMessage -> AIMessage (with tool_use) -> ToolMessages (with tool_result)
+
+    // Step 3: Validate COMPLETE messages (this needs full message array!)
+    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
+
+    // Step 4: NOW find last HumanMessage and slice if needed
+    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
+    );
+
+    // Step 5: Take messages from last human query onward
     const messagesToInclude = lastHumanMessageIndex >= 0
-      ? trimmedMessages.slice(lastHumanMessageIndex)
-      : trimmedMessages; // Fallback: use all messages
-    
-    // Filter out SystemMessages (we'll add our own at the beginning)
-    // Keep all other message types (HumanMessage, AIMessage, ToolMessage) to preserve tool call pairs
-    let filteredMessages = messagesToInclude.filter(
-      (msg) => !(msg instanceof SystemMessage)
-    );
-    
-    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
-    // Do NOT apply to the response we return to state!
-    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
-    
+      ? validatedMessages.slice(lastHumanMessageIndex)
+      : validatedMessages.slice(-20);  // Fallback: last 20 messages
+
     // Combine system prompt with context about available data
     let fullSystemPrompt = systemPrompt;
     if (state.route_data) {
@@ -2242,10 +2251,11 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
 - Route waypoints: ${state.route_data.waypoints.length} waypoints
 - Use route waypoints for find_bunker_ports`;
     }
-    
+
+    // Step 6: Build final message array for LLM
     const messages = [
       new SystemMessage(fullSystemPrompt),
-      ...messagesForLLM,  // Use validated messages for LLM input
+      ...messagesToInclude,
     ];
 
     const response: any = await withTimeout(
@@ -2509,36 +2519,36 @@ Provide a clear summary of the route information.`;
   }
 
   try {
-    // Build comprehensive context for final synthesis with trimmed history
-    // CRITICAL: Anthropic API requires that AIMessage with tool_use is immediately followed by ToolMessages
-    // Strategy: Include all messages from the last HumanMessage onwards to preserve tool_use/tool_result pairs
-    const trimmedMessages = trimMessageHistory(state.messages);
+    // Build comprehensive context for final synthesis
+    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Find the last HumanMessage (user query) - this is our starting point
-    const lastHumanMessageIndex = trimmedMessages.findLastIndex(
-      (msg) => msg instanceof HumanMessage
+    // Step 1: Get all messages (don't trim yet - we need full context for validation)
+    const allMessages = state.messages;
+
+    // Step 2: Remove SystemMessages (we'll add our own)
+    let messagesWithoutSystem = allMessages.filter(
+      (msg) => !(msg instanceof SystemMessage) && 
+               msg.constructor.name !== 'SystemMessage'
     );
-    
-    // Include all messages from the last HumanMessage onwards
-    // This preserves the complete flow: HumanMessage -> AIMessage (with tool_use) -> ToolMessages (with tool_result)
+
+    // Step 3: Validate COMPLETE messages (this needs full message array!)
+    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
+
+    // Step 4: NOW find last HumanMessage and slice if needed
+    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
+    );
+
+    // Step 5: Take messages from last human query onward
     const messagesToInclude = lastHumanMessageIndex >= 0
-      ? trimmedMessages.slice(lastHumanMessageIndex)
-      : trimmedMessages.slice(-10); // Fallback: last 10 messages
-    
-    // Filter out SystemMessages (we'll add our own at the beginning)
-    // Keep all other message types (HumanMessage, AIMessage, ToolMessage) to preserve tool call pairs
-    let filteredMessages = messagesToInclude.filter(
-      (msg) => !(msg instanceof SystemMessage)
-    );
-    
-    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
-    // Do NOT apply to the response we return to state!
-    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
-    
+      ? validatedMessages.slice(lastHumanMessageIndex)
+      : validatedMessages.slice(-20);  // Fallback: last 20 messages
+
+    // Step 6: Build final message array for LLM
     // CRITICAL: Only ONE SystemMessage allowed, and it must be first
     const messages = [
       new SystemMessage(systemPrompt),
-      ...messagesForLLM,  // Use validated messages for LLM input
+      ...messagesToInclude,
     ];
 
     const response = await withTimeout(
