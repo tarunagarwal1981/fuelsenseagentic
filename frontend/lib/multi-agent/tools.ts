@@ -144,9 +144,99 @@ The waypoints should come from the calculate_route tool result.`,
 // ============================================================================
 
 /**
- * Marine Weather Tool
- * 
- * Fetches marine weather forecast for vessel positions.
+ * Create a state-aware fetch_marine_weather tool
+ * Automatically uses vessel_timeline from state if LLM provides too few positions
+ */
+export function createFetchMarineWeatherTool(state: { vessel_timeline?: any[] | null }) {
+  return tool(
+    async (input: any) => {
+      console.log('🌊 [WEATHER-AGENT] Executing fetch_marine_weather');
+      
+      // CRITICAL FIX: Check if LLM provided too few positions
+      // If so, automatically use full vessel_timeline from state
+      const providedPositions = input?.positions || [];
+      const hasVesselTimeline = state.vessel_timeline && state.vessel_timeline.length > 0;
+      
+      if (hasVesselTimeline && providedPositions.length < 10 && state.vessel_timeline) {
+        // LLM only provided a sample - use full vessel_timeline from state
+        console.log(`⚠️ [WEATHER-AGENT] LLM only provided ${providedPositions.length} positions (expected ${state.vessel_timeline.length}). Using full vessel_timeline from state.`);
+        
+        const fullPositions = state.vessel_timeline.map((pos: any) => ({
+          lat: pos.lat,
+          lon: pos.lon,
+          datetime: pos.datetime
+        }));
+        
+        // Replace input with full positions
+        input = {
+          ...input,
+          positions: fullPositions
+        };
+        
+        console.log(`✅ [WEATHER-AGENT] Using ${fullPositions.length} positions from vessel_timeline`);
+      } else if (providedPositions.length > 0) {
+        console.log(`✅ [WEATHER-AGENT] Using ${providedPositions.length} positions provided by LLM`);
+      }
+      
+      try {
+        const result = await executeMarineWeatherTool(input);
+        return result;
+      } catch (error: any) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+        
+        if (isTimeout) {
+          console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
+          // Return empty array to allow supervisor to proceed with partial data
+          return [];
+        }
+        
+        console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
+        return { error: errorMessage };
+      }
+    },
+  {
+    name: 'fetch_marine_weather',
+    description: `Fetch marine weather forecast from Open-Meteo API for vessel positions.
+
+This tool:
+- Fetches weather data for multiple positions efficiently
+- Batches API calls by grouping positions into 6-hour windows
+- Returns wave height, wind speed, wind direction, and sea state
+- Provides forecast confidence (high for 0-16 days, medium for 16+ days)
+
+Input:
+- positions: Array of positions with coordinates and datetime:
+  [
+    {
+      lat: number,
+      lon: number,
+      datetime: "ISO 8601 format"
+    },
+    ...
+  ]
+
+Output:
+- Array of weather forecasts with:
+  - position: {lat, lon}
+  - datetime: ISO 8601 datetime
+  - weather: {
+      wave_height_m: number (meters)
+      wind_speed_knots: number (knots)
+      wind_direction_deg: number (0-360)
+      sea_state: string ("Calm", "Slight", "Moderate", "Rough", "Very Rough", "High")
+    }
+  - forecast_confidence: "high" | "medium" | "low"
+
+Use this tool with vessel positions from calculate_weather_timeline to get weather forecasts.`,
+    schema: marineWeatherInputSchema,
+  }
+  );
+}
+
+/**
+ * Marine Weather Tool (default export for backward compatibility)
+ * Note: This tool doesn't have state access. Use createFetchMarineWeatherTool in agent nodes.
  */
 export const fetchMarineWeatherTool = tool(
   async (input) => {
@@ -160,7 +250,6 @@ export const fetchMarineWeatherTool = tool(
       
       if (isTimeout) {
         console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
-        // Return empty array to allow supervisor to proceed with partial data
         return [];
       }
       

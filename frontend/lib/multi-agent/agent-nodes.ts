@@ -56,6 +56,7 @@ import { bunkerAnalyzerInputSchema } from '@/lib/tools/bunker-analyzer';
 // Import weather agent tools from tools.ts
 import {
   fetchMarineWeatherTool,
+  createFetchMarineWeatherTool,
   calculateWeatherConsumptionTool,
   checkPortWeatherTool,
 } from './tools';
@@ -1772,8 +1773,10 @@ export async function weatherAgentNode(
   }
   
   // Map tool names to actual tool objects (only weather agent's tools)
+  // CRITICAL FIX: Use state-aware tool factory for fetch_marine_weather
+  // This automatically uses full vessel_timeline if LLM provides too few positions
   const toolMap: Record<string, any> = {
-    'fetch_marine_weather': fetchMarineWeatherTool,
+    'fetch_marine_weather': createFetchMarineWeatherTool(state),
     'calculate_weather_consumption': calculateWeatherConsumptionTool,
     'check_bunker_port_weather': checkPortWeatherTool,
   };
