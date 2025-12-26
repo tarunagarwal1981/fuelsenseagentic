@@ -56,8 +56,8 @@ async function testInfiniteLoopFix() {
     
     for await (const event of streamResult) {
       stepCount++;
-      const nodeName = Object.keys(event)[0];
-      const state = event[nodeName];
+      const nodeName = Object.keys(event)[0] as string;
+      const state = (event as any)[nodeName];
       
       // Track route_agent calls
       if (nodeName === 'route_agent') {
