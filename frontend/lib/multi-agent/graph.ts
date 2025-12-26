@@ -119,7 +119,8 @@ function shouldEscapeToSupervisor(state: MultiAgentState): boolean {
  * 
  * Routes agent to tools if tool calls are present, otherwise back to supervisor.
  * 
- * IMPORTANT: Looks at recent AIMessages (not just last message) to find tool_calls
+ * CRITICAL: Don't use instanceof - it fails in production (minified code)
+ * Instead check for properties that identify AIMessages
  */
 function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   const messages = state.messages;
@@ -131,53 +132,58 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
     return 'supervisor';
   }
 
-  // Safety check: prevent infinite loops
+  // Safety check
   if (messages.length > 60) {
-    console.warn(
-      `⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor`
-    );
+    console.warn(`⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor`);
     return 'supervisor';
   }
 
-  // Look at the last 10 messages to find the most recent AIMessage
+  // Look at last 10 messages
   const recentMessages = messages.slice(-10);
   
   console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last ${recentMessages.length} messages:`);
   
-  // Log each recent message type for debugging
-  recentMessages.forEach((msg, idx) => {
-    const isAI = msg instanceof AIMessage;
-    const hasToolCalls = isAI && msg.tool_calls && msg.tool_calls.length > 0;
-    let toolNames = 'none';
-    if (isAI && msg.tool_calls && msg.tool_calls.length > 0) {
-      toolNames = msg.tool_calls.map((tc: any) => tc.name).join(', ');
-    }
-    console.log(`  [${idx}] ${msg.constructor.name}${hasToolCalls ? ` → tool_calls: ${toolNames}` : ''}`);
+  // Log messages - check properties instead of instanceof
+  recentMessages.forEach((msg: any, idx) => {
+    // Identify message type by properties instead of instanceof
+    const msgType = msg.tool_calls ? 'AIMessage(with_tools)' : 
+                    msg.tool_call_id ? 'ToolMessage' :
+                    msg.content && typeof msg.content === 'string' && !msg.tool_calls ? 'HumanMessage/AIMessage' :
+                    'Unknown';
+    
+    const toolCount = msg.tool_calls?.length || 0;
+    const toolNames = msg.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none';
+    
+    console.log(`  [${idx}] ${msgType}${toolCount > 0 ? ` → ${toolCount} tools: ${toolNames}` : ''}`);
   });
 
-  // Find most recent AIMessage
-  const lastAIMessage = recentMessages
-    .reverse()
-    .find((msg) => msg instanceof AIMessage) as AIMessage | undefined;
+  // CRITICAL: Find AIMessage by checking for tool_calls property
+  // Don't use instanceof - check properties instead
+  let lastAIMessageWithTools: any = null;
+  
+  for (let i = recentMessages.length - 1; i >= 0; i--) {
+    const msg = recentMessages[i];
+    
+    // Check if this message has tool_calls (that's how we identify AIMessage with tools)
+    if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      lastAIMessageWithTools = msg;
+      console.log(`✅ [AGENT-TOOL-ROUTER] Found message with tool_calls at position ${i}`);
+      break;
+    }
+  }
 
-  if (!lastAIMessage) {
-    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ No AIMessage found in recent messages → supervisor');
+  if (!lastAIMessageWithTools) {
+    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ No message with tool_calls found → supervisor');
     return 'supervisor';
   }
 
-  console.log(`🔀 [AGENT-TOOL-ROUTER] ✅ Found AIMessage at position ${recentMessages.indexOf(lastAIMessage)}`);
-
-  // Check if this AIMessage has tool calls
-  if (lastAIMessage.tool_calls && lastAIMessage.tool_calls.length > 0) {
-    console.log(
-      `🔀 [AGENT-TOOL-ROUTER] ✅✅ ROUTING TO TOOLS! Tool calls: ${lastAIMessage.tool_calls.length}, Tools: ${lastAIMessage.tool_calls.map((tc) => tc.name).join(', ')}`
-    );
-    return 'tools';
-  }
-
-  // No tool calls - agent is done
-  console.log('🔀 [AGENT-TOOL-ROUTER] No tool_calls found → supervisor');
-  return 'supervisor';
+  // We found a message with tool_calls - route to tools!
+  const toolNames = lastAIMessageWithTools.tool_calls.map((tc: any) => tc.name).join(', ');
+  console.log(
+    `🔀 [AGENT-TOOL-ROUTER] ✅✅ ROUTING TO TOOLS! ${lastAIMessageWithTools.tool_calls.length} tools: ${toolNames}`
+  );
+  
+  return 'tools';
 }
 
 // ============================================================================
