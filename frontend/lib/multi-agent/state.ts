@@ -278,17 +278,10 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   // ========================================================================
   
   /**
-   * Conversation history - messages are concatenated and trimmed
+   * Conversation history - messages are concatenated
    */
   messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => {
-      const combined = x.concat(y);
-      // Trim to last 20 messages to prevent memory bloat
-      if (combined.length > 20) {
-        return [combined[0], ...combined.slice(-19)];
-      }
-      return combined;
-    },
+    reducer: (x, y) => x.concat(y),
     default: () => [],
   }),
 
