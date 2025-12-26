@@ -10,7 +10,6 @@
  */
 
 import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatOpenAI } from '@langchain/openai';
 import { SystemMessage, AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from './state';
 import { tool } from '@langchain/core/tools';
@@ -61,6 +60,9 @@ import {
   calculateWeatherConsumptionTool,
   checkPortWeatherTool,
 } from './tools';
+
+// Import port lookup utility
+import { extractPortsFromQuery as lookupPorts } from '@/lib/utils/port-lookup';
 
 // ============================================================================
 // Circuit Breaker Helper
@@ -1095,95 +1097,22 @@ function extractRouteDataFromMessages(messages: any[]): { route_data?: any; vess
 // ============================================================================
 
 /**
- * Extract origin and destination ports from user query using LLM
- * Much more reliable than regex - handles any format, typos, and context
- * Cost: ~$0.00006 per query (negligible)
+ * Extract ports from query using database lookup
+ * Fast, free, and accurate - searches port database instead of using LLM
  */
 async function extractPortsFromQuery(query: string): Promise<{ origin: string; destination: string }> {
-  console.log('🔍 [PORT-EXTRACTION-LLM] Analyzing query with GPT-4o-mini...');
+  const { origin, destination } = lookupPorts(query);
   
-  try {
-    // Use GPT-4o-mini for cost-effective extraction
-    const llm = new ChatOpenAI({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      maxTokens: 100,
-      timeout: 5000, // 5 second timeout
-    });
-    
-    const extractionPrompt = `Extract the origin and destination ports from this maritime query.
-
-Query: "${query}"
-
-Instructions:
-1. Identify the origin port (departure) and destination port (arrival)
-2. If full port names are mentioned (e.g., "Singapore", "Fujairah"), return them
-3. If port codes are mentioned (e.g., "SGSIN", "AEJEA"), return them
-4. If only one port is mentioned, assume it's the destination and use "Singapore" as origin
-5. Handle common abbreviations and typos intelligently
-
-CRITICAL: Always return valid port names or codes, never partial strings like "apore" or "Fujai".
-
-Common port mappings:
-- Singapore → SGSIN or Singapore
-- Fujairah → AEJEA or Fujairah
-- Dubai / Jebel Ali → AEDXB or Dubai
-- Rotterdam → NLRTM or Rotterdam
-- Houston → USHOU or Houston
-- Los Angeles → USLAX or Los Angeles
-- Shanghai → CNSHA or Shanghai
-
-Return ONLY a JSON object in this exact format:
-{
-  "origin": "port_name_or_code",
-  "destination": "port_name_or_code"
-}
-
-No explanation, no markdown, just the JSON object.`;
-
-    const response = await llm.invoke([
-      new HumanMessage(extractionPrompt)
-    ]);
-    
-    // Parse LLM response
-    const content = response.content.toString().trim();
-    
-    // Remove markdown code blocks if present
-    const jsonContent = content
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-    
-    const extracted = JSON.parse(jsonContent);
-    
-    // Validate extraction
-    if (!extracted.origin || !extracted.destination) {
-      throw new Error('LLM returned invalid port extraction');
-    }
-    
-    // Additional validation: ensure we didn't get partial strings
-    if (extracted.origin.length < 3 || extracted.destination.length < 3) {
-      throw new Error('LLM returned suspiciously short port names');
-    }
-    
-    console.log('✅ [PORT-EXTRACTION-LLM] Extracted:', extracted.origin, '→', extracted.destination);
-    
-    return {
-      origin: extracted.origin,
-      destination: extracted.destination,
-    };
-    
-  } catch (error: any) {
-    console.error('❌ [PORT-EXTRACTION-LLM] Error:', error.message);
-    console.warn('⚠️ [PORT-EXTRACTION-LLM] Falling back to defaults');
-    console.warn('⚠️ [PORT-EXTRACTION-LLM] Original query:', query);
-    
-    // Fallback to safe defaults
-    return {
-      origin: 'Singapore',
-      destination: 'Fujairah',
-    };
-  }
+  // Use defaults if not found
+  const finalOrigin = origin || 'SGSIN';
+  const finalDest = destination || 'AEFJR';
+  
+  console.log(`✅ [PORT-EXTRACTION] Result: ${finalOrigin} → ${finalDest}`);
+  
+  return {
+    origin: finalOrigin,
+    destination: finalDest,
+  };
 }
 
 /**
