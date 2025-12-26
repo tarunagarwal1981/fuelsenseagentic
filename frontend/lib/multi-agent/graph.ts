@@ -148,7 +148,10 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   recentMessages.forEach((msg, idx) => {
     const isAI = msg instanceof AIMessage;
     const hasToolCalls = isAI && msg.tool_calls && msg.tool_calls.length > 0;
-    const toolNames = hasToolCalls ? msg.tool_calls.map((tc: any) => tc.name).join(', ') : 'none';
+    let toolNames = 'none';
+    if (isAI && msg.tool_calls && msg.tool_calls.length > 0) {
+      toolNames = msg.tool_calls.map((tc: any) => tc.name).join(', ');
+    }
     console.log(`  [${idx}] ${msg.constructor.name}${hasToolCalls ? ` → tool_calls: ${toolNames}` : ''}`);
   });
 
