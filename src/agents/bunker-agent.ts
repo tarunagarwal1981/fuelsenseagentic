@@ -132,11 +132,12 @@ export async function runBunkerAgent(
               ? portsData.default
               : (portsData as any).default || portsData;
             
+            const input = toolUseBlock.input as any;
             originPort = ports.find(
-              (p: any) => p.port_code === toolUseBlock.input.origin_port_code
+              (p: any) => p.port_code === input.origin_port_code
             ) as Port | null;
             destinationPort = ports.find(
-              (p: any) => p.port_code === toolUseBlock.input.destination_port_code
+              (p: any) => p.port_code === input.destination_port_code
             ) as Port | null;
 
             if (enableLogging) {

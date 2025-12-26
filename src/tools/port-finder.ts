@@ -162,40 +162,6 @@ async function loadPortsData(): Promise<Port[]> {
   }
 }
 
-/**
- * Finds the nearest waypoint to a given port
- * 
- * @param port - Port to find nearest waypoint for
- * @param waypoints - Array of route waypoints
- * @returns Object containing distance, waypoint index, and waypoint coordinates
- */
-function findNearestWaypoint(
-  port: Port,
-  waypoints: Coordinates[]
-): {
-  distance: number;
-  waypointIndex: number;
-  waypoint: Coordinates;
-} {
-  let minDistance = Infinity;
-  let nearestIndex = 0;
-  let nearestWaypoint = waypoints[0];
-
-  for (let i = 0; i < waypoints.length; i++) {
-    const distance = haversineDistance(port.coordinates, waypoints[i]);
-    if (distance < minDistance) {
-      minDistance = distance;
-      nearestIndex = i;
-      nearestWaypoint = waypoints[i];
-    }
-  }
-
-  return {
-    distance: minDistance,
-    waypointIndex: nearestIndex,
-    waypoint: nearestWaypoint,
-  };
-}
 
 /**
  * Main function to find ports near a route

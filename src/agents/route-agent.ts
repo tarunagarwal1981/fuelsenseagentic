@@ -13,7 +13,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { calculateRoute, routeCalculatorToolSchema, executeRouteCalculatorTool } from '../tools/route-calculator';
+import { routeCalculatorToolSchema, executeRouteCalculatorTool } from '../tools/route-calculator';
 import { visualizeRoute } from '../utils/map-visualizer';
 import { Port } from '../types';
 
@@ -100,7 +100,6 @@ export async function runRouteAgent(
 
   const anthropic = createAnthropicClient(apiKey);
   let toolCalls = 0;
-  let currentMessage = userMessage;
   let messages: Anthropic.MessageParam[] = [
     {
       role: 'user',

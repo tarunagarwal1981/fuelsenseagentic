@@ -136,8 +136,6 @@ async function testBarcelonaToHamburg(): Promise<void> {
  * Expected: Should throw RouteCalculationError
  */
 async function testInvalidPortCodes(): Promise<void> {
-  const testName = 'Invalid Port Codes (Error Handling)';
-  
   const testCases = [
     {
       name: 'Non-existent origin port',

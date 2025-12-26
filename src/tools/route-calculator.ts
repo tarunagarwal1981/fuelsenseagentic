@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { Coordinates, Route } from '../types';
+import { Coordinates } from '../types';
 
 /**
  * Input parameters for route calculation
@@ -145,7 +145,7 @@ async function loadPortsData(): Promise<Array<{ port_code: string; coordinates: 
       port_code: p.port_code,
       coordinates: p.coordinates,
     }));
-    return portsCache;
+    return portsCache!; // Non-null assertion: portsCache is assigned just above
   } catch (error) {
     throw new RouteCalculationError(
       `Failed to load ports data: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -308,8 +308,8 @@ async function callMaritimeRouteApi(
  */
 function determineRouteType(
   waypoints: Coordinates[],
-  origin: string,
-  destination: string
+  _origin: string,
+  _destination: string
 ): string {
   // Check for major canal passages based on coordinates
   // Suez Canal: approximately 30°N, 32°E

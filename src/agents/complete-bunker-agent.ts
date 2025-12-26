@@ -172,11 +172,12 @@ export async function runCompleteBunkerAgent(
                 ? portsData.default
                 : (portsData as any).default || portsData;
 
+              const routeInput = toolUseBlock.input as any;
               originPort = ports.find(
-                (p: any) => p.port_code === toolUseBlock.input.origin_port_code
+                (p: any) => p.port_code === routeInput.origin_port_code
               ) as Port | null;
               destinationPort = ports.find(
-                (p: any) => p.port_code === toolUseBlock.input.destination_port_code
+                (p: any) => p.port_code === routeInput.destination_port_code
               ) as Port | null;
 
               if (enableLogging) {
@@ -208,14 +209,15 @@ export async function runCompleteBunkerAgent(
 
             case 'analyze_bunker_options':
               // Inject vessel parameters if not provided
+              const input = toolUseBlock.input as any;
               const analyzerInput = {
-                ...toolUseBlock.input,
+                ...input,
                 fuel_quantity_mt:
-                  toolUseBlock.input.fuel_quantity_mt || fuelQuantityMT,
+                  input.fuel_quantity_mt || fuelQuantityMT,
                 vessel_speed_knots:
-                  toolUseBlock.input.vessel_speed_knots || vesselSpeed,
+                  input.vessel_speed_knots || vesselSpeed,
                 vessel_consumption_mt_per_day:
-                  toolUseBlock.input.vessel_consumption_mt_per_day ||
+                  input.vessel_consumption_mt_per_day ||
                   vesselConsumption,
               };
               toolResult = await executeBunkerAnalyzerTool(analyzerInput);
