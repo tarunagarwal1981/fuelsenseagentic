@@ -372,27 +372,15 @@ export function validateMessagePairs(messages: any[]): any[] {
 }
 
 /**
- * Validate messages specifically for Anthropic API calls
+ * Validate messages for Anthropic API - Keep COMPLETE pairs, remove INCOMPLETE
  * 
- * CRITICAL: Anthropic API requires STRICT tool_use/tool_result pairing
- * - Every AIMessage with tool_calls MUST have ALL corresponding ToolMessages immediately after
- * - If ANY tool_result is missing, the ENTIRE AIMessage must be removed
- * 
- * This is DIFFERENT from validateMessagePairs which is lenient for graph flow.
+ * CRITICAL: This function should:
+ * 1. KEEP AIMessages that have ALL their ToolMessages present (complete pairs)
+ * 2. REMOVE AIMessages that are missing ANY ToolMessages (incomplete pairs)
+ * 3. REMOVE orphaned ToolMessages (no parent AIMessage)
  */
 export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
   const { AIMessage, ToolMessage, SystemMessage, HumanMessage } = require('@langchain/core/messages');
-  
-  // Find the last AIMessage with tool_calls (the current agent's response)
-  let lastAIMessageWithToolCallsIndex = -1;
-  for (let idx = messages.length - 1; idx >= 0; idx--) {
-    const msg = messages[idx];
-    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && 
-        msg.tool_calls && msg.tool_calls.length > 0) {
-      lastAIMessageWithToolCallsIndex = idx;
-      break;
-    }
-  }
   
   const validated: any[] = [];
   let i = 0;
@@ -408,95 +396,77 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
       continue;
     }
     
-    // For AIMessages with tool_calls, verify ALL tool results are present
-    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && 
-        msg.tool_calls && msg.tool_calls.length > 0) {
-      
+    // For AIMessages without tool_calls, keep them
+    const isAIMessage = msg instanceof AIMessage || msg.constructor.name === 'AIMessage';
+    const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+    
+    if (isAIMessage && !hasToolCalls) {
+      validated.push(msg);
+      i++;
+      continue;
+    }
+    
+    // For AIMessages WITH tool_calls, verify ALL ToolMessages are present
+    if (isAIMessage && hasToolCalls) {
       const toolCallIds = new Set(
         msg.tool_calls.map((tc: any) => tc.id || tc.tool_call_id).filter(Boolean)
       );
       
-      // Look at the NEXT messages to find ToolMessages
+      // Look ahead for ToolMessages
+      const toolMessages: any[] = [];
       const foundToolCallIds = new Set<string>();
       let j = i + 1;
       
-      // Collect all consecutive ToolMessages after this AIMessage
       while (j < messages.length) {
         const nextMsg = messages[j];
         
-        // If we hit another AIMessage or HumanMessage, stop looking
+        // Stop at next AIMessage or HumanMessage
         if (nextMsg instanceof AIMessage || nextMsg instanceof HumanMessage ||
             nextMsg.constructor.name === 'AIMessage' || nextMsg.constructor.name === 'HumanMessage') {
           break;
         }
         
-        // If it's a ToolMessage, check if it matches our tool_calls
-        if (nextMsg instanceof ToolMessage || nextMsg.constructor.name === 'ToolMessage') {
-          if (nextMsg.tool_call_id && toolCallIds.has(nextMsg.tool_call_id)) {
+        // Collect matching ToolMessages
+        const isToolMessage = nextMsg instanceof ToolMessage || nextMsg.constructor.name === 'ToolMessage';
+        if (isToolMessage && nextMsg.tool_call_id) {
+          if (toolCallIds.has(nextMsg.tool_call_id)) {
             foundToolCallIds.add(nextMsg.tool_call_id);
+            toolMessages.push(nextMsg);
           }
         }
         
         j++;
       }
       
-      const isLast = i === lastAIMessageWithToolCallsIndex;
-      
-      // STRICT: Only include this AIMessage if ALL tool results are present
-      // EXCEPTION: Keep the LAST AIMessage even if incomplete (it's the current agent's response)
-      if (foundToolCallIds.size === toolCallIds.size || isLast) {
-        if (isLast && foundToolCallIds.size < toolCallIds.size) {
-          // Last AIMessage with incomplete tool_calls - keep it for router, but don't send to API
-          // We'll handle this by not including it in the messages sent to the API
-          // For now, skip it from API validation but it will remain in state.messages for routing
-          console.warn(
-            `⚠️ [API-VALIDATION] Last AIMessage has incomplete tool_calls (found ${foundToolCallIds.size}/${toolCallIds.size}) - keeping in state for routing but skipping from API call`
-          );
-          // Skip this message from API call (don't add to validated)
-          i = j;
-          continue;
-        }
-        
-        // All tool results found OR it's the last one - include the AIMessage and its ToolMessages
+      // CRITICAL: If ALL tool results present, KEEP the pair
+      // If ANY results missing, SKIP the pair
+      if (foundToolCallIds.size === toolCallIds.size) {
+        // Complete pair - keep AIMessage and all its ToolMessages
         validated.push(msg);
-        
-        // Add all the ToolMessages that belong to this AIMessage
-        for (let k = i + 1; k < j; k++) {
-          const toolMsg = messages[k];
-          if ((toolMsg instanceof ToolMessage || toolMsg.constructor.name === 'ToolMessage') &&
-              toolMsg.tool_call_id && toolCallIds.has(toolMsg.tool_call_id)) {
-            validated.push(toolMsg);
-          }
-        }
+        validated.push(...toolMessages);
         
         console.log(
-          `✅ [API-VALIDATION] Kept AIMessage with ${toolCallIds.size} complete tool calls${isLast ? ' [LAST]' : ''}`
+          `✅ [API-VALIDATION] Kept COMPLETE pair: AIMessage + ${toolMessages.length} ToolMessages`
         );
         
-        // Skip past all the ToolMessages we just added
+        // Skip past the ToolMessages we just added
         i = j;
       } else {
-        // Incomplete tool results - SKIP this AIMessage and its partial ToolMessages
+        // Incomplete pair - skip AIMessage and partial ToolMessages
         console.warn(
-          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size}) - required by Anthropic API`
+          `⚠️ [API-VALIDATION] Skipping INCOMPLETE pair: AIMessage with ${foundToolCallIds.size}/${toolCallIds.size} results`
         );
         
-        // Skip past this AIMessage and any of its ToolMessages
+        // Skip past this AIMessage and its partial ToolMessages
         i = j;
       }
       
       continue;
     }
     
-    // For AIMessages without tool_calls, keep them
-    if (msg instanceof AIMessage || msg.constructor.name === 'AIMessage') {
-      validated.push(msg);
-      i++;
-      continue;
-    }
-    
-    // For standalone ToolMessages (shouldn't happen after above logic), skip them
-    if (msg instanceof ToolMessage || msg.constructor.name === 'ToolMessage') {
+    // For standalone ToolMessages (orphans), skip them
+    const isToolMessage = msg instanceof ToolMessage || msg.constructor.name === 'ToolMessage';
+    if (isToolMessage) {
       console.warn(
         `⚠️ [API-VALIDATION] Skipping orphaned ToolMessage: ${msg.tool_call_id || 'unknown'}`
       );
@@ -504,13 +474,13 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
       continue;
     }
     
-    // Any other message type, keep it
+    // Any other message, keep it
     validated.push(msg);
     i++;
   }
   
   console.log(
-    `🔒 [API-VALIDATION] Strict validation for Anthropic API: ${messages.length} → ${validated.length} messages`
+    `🔒 [API-VALIDATION] Validated: ${messages.length} → ${validated.length} messages (kept complete pairs, removed incomplete)`
   );
   
   return validated;
