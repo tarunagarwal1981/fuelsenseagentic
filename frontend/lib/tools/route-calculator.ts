@@ -128,6 +128,75 @@ export class RouteCalculationError extends Error {
 let portsCache: Array<{ port_code: string; coordinates: Coordinates }> | null = null;
 
 /**
+ * Cached routes data - loaded once at module initialization
+ */
+let cachedRoutesData: any = null;
+
+/**
+ * Loads cached routes from the cached-routes.json file
+ * Falls back to cached routes when API fails
+ */
+async function loadCachedRoutes(): Promise<any> {
+  if (cachedRoutesData) {
+    return cachedRoutesData;
+  }
+  
+  try {
+    // Use dynamic import for JSON file (works with resolveJsonModule in tsconfig)
+    const routesModule = await import('@/lib/data/cached-routes.json');
+    // JSON imports return the data directly, not as default export
+    const routes = routesModule.default || routesModule;
+    cachedRoutesData = routes;
+    return cachedRoutesData;
+  } catch (error) {
+    console.warn('⚠️ [ROUTE-CALCULATOR] Failed to load cached routes:', error);
+    return null;
+  }
+}
+
+/**
+ * Finds a cached route matching origin and destination port codes
+ * Returns null if no matching route is found
+ */
+async function findCachedRoute(
+  origin_port_code: string,
+  destination_port_code: string
+): Promise<RouteCalculatorOutput | null> {
+  try {
+    const cachedRoutes = await loadCachedRoutes();
+    if (!cachedRoutes || !cachedRoutes.routes || !Array.isArray(cachedRoutes.routes)) {
+      return null;
+    }
+    
+    // Search for matching route (check both directions)
+    const cachedRoute = cachedRoutes.routes.find(
+      (r: any) =>
+        (r.origin_port_code === origin_port_code && r.destination_port_code === destination_port_code) ||
+        (r.origin_port_code === destination_port_code && r.destination_port_code === origin_port_code)
+    );
+    
+    if (!cachedRoute) {
+      return null;
+    }
+    
+    console.log(`✅ [ROUTE-CALCULATOR] Found cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+    
+    // Convert cached route to RouteCalculatorOutput format
+    return {
+      distance_nm: cachedRoute.distance_nm,
+      estimated_hours: cachedRoute.estimated_hours,
+      waypoints: cachedRoute.waypoints || [],
+      route_type: cachedRoute.route_type || 'direct route',
+      origin_port_code: cachedRoute.origin_port_code,
+      destination_port_code: cachedRoute.destination_port_code,
+    };
+  } catch (error) {
+    console.warn('⚠️ [ROUTE-CALCULATOR] Error searching cached routes:', error);
+    return null;
+  }
+}
+
+/**
  * Loads port data from the ports.json file
  * Caches the data for subsequent lookups
  * Works in both Node.js and Edge runtime
@@ -428,17 +497,42 @@ export async function calculateRoute(
       destination_port_code,
     };
   } catch (error) {
-    // Re-throw RouteCalculationError as-is
-    if (error instanceof RouteCalculationError) {
-      throw error;
-    }
-    
-    // Handle Zod validation errors
+    // Handle Zod validation errors (don't fallback for validation errors)
     if (error instanceof z.ZodError) {
       throw new RouteCalculationError(
         `Input validation failed: ${error.issues.map((e) => e.message).join(', ')}`,
         'VALIDATION_ERROR'
       );
+    }
+    
+    // For API errors (timeout, network, etc.), try to fallback to cached routes
+    const isApiError = error instanceof RouteCalculationError && (
+      error.code === 'TIMEOUT_ERROR' ||
+      error.code === 'NETWORK_ERROR' ||
+      error.code === 'API_ERROR' ||
+      error.code === 'INVALID_RESPONSE' ||
+      error.code === 'UNEXPECTED_ERROR'
+    );
+    
+    if (isApiError) {
+      console.warn(`⚠️ [ROUTE-CALCULATOR] API error (${error.code}), attempting fallback to cached routes...`);
+      
+      try {
+        const cachedRoute = await findCachedRoute(origin_port_code, destination_port_code);
+        if (cachedRoute) {
+          console.log(`✅ [ROUTE-CALCULATOR] Successfully using cached route as fallback`);
+          return cachedRoute;
+        } else {
+          console.warn(`⚠️ [ROUTE-CALCULATOR] No cached route found for ${origin_port_code} → ${destination_port_code}`);
+        }
+      } catch (fallbackError) {
+        console.error(`❌ [ROUTE-CALCULATOR] Fallback to cached routes failed:`, fallbackError);
+      }
+    }
+    
+    // Re-throw RouteCalculationError as-is (or original error if not a RouteCalculationError)
+    if (error instanceof RouteCalculationError) {
+      throw error;
     }
     
     // Handle unexpected errors

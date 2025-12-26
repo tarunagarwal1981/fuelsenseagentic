@@ -1195,6 +1195,74 @@ export async function routeAgentNode(state: MultiAgentState) {
     cachedRouteDepartureDate = `2024-12-${cachedDateMatch[1].padStart(2, '0')}T08:00:00Z`;
   }
 
+  // Helper function to find and use cached route
+  async function tryUseCachedRoute(originPort: string, destinationPort: string) {
+    if (!originPort || !destinationPort) {
+      return null;
+    }
+    
+    try {
+      const cachedRoutes = await loadCachedRoutes();
+      if (!cachedRoutes || !cachedRoutes.routes) {
+        return null;
+      }
+      
+      // Search for matching route (check both directions)
+      const cachedRoute = cachedRoutes.routes.find(
+        (r: any) =>
+          (r.origin_port_code === originPort && r.destination_port_code === destinationPort) ||
+          (r.origin_port_code === destinationPort && r.destination_port_code === originPort)
+      );
+      
+      if (!cachedRoute) {
+        return null;
+      }
+      
+      console.log(`✅ [ROUTE-AGENT] Found cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+      
+      const cachedRouteData = {
+        distance_nm: cachedRoute.distance_nm,
+        estimated_hours: cachedRoute.estimated_hours,
+        waypoints: cachedRoute.waypoints,
+        route_type: cachedRoute.route_type,
+        origin_port_code: cachedRoute.origin_port_code,
+        destination_port_code: cachedRoute.destination_port_code,
+        _from_cache: true,
+      };
+      
+      // If weather timeline needed, calculate it
+      if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
+        console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route with ${cachedRouteData.waypoints.length} waypoints`);
+        const timelineResult = await withTimeout(
+          executeWeatherTimelineTool({
+            waypoints: cachedRouteData.waypoints,
+            vessel_speed_knots: 14,
+            departure_datetime: cachedRouteDepartureDate,
+            sampling_interval_hours: 12
+          }),
+          TIMEOUTS.ROUTE_CALCULATION,
+          'Weather timeline calculation timed out'
+        );
+        
+        return {
+          route_data: cachedRouteData,
+          vessel_timeline: timelineResult,
+          agent_status: { route_agent: 'success' },
+          messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache, timeline calculated')]
+        };
+      }
+      
+      return {
+        route_data: cachedRouteData,
+        agent_status: { route_agent: 'success' },
+        messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache')]
+      };
+    } catch (error) {
+      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route: ${error}`);
+      return null;
+    }
+  }
+
   // Check if we should use cached route (fallback after API failure or if selected)
   const selectedRouteId = state.selected_route_id;
   if (!state.route_data && selectedRouteId) {
@@ -1205,47 +1273,13 @@ export async function routeAgentNode(state: MultiAgentState) {
       }
       const cachedRoute = cachedRoutes.routes.find((r) => r.id === selectedRouteId);
       if (cachedRoute) {
-        console.log(`✅ [ROUTE-AGENT] Using cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
-        const cachedRouteData = {
-          distance_nm: cachedRoute.distance_nm,
-          estimated_hours: cachedRoute.estimated_hours,
-          waypoints: cachedRoute.waypoints,
-          route_type: cachedRoute.route_type,
-          origin_port_code: cachedRoute.origin_port_code,
-          destination_port_code: cachedRoute.destination_port_code,
-          _from_cache: true,
-        };
-        
-        // If weather timeline needed, calculate it
-        if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
-          console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route with ${cachedRouteData.waypoints.length} waypoints`);
-          const timelineResult = await withTimeout(
-            executeWeatherTimelineTool({
-              waypoints: cachedRouteData.waypoints,
-              vessel_speed_knots: 14,
-              departure_datetime: cachedRouteDepartureDate,
-              sampling_interval_hours: 12
-            }),
-            TIMEOUTS.ROUTE_CALCULATION,
-            'Weather timeline calculation timed out'
-          );
-          
-          return {
-            route_data: cachedRouteData,
-            vessel_timeline: timelineResult,
-            agent_status: { route_agent: 'success' },
-            messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache, timeline calculated')]
-          };
+        const result = await tryUseCachedRoute(cachedRoute.origin_port_code, cachedRoute.destination_port_code);
+        if (result) {
+          return result;
         }
-        
-        return {
-          route_data: cachedRouteData,
-          agent_status: { route_agent: 'success' },
-          messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache')]
-        };
       }
     } catch (error) {
-      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route: ${error}`);
+      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route by ID: ${error}`);
     }
   }
 
@@ -1253,7 +1287,7 @@ export async function routeAgentNode(state: MultiAgentState) {
   const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
   const userQuery = userMessage ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content)) : '';
 
-  // Extract port information from user query
+  // Extract port information from user query (needed for fallback)
   let originPort = '';
   let destinationPort = '';
   let departureDate = '';
@@ -1275,6 +1309,10 @@ export async function routeAgentNode(state: MultiAgentState) {
   } else {
     departureDate = '2024-12-25T08:00:00Z'; // Default
   }
+  
+  // Store ports for error handler fallback
+  const extractedOriginPort = originPort;
+  const extractedDestinationPort = destinationPort;
 
   // STRICT ORCHESTRATION: No direct tool calling - all tools must go through LLM binding
   // This ensures supervisor has full control and agents follow the assigned tool plan
@@ -1390,8 +1428,26 @@ You MUST call these tools. Do not explain - just call the tools.`;
     
     const errorMessage = error instanceof Error ? error.message : String(error);
     const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    const isApiError = errorMessage.includes('Maritime Route API') || 
+                       errorMessage.includes('TIMEOUT_ERROR') ||
+                       errorMessage.includes('NETWORK_ERROR') ||
+                       errorMessage.includes('API_ERROR');
     
     console.error(`❌ [ROUTE-AGENT] Node error: ${errorMessage}`);
+    
+    // If API failed, try to fallback to cached routes
+    if (isApiError && extractedOriginPort && extractedDestinationPort) {
+      console.log(`🔄 [ROUTE-AGENT] API failed, attempting fallback to cached routes for ${extractedOriginPort} → ${extractedDestinationPort}`);
+      const cachedResult = await tryUseCachedRoute(extractedOriginPort, extractedDestinationPort);
+      if (cachedResult) {
+        console.log(`✅ [ROUTE-AGENT] Successfully using cached route as fallback`);
+        recordAgentExecution('route_agent', agentDuration, true);
+        return cachedResult;
+      } else {
+        console.warn(`⚠️ [ROUTE-AGENT] No cached route found for ${extractedOriginPort} → ${extractedDestinationPort}`);
+      }
+    }
+    
     console.error(`❌ [ROUTE-AGENT] Route agent failed - cannot proceed without route data`);
     
     // Route agent failure is critical - mark as failed
