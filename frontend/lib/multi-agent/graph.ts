@@ -8,7 +8,7 @@
 
 import { StateGraph, END } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
-import { AIMessage } from '@langchain/core/messages';
+import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import {
   MultiAgentStateAnnotation,
   type MultiAgentState,
@@ -117,73 +117,132 @@ function shouldEscapeToSupervisor(state: MultiAgentState): boolean {
 /**
  * Agent Tool Router
  * 
- * Routes agent to tools if tool calls are present, otherwise back to supervisor.
+ * Routes agent to tools if tool calls are present AND UNEXECUTED, otherwise back to supervisor.
  * 
- * CRITICAL: Don't use instanceof - it fails in production (minified code)
- * Instead check for properties that identify AIMessages
+ * @param state - The current multi-agent state containing messages and agent context
+ * @returns 'tools' if unexecuted tool_calls are found, 'supervisor' otherwise
+ * 
+ * @remarks
+ * CRITICAL FIX: This function was refactored to prevent infinite loops caused by routing
+ * on already-executed tool_calls. The key improvements:
+ * 
+ * 1. **Only checks the LAST message**: Previously searched through last 10 messages,
+ *    which could find old AIMessages with tool_calls that were already executed.
+ * 
+ * 2. **Verifies execution status**: Before routing to tools, checks if ToolMessages
+ *    with matching tool_call_ids exist in the message history. Only routes if there
+ *    are unexecuted tool_calls.
+ * 
+ * 3. **Proper type guards**: Uses instanceof checks for AIMessage and ToolMessage
+ *    instead of duck typing, ensuring type safety and correct behavior.
+ * 
+ * 4. **Prevents infinite loops**: By ensuring we only route on unexecuted tool_calls,
+ *    we prevent the router from repeatedly finding the same executed tool_calls and
+ *    routing to tools indefinitely.
  */
-function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
+export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   const messages = state.messages;
 
   console.log(`🔀 [AGENT-TOOL-ROUTER] Decision point - Total messages: ${messages.length}`);
 
-  // NEW: Add escape hatch for repeated agent calls
+  // Circuit breaker: escape if agent is stuck
   if (shouldEscapeToSupervisor(state)) {
     return 'supervisor';
   }
 
-  // Safety check
+  // Safety check: prevent runaway execution
   if (messages.length > 60) {
     console.warn(`⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor`);
     return 'supervisor';
   }
 
-  // Look at last 10 messages
-  const recentMessages = messages.slice(-10);
-  
-  console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last ${recentMessages.length} messages:`);
-  
-  // Log messages - check properties instead of instanceof
-  recentMessages.forEach((msg: any, idx) => {
-    // Identify message type by properties instead of instanceof
-    const msgType = msg.tool_calls ? 'AIMessage(with_tools)' : 
-                    msg.tool_call_id ? 'ToolMessage' :
-                    msg.content && typeof msg.content === 'string' && !msg.tool_calls ? 'HumanMessage/AIMessage' :
-                    'Unknown';
-    
-    const toolCount = msg.tool_calls?.length || 0;
-    const toolNames = msg.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none';
-    
-    console.log(`  [${idx}] ${msgType}${toolCount > 0 ? ` → ${toolCount} tools: ${toolNames}` : ''}`);
-  });
-
-  // CRITICAL: Find AIMessage by checking for tool_calls property
-  // Don't use instanceof - check properties instead
-  let lastAIMessageWithTools: any = null;
-  
-  for (let i = recentMessages.length - 1; i >= 0; i--) {
-    const msg: any = recentMessages[i];
-    
-    // Check if this message has tool_calls (that's how we identify AIMessage with tools)
-    if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-      lastAIMessageWithTools = msg;
-      console.log(`✅ [AGENT-TOOL-ROUTER] Found message with tool_calls at position ${i}`);
-      break;
-    }
-  }
-
-  if (!lastAIMessageWithTools) {
-    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ No message with tool_calls found → supervisor');
+  // Edge case: no messages
+  if (messages.length === 0) {
+    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ No messages → supervisor');
     return 'supervisor';
   }
 
-  // We found a message with tool_calls - route to tools!
-  const toolNames = lastAIMessageWithTools.tool_calls.map((tc: any) => tc.name).join(', ');
-  console.log(
-    `🔀 [AGENT-TOOL-ROUTER] ✅✅ ROUTING TO TOOLS! ${lastAIMessageWithTools.tool_calls.length} tools: ${toolNames}`
+  // CRITICAL FIX: Only check the LAST message, not historical messages
+  // This prevents routing on old tool_calls that were already executed
+  const lastMessage = messages[messages.length - 1];
+  
+  // Log what we're examining with proper type identification
+  console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last message:`);
+  let msgType: string;
+  if (lastMessage instanceof AIMessage) {
+    msgType = lastMessage.tool_calls && lastMessage.tool_calls.length > 0 
+      ? 'AIMessage(with_tools)' 
+      : 'AIMessage';
+  } else if (lastMessage instanceof ToolMessage) {
+    msgType = 'ToolMessage';
+  } else {
+    msgType = 'HumanMessage/Other';
+  }
+  
+  // Type guard: ensure lastMessage is an AIMessage with tool_calls
+  if (!(lastMessage instanceof AIMessage)) {
+    console.log(`🔀 [AGENT-TOOL-ROUTER] ❌ Last message is not AIMessage (${msgType}) → supervisor`);
+    return 'supervisor';
+  }
+
+  const toolCount = lastMessage.tool_calls?.length || 0;
+  const toolNames = lastMessage.tool_calls?.map(tc => tc.name).join(', ') || 'none';
+  
+  console.log(`  [LAST] ${msgType}${toolCount > 0 ? ` → ${toolCount} tools: ${toolNames}` : ''}`);
+
+  // Check if last message has tool_calls
+  if (!lastMessage.tool_calls || !Array.isArray(lastMessage.tool_calls) || lastMessage.tool_calls.length === 0) {
+    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls → supervisor');
+    return 'supervisor';
+  }
+
+  // CRITICAL FIX: Check if these tool_calls have already been executed
+  // Extract tool_call IDs, filtering out any undefined/null values
+  const toolCallIds = new Set<string>(
+    lastMessage.tool_calls
+      .map(tc => tc.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
   );
   
-  return 'tools';
+  if (toolCallIds.size === 0) {
+    console.warn('⚠️ [AGENT-TOOL-ROUTER] Tool calls have no IDs, routing to tools anyway');
+    return 'tools';
+  }
+  
+  // Look for ToolMessages that match these tool_call_ids
+  // Search forward through all messages to find ToolMessages with matching tool_call_ids
+  const executedToolCallIds = new Set<string>();
+  
+  // Search through all messages using proper type guards
+  for (const msg of messages) {
+    // Type guard: check if message is a ToolMessage with a tool_call_id
+    if (msg instanceof ToolMessage && msg.tool_call_id) {
+      const toolCallId: string = msg.tool_call_id;
+      if (toolCallIds.has(toolCallId)) {
+        executedToolCallIds.add(toolCallId);
+        console.log(`  ✓ Found executed tool: ${toolCallId}`);
+      }
+    }
+  }
+  
+  // Determine which tool_calls are still unexecuted
+  const unexecutedToolCallIds = Array.from(toolCallIds).filter(
+    id => !executedToolCallIds.has(id)
+  );
+  
+  // Route to tools ONLY if there are unexecuted tool_calls
+  if (unexecutedToolCallIds.length > 0) {
+    console.log(
+      `🔀 [AGENT-TOOL-ROUTER] ✅✅ ROUTING TO TOOLS! ${unexecutedToolCallIds.length}/${toolCallIds.size} unexecuted tools: ${toolNames}`
+    );
+    return 'tools';
+  }
+
+  // All tool_calls have been executed - return to supervisor
+  console.log(
+    `🔀 [AGENT-TOOL-ROUTER] ❌ All ${toolCallIds.size} tool_calls already executed → supervisor`
+  );
+  return 'supervisor';
 }
 
 // ============================================================================
