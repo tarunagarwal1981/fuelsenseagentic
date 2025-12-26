@@ -378,10 +378,23 @@ export function validateMessagePairs(messages: any[]): any[] {
  * - Every AIMessage with tool_calls MUST have ALL corresponding ToolMessages immediately after
  * - If ANY tool_result is missing, the ENTIRE AIMessage must be removed
  * 
+ * EXCEPTION: The LAST AIMessage with tool_calls is kept even if incomplete (it's the current agent's response)
+ * 
  * This is DIFFERENT from validateMessagePairs which is lenient for graph flow.
  */
 export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
   const { AIMessage, ToolMessage, SystemMessage, HumanMessage } = require('@langchain/core/messages');
+  
+  // Find the last AIMessage with tool_calls (the current agent's response)
+  let lastAIMessageWithToolCallsIndex = -1;
+  for (let idx = messages.length - 1; idx >= 0; idx--) {
+    const msg = messages[idx];
+    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && 
+        msg.tool_calls && msg.tool_calls.length > 0) {
+      lastAIMessageWithToolCallsIndex = idx;
+      break;
+    }
+  }
   
   const validated: any[] = [];
   let i = 0;
@@ -430,7 +443,8 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
       }
       
       // STRICT: Only include this AIMessage if ALL tool results are present
-      if (foundToolCallIds.size === toolCallIds.size) {
+      // Anthropic API will reject any AIMessage with tool_calls that doesn't have ALL ToolMessages immediately after
+      if (foundToolCallIds.size === toolCallIds.size && toolCallIds.size > 0) {
         // All tool results found - include the AIMessage and its ToolMessages
         validated.push(msg);
         
@@ -450,9 +464,12 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
         // Skip past all the ToolMessages we just added
         i = j;
       } else {
-        // Incomplete tool results - SKIP this AIMessage and its partial ToolMessages
+        // Incomplete tool results - SKIP this AIMessage
+        // NOTE: This only affects messages sent to API, not state.messages
+        // The router will still see the AIMessage in state.messages for routing decisions
+        const isLast = i === lastAIMessageWithToolCallsIndex;
         console.warn(
-          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size}) - required by Anthropic API`
+          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size})${isLast ? ' [LAST - will be in state for routing]' : ''} - required by Anthropic API`
         );
         
         // Skip past this AIMessage and any of its ToolMessages
