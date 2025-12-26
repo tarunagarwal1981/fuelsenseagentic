@@ -1320,14 +1320,13 @@ You MUST call these tools. Do not explain - just call the tools.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Use STRICT validation for Anthropic API calls
-    // This is different from validateMessagePairs (used for graph flow)
-    // Anthropic API requires complete tool_use/tool_result pairs
-    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
+    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
+    // Do NOT apply to the response we return to state!
+    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
     
     const messages = [
       new SystemMessage(systemPrompt),
-      ...filteredMessages,
+      ...messagesForLLM,  // Use validated messages for LLM input
     ];
 
     const response: any = await withTimeout(
@@ -2186,10 +2185,9 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Use STRICT validation for Anthropic API calls
-    // This is different from validateMessagePairs (used for graph flow)
-    // Anthropic API requires complete tool_use/tool_result pairs
-    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
+    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
+    // Do NOT apply to the response we return to state!
+    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
     
     // Combine system prompt with context about available data
     let fullSystemPrompt = systemPrompt;
@@ -2201,7 +2199,7 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
     
     const messages = [
       new SystemMessage(fullSystemPrompt),
-      ...filteredMessages,
+      ...messagesForLLM,  // Use validated messages for LLM input
     ];
 
     const response: any = await withTimeout(
@@ -2476,15 +2474,14 @@ Provide a clear summary of the route information.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Use STRICT validation for Anthropic API calls
-    // This is different from validateMessagePairs (used for graph flow)
-    // Anthropic API requires complete tool_use/tool_result pairs
-    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
+    // CRITICAL: Use STRICT validation ONLY for messages we send to LLM
+    // Do NOT apply to the response we return to state!
+    const messagesForLLM = validateMessagesForAnthropicAPI(filteredMessages);
     
     // CRITICAL: Only ONE SystemMessage allowed, and it must be first
     const messages = [
       new SystemMessage(systemPrompt),
-      ...filteredMessages,
+      ...messagesForLLM,  // Use validated messages for LLM input
     ];
 
     const response = await withTimeout(
