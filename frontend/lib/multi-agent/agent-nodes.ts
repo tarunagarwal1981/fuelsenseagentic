@@ -1089,394 +1089,235 @@ function extractRouteDataFromMessages(messages: any[]): { route_data?: any; vess
   return result;
 }
 
-export async function routeAgentNode(state: MultiAgentState) {
-  console.log('🗺️ [ROUTE-AGENT] Node: Starting route calculation...');
-  const agentStartTime = Date.now();
+// ============================================================================
+// Utility Functions for Deterministic Workflows
+// ============================================================================
 
-  // Get agent context from supervisor
-  const context = state.agent_context?.route_agent;
-  const needsWeatherTimeline = context?.needs_weather_timeline ?? false;
-  const requiredTools = context?.required_tools || [];
+/**
+ * Extract origin and destination ports from user query
+ * Handles multiple formats: "Singapore to Fujairah", "SGSIN to AEJEA", etc.
+ */
+function extractPortsFromQuery(query: string): { origin: string; destination: string } {
+  // Try multiple patterns
+  const patterns = [
+    /from\s+([A-Z]{5})\s+to\s+([A-Z]{5})/i,           // "from SGSIN to AEJEA"
+    /([A-Z]{5})\s+to\s+([A-Z]{5})/i,                  // "SGSIN to AEJEA"
+    /from\s+([\w\s]+?)\s+to\s+([\w\s]+?)(?:\s|$)/i,   // "from Singapore to Fujairah"
+    /([\w\s]+?)\s+to\s+([\w\s]+?)(?:\s+voyage|$)/i,   // "Singapore to Fujairah voyage"
+  ];
   
-  console.log(`📋 [ROUTE-AGENT] Context: needs_weather_timeline=${needsWeatherTimeline}, required_tools=${requiredTools.join(', ') || 'none'}`);
-  
-  // STRICT ORCHESTRATION: Enforce supervisor tool assignments
-  // Agents can ONLY use tools assigned by supervisor - no fallback to all tools
-  if (requiredTools.length === 0) {
-    console.error('❌ [ROUTE-AGENT] No tools assigned by supervisor - cannot proceed');
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match) {
     return {
-      agent_status: { route_agent: 'failed' },
-      agent_errors: {
-        route_agent: {
-          error: 'No tools assigned by supervisor. Supervisor must assign tools before agent can execute.',
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[ROUTE-AGENT] Cannot proceed - supervisor has not assigned any tools')],
-    };
-  }
-  
-  // Map tool names to actual tool objects (only route agent's tools)
-  const toolMap: Record<string, any> = {
-    'calculate_route': calculateRouteTool,
-    'calculate_weather_timeline': calculateWeatherTimelineTool,
-  };
-  
-  // STRICT: Only use supervisor-assigned tools
-  console.log(`✅ [ROUTE-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
-  const routeTools = requiredTools
-    .map(toolName => toolMap[toolName])
-    .filter(Boolean); // Remove undefined
-  
-  if (routeTools.length === 0) {
-    console.error('❌ [ROUTE-AGENT] Supervisor assigned tools but none matched route agent tools');
-    return {
-      agent_status: { route_agent: 'failed' },
-      agent_errors: {
-        route_agent: {
-          error: `Supervisor assigned invalid tools: ${requiredTools.join(', ')}. Route agent only has: calculate_route, calculate_weather_timeline`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[ROUTE-AGENT] Invalid tool assignments from supervisor')],
-    };
-  }
-  
-  // Validate all assigned tools belong to route agent
-  const invalidTools = requiredTools.filter(toolName => !toolMap[toolName]);
-  if (invalidTools.length > 0) {
-    console.error(`❌ [ROUTE-AGENT] Supervisor assigned tools from other agents: ${invalidTools.join(', ')}`);
-    return {
-      agent_status: { route_agent: 'failed' },
-      agent_errors: {
-        route_agent: {
-          error: `Supervisor assigned tools from other agents: ${invalidTools.join(', ')}. Route agent cannot use other agents' tools.`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[ROUTE-AGENT] Cannot use tools from other agents')],
-    };
-  }
-
-  // First, check if we have tool results to extract
-  const extractedData = extractRouteDataFromMessages(state.messages);
-  const stateUpdates: any = {};
-
-  if (extractedData.route_data && !state.route_data) {
-    stateUpdates.route_data = extractedData.route_data;
-    console.log('✅ [ROUTE-AGENT] Extracted route_data from tool results');
-  }
-
-  if (extractedData.vessel_timeline && !state.vessel_timeline) {
-    stateUpdates.vessel_timeline = extractedData.vessel_timeline;
-    console.log('✅ [ROUTE-AGENT] Extracted vessel_timeline from tool results');
-  }
-
-  // If we already have the data, just return
-  // Check based on context - if weather timeline not needed, only check route_data
-  if (state.route_data && (needsWeatherTimeline ? state.vessel_timeline : true)) {
-    console.log('✅ [ROUTE-AGENT] Route data already available, skipping');
-    // If route came from cache, we still need to calculate vessel timeline if needed
-    if (needsWeatherTimeline && !state.vessel_timeline && (state.route_data as any)._from_cache) {
-      console.log('🔄 [ROUTE-AGENT] Route from cache, calculating vessel timeline...');
-      // Continue to calculate timeline
-    } else {
-      return { ...stateUpdates, agent_status: { route_agent: 'success' } };
+        origin: match[1].trim(),
+        destination: match[2].trim(),
+      };
     }
   }
   
-  // Get user query for departure date extraction
-  const userMessageForDate = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQueryForDate = userMessageForDate ? (typeof userMessageForDate.content === 'string' ? userMessageForDate.content : String(userMessageForDate.content)) : '';
-  
-  // Extract departure date from query (needed for weather timeline)
-  let cachedRouteDepartureDate = '2024-12-25T08:00:00Z'; // Default
-  const cachedDateMatch = userQueryForDate.match(/(?:december|dec)\s+(\d+)/i);
-  if (cachedDateMatch) {
-    cachedRouteDepartureDate = `2024-12-${cachedDateMatch[1].padStart(2, '0')}T08:00:00Z`;
-  }
+  // Fallback defaults
+  console.warn('⚠️ Could not extract ports from query, using defaults');
+  return { origin: 'Singapore', destination: 'Fujairah' };
+}
 
-  // Helper function to find and use cached route
-  async function tryUseCachedRoute(originPort: string, destinationPort: string) {
-    if (!originPort || !destinationPort) {
-      return null;
+/**
+ * Extract vessel specifications from user query and state
+ */
+function extractVesselSpecsFromQuery(query: string, state: MultiAgentState): any {
+  // Try to extract from query
+  const vlsfoMatch = query.match(/(\d+)\s*(?:MT|tons?|tonnes?)\s+(?:of\s+)?VLSFO/i);
+  const lsgoMatch = query.match(/(\d+)\s*(?:MT|tons?|tonnes?)\s+(?:of\s+)?(?:LSGO|MGO|LSMGO)/i);
+  
+    return {
+    fuel_capacity_mt: {
+      VLSFO: vlsfoMatch ? parseInt(vlsfoMatch[1]) : 650,
+      LSGO: lsgoMatch ? parseInt(lsgoMatch[1]) : 80,
+    },
+    consumption_rate_mt_per_day: {
+      VLSFO: 35,
+      LSGO: 3,
+    },
+  };
+}
+
+/**
+ * Route Agent Node - DETERMINISTIC WORKFLOW (No LLM)
+ * 
+ * Executes route calculation workflow without LLM decision-making.
+ * Flow:
+ * 1. Check if route_data exists → if not, calculate route
+ * 2. Check if vessel_timeline exists → if not, calculate timeline
+ * 3. Return success
+ */
+export async function routeAgentNode(
+  state: MultiAgentState
+): Promise<Partial<MultiAgentState>> {
+  console.log('\n🗺️ [ROUTE-WORKFLOW] Starting deterministic workflow...');
+  
+  const startTime = Date.now();
+  
+  try {
+    // ========================================================================
+    // SUPERVISOR CONTEXT VALIDATION
+    // ========================================================================
+    
+    const agentContext = state.agent_context?.route_agent;
+    if (agentContext) {
+      console.log(`📋 [ROUTE-WORKFLOW] Context from supervisor:`);
+      console.log(`   Priority: ${agentContext.priority}`);
+      console.log(`   Task: ${agentContext.task_description}`);
+      console.log(`   Needs weather timeline: ${agentContext.needs_weather_timeline}`);
     }
     
-    try {
-      const cachedRoutes = await loadCachedRoutes();
-      if (!cachedRoutes || !cachedRoutes.routes) {
-        return null;
-      }
+    // ========================================================================
+    // STEP 1: Calculate Route (if missing)
+    // ========================================================================
+    
+    if (!state.route_data) {
+      console.log('📍 [ROUTE-WORKFLOW] Route data missing - calculating route...');
       
-      // Search for matching route (check both directions)
-      const cachedRoute = cachedRoutes.routes.find(
-        (r: any) =>
-          (r.origin_port_code === originPort && r.destination_port_code === destinationPort) ||
-          (r.origin_port_code === destinationPort && r.destination_port_code === originPort)
-      );
+      // Extract origin and destination from user query
+      const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
+      const userQuery = userMessage?.content?.toString() || '';
       
-      if (!cachedRoute) {
-        return null;
-      }
+      // Extract ports using utility function
+      const { origin, destination } = extractPortsFromQuery(userQuery);
       
-      console.log(`✅ [ROUTE-AGENT] Found cached route: ${cachedRoute.origin_name} → ${cachedRoute.destination_name}`);
+      console.log(`📍 [ROUTE-WORKFLOW] Calculating route: ${origin} → ${destination}`);
       
-      const cachedRouteData = {
-        distance_nm: cachedRoute.distance_nm,
-        estimated_hours: cachedRoute.estimated_hours,
-        waypoints: cachedRoute.waypoints,
-        route_type: cachedRoute.route_type,
-        origin_port_code: cachedRoute.origin_port_code,
-        destination_port_code: cachedRoute.destination_port_code,
-        _from_cache: true,
-      };
-      
-      // If weather timeline needed, calculate it
-      if (needsWeatherTimeline && cachedRouteData.waypoints && cachedRouteData.waypoints.length > 0) {
-        console.log(`🚀 [ROUTE-AGENT] Calculating weather timeline for cached route with ${cachedRouteData.waypoints.length} waypoints`);
-        const timelineResult = await withTimeout(
-          executeWeatherTimelineTool({
-            waypoints: cachedRouteData.waypoints,
-            vessel_speed_knots: 14,
-            departure_datetime: cachedRouteDepartureDate,
-            sampling_interval_hours: 12
-          }),
-          TIMEOUTS.ROUTE_CALCULATION,
-          'Weather timeline calculation timed out'
-        );
+      // Try primary API, with fallback to cached routes
+      try {
+        // Try main API
+        const routeResult = await executeRouteCalculatorTool({
+          origin_port_code: origin,
+          destination_port_code: destination,
+          vessel_speed_knots: 14, // Default speed
+        });
         
-        return {
-          route_data: cachedRouteData,
-          vessel_timeline: timelineResult,
-          agent_status: { route_agent: 'success' },
-          messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache, timeline calculated')]
+        console.log(`✅ [ROUTE-WORKFLOW] Route calculated: ${routeResult.distance_nm} nm`);
+        
+        // Update state with route data
+        state = {
+          ...state,
+          route_data: routeResult,
         };
-      }
-      
-      return {
-        route_data: cachedRouteData,
-        agent_status: { route_agent: 'success' },
-        messages: [new AIMessage('[ROUTE-AGENT] Route loaded from cache')]
-      };
-    } catch (error) {
-      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route: ${error}`);
-      return null;
-    }
-  }
-
-  // Check if we should use cached route (fallback after API failure or if selected)
-  const selectedRouteId = state.selected_route_id;
-  if (!state.route_data && selectedRouteId) {
-    try {
-      const cachedRoutes = await loadCachedRoutes();
-      if (!cachedRoutes || !cachedRoutes.routes) {
-        throw new Error('Cached routes data is invalid');
-      }
-      const cachedRoute = cachedRoutes.routes.find((r) => r.id === selectedRouteId);
+        
+        // Stream route data to frontend
+        console.log('📤 [STREAM] Sending route data');
+        
+      } catch (error: any) {
+        console.warn(`⚠️ [ROUTE-WORKFLOW] Primary route API failed: ${error.message}`);
+        console.log('🔄 [ROUTE-WORKFLOW] Attempting fallback to cached routes...');
+        
+        // Try cached route
+        const cachedRoute = getCachedRoute(origin, destination);
+        
       if (cachedRoute) {
-        const result = await tryUseCachedRoute(cachedRoute.origin_port_code, cachedRoute.destination_port_code);
-        if (result) {
-          return result;
+          console.log(`✅ [ROUTE-WORKFLOW] Using cached route: ${cachedRoute.distance_nm} nm`);
+          state = {
+            ...state,
+            route_data: {
+              ...cachedRoute,
+              _from_cache: true,
+            },
+          };
+        } else {
+          // No fallback available - fail gracefully
+          throw new Error(`Route calculation failed and no cached route available for ${origin} → ${destination}`);
         }
       }
-    } catch (error) {
-      console.warn(`⚠️ [ROUTE-AGENT] Failed to load cached route by ID: ${error}`);
-    }
-  }
-
-  // Get user's original message to understand what they want
-  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQuery = userMessage ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content)) : '';
-
-  // Extract port information from user query (needed for fallback)
-  let originPort = '';
-  let destinationPort = '';
-  let departureDate = '';
-  
-  if (userQuery.toLowerCase().includes('singapore')) {
-    originPort = 'SGSIN';
-  }
-  if (userQuery.toLowerCase().includes('jebel ali') || userQuery.toLowerCase().includes('dubai')) {
-    destinationPort = 'AEJEA';
-  }
-  if (userQuery.toLowerCase().includes('rotterdam')) {
-    destinationPort = 'NLRTM';
-  }
-  
-  // Try to extract date
-  const dateMatch = userQuery.match(/(?:december|dec)\s+(\d+)/i);
-  if (dateMatch) {
-    departureDate = `2024-12-${dateMatch[1].padStart(2, '0')}T08:00:00Z`;
   } else {
-    departureDate = '2024-12-25T08:00:00Z'; // Default
-  }
-  
-  // Store ports for error handler fallback
-  const extractedOriginPort = originPort;
-  const extractedDestinationPort = destinationPort;
-  
-  // PROACTIVE: Check for cached route BEFORE trying API (if we have port codes)
-  if (!state.route_data && originPort && destinationPort) {
-    console.log(`🔍 [ROUTE-AGENT] Checking for cached route: ${originPort} → ${destinationPort}`);
-    const cachedResult = await tryUseCachedRoute(originPort, destinationPort);
-    if (cachedResult) {
-      console.log(`✅ [ROUTE-AGENT] Using cached route proactively (before API call)`);
-      return cachedResult;
-    } else {
-      console.log(`ℹ️ [ROUTE-AGENT] No cached route found, will try API`);
+      console.log('✅ [ROUTE-WORKFLOW] Route data already exists - skipping calculation');
     }
-  }
-
-  // STRICT ORCHESTRATION: No direct tool calling - all tools must go through LLM binding
-  // This ensures supervisor has full control and agents follow the assigned tool plan
-
-  // Use tiered LLM (GPT-4o-mini for simple tool calling)
-  const routeAgentLLM = LLMFactory.getLLMForAgent('route_agent', state.agent_context || undefined);
-  
-  // routeTools already determined above based on required_tools from context
-  const llmWithTools = (routeAgentLLM as any).bindTools(routeTools);
-
-  // NEW: Update system prompt based on context
-  const systemPrompt = `You are the Route Planning Agent. Your ONLY job is to call tools to calculate routes.
-
-CRITICAL: You MUST call the calculate_route tool immediately. Do NOT respond with text - ONLY call tools.
-
-User query: "${userQuery}"
-
-${originPort ? `Origin port detected: ${originPort}` : 'Extract origin port from query'}
-${destinationPort ? `Destination port detected: ${destinationPort}` : 'Extract destination port from query'}
-
-Port codes:
-- Singapore: SGSIN
-- Jebel Ali/Dubai: AEJEA  
-- Rotterdam: NLRTM
-
-STEP 1: Call calculate_route with:
-{
-  "origin_port_code": "${originPort || 'SGSIN'}",
-  "destination_port_code": "${destinationPort || 'AEJEA'}",
-  "vessel_speed_knots": 14
-}
-
-${needsWeatherTimeline ? `
-STEP 2: After getting route result, call calculate_weather_timeline with:
-{
-  "waypoints": [use waypoints from calculate_route result],
-  "vessel_speed_knots": 14,
-  "departure_datetime": "${departureDate}",
-  "sampling_interval_hours": 12
-}
-` : `
-NOTE: You only need to calculate the route. Weather timeline is not needed for this query.
-`}
-
-You MUST call these tools. Do not explain - just call the tools.`;
-
-  try {
-    // Build messages with system prompt and conversation history
-    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Step 1: Get all messages (don't trim yet - we need full context for validation)
-    const allMessages = state.messages;
-
-    // Step 2: Remove SystemMessages (we'll add our own)
-    let messagesWithoutSystem = allMessages.filter(
-      (msg) => !(msg instanceof SystemMessage) && 
-               msg.constructor.name !== 'SystemMessage'
-    );
-
-    // Step 3: Find last HumanMessage
-    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
-      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
-    );
-
-    // Step 4: Take messages from last human query onward (keep recent context)
-    const messagesToInclude = lastHumanMessageIndex >= 0
-      ? messagesWithoutSystem.slice(lastHumanMessageIndex)
-      : messagesWithoutSystem.slice(-20);  // Fallback: last 20
-
-    // Step 5: Build final message array for LLM
-    const messages = [
-      new SystemMessage(systemPrompt),
-      ...messagesToInclude,
-    ];
-
-    const response: any = await withTimeout(
-      llmWithTools.invoke(messages),
-      TIMEOUTS.AGENT,
-      'Route agent timed out'
-    );
-
-    const agentDuration = Date.now() - agentStartTime;
-    recordAgentTime('route_agent', agentDuration);
-    recordAgentExecution('route_agent', agentDuration, true);
-
-    console.log('✅ [ROUTE-AGENT] Node: LLM responded');
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`🔧 [ROUTE-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
-    } else {
-      console.warn('⚠️ [ROUTE-AGENT] No tool calls made! LLM response:', typeof response.content === 'string' ? response.content.substring(0, 200) : 'Non-string content');
-    }
-
-    console.log(`✅ [ROUTE-AGENT] Completed successfully`);
-    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
-    console.log(`   • Duration: ${agentDuration}ms`);
-
-    // NEW DEBUG LOGGING
-    console.log(`📤 [ROUTE-AGENT] Returning to state:`);
-    console.log(`   • Message type: ${response.constructor.name}`);
-    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`   • Tool call count: ${response.tool_calls.length}`);
-      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
-      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
-    }
-    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
-
-    return { ...stateUpdates, messages: [response], agent_status: { route_agent: 'success' } };
-  } catch (error) {
-    const agentDuration = Date.now() - agentStartTime;
-    recordAgentTime('route_agent', agentDuration);
-    recordAgentExecution('route_agent', agentDuration, false);
+    // ========================================================================
+    // STEP 2: Calculate Vessel Timeline (if missing)
+    // ========================================================================
     
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
-    const isApiError = errorMessage.includes('Maritime Route API') || 
-                       errorMessage.includes('TIMEOUT_ERROR') ||
-                       errorMessage.includes('NETWORK_ERROR') ||
-                       errorMessage.includes('API_ERROR');
+    const needsWeatherTimeline = agentContext?.needs_weather_timeline ?? false;
     
-    console.error(`❌ [ROUTE-AGENT] Node error: ${errorMessage}`);
-    
-    // If API failed, try to fallback to cached routes
-    if (isApiError && extractedOriginPort && extractedDestinationPort) {
-      console.log(`🔄 [ROUTE-AGENT] API failed, attempting fallback to cached routes for ${extractedOriginPort} → ${extractedDestinationPort}`);
-      const cachedResult = await tryUseCachedRoute(extractedOriginPort, extractedDestinationPort);
-      if (cachedResult) {
-        console.log(`✅ [ROUTE-AGENT] Successfully using cached route as fallback`);
-        recordAgentExecution('route_agent', agentDuration, true);
-        return cachedResult;
-      } else {
-        console.warn(`⚠️ [ROUTE-AGENT] No cached route found for ${extractedOriginPort} → ${extractedDestinationPort}`);
+    if (needsWeatherTimeline && !state.vessel_timeline) {
+      console.log('⏱️ [ROUTE-WORKFLOW] Vessel timeline missing - calculating timeline...');
+      
+      if (!state.route_data) {
+        throw new Error('Cannot calculate timeline without route data');
       }
+      
+      // Extract departure date from query (default to now)
+      const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
+      const userQuery = userMessage?.content?.toString() || '';
+      const dateMatch = userQuery.match(/(?:december|dec)\s+(\d+)/i);
+      const departureTime = dateMatch 
+        ? `2024-12-${dateMatch[1].padStart(2, '0')}T08:00:00Z`
+        : new Date().toISOString();
+      
+      // Execute timeline calculation tool directly
+      const timelineResult = await executeWeatherTimelineTool({
+        waypoints: state.route_data.waypoints,
+        vessel_speed_knots: 14, // Default speed
+        departure_datetime: departureTime,
+        sampling_interval_hours: 12,
+      });
+      
+      console.log(`✅ [ROUTE-WORKFLOW] Timeline calculated: ${timelineResult.length} positions`);
+      
+      // Update state with timeline
+      state = {
+        ...state,
+        vessel_timeline: timelineResult,
+      };
+    } else if (state.vessel_timeline) {
+      console.log('✅ [ROUTE-WORKFLOW] Vessel timeline already exists - skipping calculation');
     }
     
-    console.error(`❌ [ROUTE-AGENT] Route agent failed - cannot proceed without route data`);
+    // ========================================================================
+    // SUCCESS - Mark agent as complete
+    // ========================================================================
     
-    // Route agent failure is critical - mark as failed
+    const duration = Date.now() - startTime;
+    console.log(`✅ [ROUTE-WORKFLOW] Complete in ${duration}ms`);
+    
+    // Record metrics
+    recordAgentExecution('route_agent', duration, true);
+    
     return {
-      agent_status: { route_agent: 'failed' },
+      route_data: state.route_data,
+      vessel_timeline: state.vessel_timeline,
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        route_agent: 'success' 
+      },
+      messages: [
+        new AIMessage({
+          content: '',
+          additional_kwargs: {
+            route_update: state.route_data,
+            timeline_update: state.vessel_timeline,
+          }
+        })
+      ],
+    };
+    
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [ROUTE-WORKFLOW] Error after ${duration}ms:`, error.message);
+    
+    // Record error metrics
+    recordAgentExecution('route_agent', duration, false);
+    
+    return {
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        route_agent: 'failed' 
+      },
       agent_errors: {
+        ...(state.agent_errors || {}),
         route_agent: {
-          error: isTimeout ? 'Route agent timed out after 30 seconds' : errorMessage,
+          error: `Route calculation failed: ${error.message}`,
           timestamp: Date.now(),
         },
       },
-      messages: [
-        new SystemMessage(
-          `Route agent encountered an error: ${errorMessage}. Cannot proceed without route data.`
-        ),
-      ],
     };
   }
 }
@@ -1589,543 +1430,185 @@ function extractWeatherDataFromMessages(messages: any[]): {
  * Analyzes weather impact using marine weather, consumption, and port weather tools.
  * Now self-aware: tracks attempts and returns early if stuck.
  */
+/**
+ * Weather Agent Node - DETERMINISTIC WORKFLOW (No LLM)
+ * 
+ * Executes weather analysis workflow without LLM decision-making.
+ * Flow:
+ * 1. Check prerequisites (vessel_timeline required)
+ * 2. Check if weather_forecast exists → if not, fetch weather
+ * 3. Check if weather_consumption exists → if not, calculate consumption
+ * 4. Return success
+ */
 export async function weatherAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
-  console.log("\n🌊 [WEATHER-AGENT] Node: Starting weather analysis...");
-  const agentStartTime = Date.now();
+  console.log('\n🌊 [WEATHER-WORKFLOW] Starting deterministic workflow...');
   
-  // Count previous attempts
-  const weatherMessages = state.messages.filter(m => 
-    m.additional_kwargs?.agent_name === 'weather_agent' ||
-    (typeof m.content === 'string' && m.content.includes('[WEATHER-AGENT]'))
-  ).length;
-
-  console.log(`🔢 [WEATHER-AGENT] This is attempt #${weatherMessages + 1}`);
-
-  // If 3+ attempts with no progress, bail out
-  if (weatherMessages >= 3 && !state.weather_forecast) {
-    console.log("⚠️ [WEATHER-AGENT] 3+ attempts with no progress - returning to supervisor");
-    return {
-      weather_agent_partial: true,
-      messages: [new AIMessage({
-        content: "[WEATHER-AGENT] Unable to fetch weather data - continuing without weather",
-        additional_kwargs: { agent_name: 'weather_agent' }
-      })],
-    };
-  }
+  const startTime = Date.now();
   
-  // NEW: Early validation - if we already calculated consumption, return success
-  if (state.weather_forecast && state.weather_consumption) {
-    console.log('✅ [WEATHER-AGENT] Weather consumption already calculated - skipping');
-    return {
-      agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
-    };
-  }
-  
-  // NEW: Validate vessel_timeline exists and has data
-  if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
-    console.error('❌ [WEATHER-AGENT] No vessel_timeline in state - cannot proceed');
-    return {
-      agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
-      agent_errors: {
-        ...(state.agent_errors || {}),
-        weather_agent: {
-          error: 'No vessel_timeline available in state',
-          timestamp: Date.now(),
-        },
-      },
-    };
-  }
-  
-  console.log(`✅ [WEATHER-AGENT] vessel_timeline validated: ${state.vessel_timeline.length} positions`);
-  
-  // FIRST: Check if we have tool results to extract (like route agent does)
-  console.log(`🔍 [WEATHER-AGENT] Checking for tool results in ${state.messages.length} messages`);
-  const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
-  console.log(`🔍 [WEATHER-AGENT] Found ${toolMessages.length} ToolMessages`);
-  
-  // Also check for AIMessages with weather tool calls to find corresponding ToolMessages
-  const weatherToolCalls = state.messages
-    .filter(m => m instanceof AIMessage && m.tool_calls && m.tool_calls.length > 0)
-    .flatMap(m => (m as AIMessage).tool_calls || [])
-    .filter((tc: any) => tc.name === 'fetch_marine_weather' || tc.name === 'calculate_weather_consumption');
-  
-  if (weatherToolCalls.length > 0) {
-    console.log(`🔍 [WEATHER-AGENT] Found ${weatherToolCalls.length} weather tool calls in AIMessages`);
-    weatherToolCalls.forEach((tc: any, idx: number) => {
-      console.log(`🔍 [WEATHER-AGENT] Tool call ${idx + 1}: ${tc.name}, id: ${tc.id}`);
-    });
-  }
-  
-  const extractedData = extractWeatherDataFromMessages(state.messages);
-  const stateUpdates: any = {};
-  
-  if (extractedData.weather_forecast && !state.weather_forecast) {
-    stateUpdates.weather_forecast = extractedData.weather_forecast;
-    console.log(`✅ [WEATHER-AGENT] Extracted weather_forecast from tool results (${extractedData.weather_forecast.length} points)`);
-  }
-  
-  if (extractedData.weather_consumption && !state.weather_consumption) {
-    stateUpdates.weather_consumption = extractedData.weather_consumption;
-    console.log('✅ [WEATHER-AGENT] Extracted weather_consumption from tool results');
-  }
-  
-  if (extractedData.port_weather_status && !state.port_weather_status) {
-    stateUpdates.port_weather_status = extractedData.port_weather_status;
-    console.log('✅ [WEATHER-AGENT] Extracted port_weather_status from tool results');
-  }
-  
-  // Get agent context from supervisor (needed for early return check)
-  const context = state.agent_context?.weather_agent;
-  const needsConsumption = context?.needs_consumption ?? false;
-  const needsPortWeather = context?.needs_port_weather ?? false;
-  const requiredTools = context?.required_tools || [];
-  
-  // If we got weather forecast from tool results, check if we still need consumption
-  if (extractedData.weather_forecast) {
-    console.log('✅ [WEATHER-AGENT] Weather forecast extracted');
-    
-    // If consumption is needed and not yet calculated, continue to LLM to call calculate_weather_consumption
-    if (needsConsumption && !state.weather_consumption && !extractedData.weather_consumption) {
-      console.log('⏭️ [WEATHER-AGENT] Weather forecast extracted, but consumption still needed - continuing to LLM');
-      
-      // Check for consecutive fetch_marine_weather calls (loop detection)
-      const recentMessages = state.messages.slice(-5);
-      const consecutiveWeatherFetches = recentMessages.filter(msg => {
-        if (msg instanceof AIMessage && msg.tool_calls) {
-          return msg.tool_calls.some((tc: any) => tc.name === 'fetch_marine_weather');
-        }
-        return false;
-      }).length;
-      
-      if (consecutiveWeatherFetches >= 2 && extractedData.weather_forecast) {
-        console.log('⚠️ [WEATHER-AGENT] Detected loop: fetch_marine_weather called multiple times despite having forecast - forcing consumption calculation');
-        // Force consumption calculation by adding explicit instruction message
-        const instructionMessage = new HumanMessage(
-          `Weather forecast has been successfully fetched (${extractedData.weather_forecast.length} points). ` +
-          `You MUST now call calculate_weather_consumption tool. Do NOT call fetch_marine_weather again.`
-        );
-        // Continue to LLM with this instruction
-      }
-    } else {
-      // Weather forecast extracted and consumption either not needed or already calculated
-      console.log('✅ [WEATHER-AGENT] Weather forecast extracted, returning state update');
-      return { 
-        ...stateUpdates, 
-        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' } 
-      };
-    }
-  }
-  
-  // Count how many times we've been called by checking AIMessages from weather agent
-  // Count AIMessages that don't have tool_calls (failed attempts)
-  const failedWeatherAttempts = state.messages.filter(m => {
-    if (m instanceof AIMessage) {
-      const content = m.content?.toString() || '';
-      const isWeatherAgent = content.includes('[WEATHER-AGENT]') || 
-                            (m.tool_calls && m.tool_calls.some((tc: any) => 
-                              tc.name === 'fetch_marine_weather' || 
-                              tc.name === 'calculate_weather_consumption'));
-      // Count as failed if it's a weather agent message without tool calls
-      return isWeatherAgent && (!m.tool_calls || m.tool_calls.length === 0);
-    }
-    return false;
-  }).length;
-  
-  console.log(`🔢 [WEATHER-AGENT] Failed attempts: ${failedWeatherAttempts}`);
-  console.log(`📋 [WEATHER-AGENT] Context: needs_consumption=${needsConsumption}, needs_port_weather=${needsPortWeather}, required_tools=${requiredTools.join(', ') || 'none'}`);
-  
-  // HARD LIMIT: If we've failed 2+ times with no progress, mark as failed and return
-  // This prevents infinite loops
-  if (failedWeatherAttempts >= 2 && !state.weather_forecast) {
-    console.log("⚠️ [WEATHER-AGENT] Hard limit reached (2 failed attempts) - marking as failed and returning to supervisor");
-    return {
-      agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
-      agent_errors: {
-        ...(state.agent_errors || {}),
-        weather_agent: {
-          error: 'Weather agent failed to call tools after multiple attempts. This may be due to LLM issues or tool execution problems.',
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage("[WEATHER-AGENT] Unable to fetch weather data after multiple attempts - continuing without weather analysis")],
-    };
-  }
-  
-  // Use tiered LLM (GPT-4o-mini for simple tool calling)
-  const weatherAgentLLM = LLMFactory.getLLMForAgent('weather_agent', state.agent_context || undefined);
-  
-  // STRICT ORCHESTRATION: Enforce supervisor tool assignments
-  // Agents can ONLY use tools assigned by supervisor - no fallback to all tools
-  if (requiredTools.length === 0) {
-    console.error('❌ [WEATHER-AGENT] No tools assigned by supervisor - cannot proceed');
-    return {
-      agent_status: { weather_agent: 'failed' },
-      agent_errors: {
-        weather_agent: {
-          error: 'No tools assigned by supervisor. Supervisor must assign tools before agent can execute.',
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[WEATHER-AGENT] Cannot proceed - supervisor has not assigned any tools')],
-    };
-  }
-  
-  // Map tool names to actual tool objects (only weather agent's tools)
-  // CRITICAL FIX: Use state-aware tool factory for fetch_marine_weather
-  // This automatically uses full vessel_timeline if LLM provides too few positions
-  const toolMap: Record<string, any> = {
-    'fetch_marine_weather': createFetchMarineWeatherTool(state),
-    'calculate_weather_consumption': calculateWeatherConsumptionTool,
-    'check_bunker_port_weather': checkPortWeatherTool,
-  };
-  
-  // STRICT: Only use supervisor-assigned tools
-  console.log(`✅ [WEATHER-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
-  const weatherTools = requiredTools
-    .map(toolName => toolMap[toolName])
-    .filter(Boolean); // Remove undefined
-  
-  if (weatherTools.length === 0) {
-    console.error('❌ [WEATHER-AGENT] Supervisor assigned tools but none matched weather agent tools');
-    return {
-      agent_status: { weather_agent: 'failed' },
-      agent_errors: {
-        weather_agent: {
-          error: `Supervisor assigned invalid tools: ${requiredTools.join(', ')}. Weather agent only has: fetch_marine_weather, calculate_weather_consumption, check_bunker_port_weather`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[WEATHER-AGENT] Invalid tool assignments from supervisor')],
-    };
-  }
-  
-  // Validate all assigned tools belong to weather agent
-  const invalidTools = requiredTools.filter(toolName => !toolMap[toolName]);
-  if (invalidTools.length > 0) {
-    console.error(`❌ [WEATHER-AGENT] Supervisor assigned tools from other agents: ${invalidTools.join(', ')}`);
-    return {
-      agent_status: { weather_agent: 'failed' },
-      agent_errors: {
-        weather_agent: {
-          error: `Supervisor assigned tools from other agents: ${invalidTools.join(', ')}. Weather agent cannot use other agents' tools.`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[WEATHER-AGENT] Cannot use tools from other agents')],
-    };
-  }
-  
-  console.log(`🔧 [WEATHER-AGENT] Tool selection: ${weatherTools.length} tools`);
-  console.log(`🔧 [WEATHER-AGENT] Tools: ${weatherTools.map(t => t.name).join(', ')}`);
-  
-  console.log("📊 [WEATHER-AGENT] State available:", {
-    vessel_timeline: !!state.vessel_timeline,
-    vessel_timeline_length: state.vessel_timeline?.length,
-    bunker_ports: !!state.bunker_ports,
-    bunker_ports_length: state.bunker_ports?.length
-  });
-  
-  // If no vessel timeline, we can't do anything
-  if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
-    console.log("⚠️ [WEATHER-AGENT] No vessel timeline available - cannot fetch weather");
-    return {
-      messages: [new AIMessage("[WEATHER-AGENT] No vessel timeline available - skipping weather analysis")],
-    };
-  }
-  
-  // If we already have all weather data, we're done
-  if (state.weather_forecast && state.weather_consumption) {
-    console.log("✅ [WEATHER-AGENT] Weather data already complete, skipping");
-    return {
-      agent_status: { ...(state.agent_status || {}), weather_agent: 'success' }
-    };
-  }
-  
-  // STRICT ORCHESTRATION: No direct tool calling - all tools must go through LLM binding
-  // This ensures supervisor has full control and agents follow the assigned tool plan
-  
-  const llmWithTools = (weatherAgentLLM as any).bindTools(weatherTools);
-  
-  // MUCH MORE DIRECTIVE SYSTEM PROMPT - Be extremely explicit
-  // Show first 2 positions as example format only
-  const samplePositions = state.vessel_timeline.slice(0, 2).map((pos: any) => ({
-    lat: pos.lat,
-    lon: pos.lon,
-    datetime: pos.datetime
-  }));
-  
-  // Build system prompt - be extremely explicit and directive
-  // Use the same variables declared earlier for tool selection
-  const hasWeatherForecast = state.weather_forecast || extractedData.weather_forecast;
-  const needsConsumptionCalc = needsConsumption && !state.weather_consumption && !extractedData.weather_consumption;
-  
-  let systemPrompt = `You are the Weather Intelligence Agent for maritime bunker planning.
-
-CRITICAL: You MUST call tools - do not respond with text only.
-
-Current State Analysis:
-${state.vessel_timeline 
-  ? `✅ Vessel timeline: ${state.vessel_timeline.length} positions available` 
-  : `❌ No vessel timeline - cannot proceed`}
-${hasWeatherForecast 
-  ? `✅ Weather forecast: Already fetched (${hasWeatherForecast.length || 'available'} points)` 
-  : `❌ Weather forecast: NOT FETCHED`}
-${state.weather_consumption 
-  ? `✅ Weather consumption: Already calculated` 
-  : `❌ Weather consumption: NOT CALCULATED`}
-
-MANDATORY ACTION SEQUENCE:
-
-STEP 1: If vessel_timeline exists AND weather_forecast is null:
-→ IMMEDIATELY call fetch_marine_weather tool
-→ Input format: { "positions": [array of vessel_timeline positions] }
-
-STEP 2: If weather_forecast exists AND weather_consumption is null:
-→ IMMEDIATELY call calculate_weather_consumption tool
-→ Input: weather_forecast data + base_consumption_mt (750)
-
-STEP 3: If both weather_forecast AND weather_consumption exist:
-→ Your work is COMPLETE - return to supervisor
-
-DO NOT respond with explanatory text. CALL THE REQUIRED TOOL IMMEDIATELY.`;
-
-  // Add explicit instruction if weather forecast exists but consumption is needed
-  if (hasWeatherForecast && needsConsumptionCalc) {
-    systemPrompt += `\n\n⚠️ CRITICAL: Weather forecast is already available. You MUST call calculate_weather_consumption tool NOW. Do NOT call fetch_marine_weather again - it has already been fetched.`;
-  }
-
   try {
-    // Build messages with system prompt and conversation history
-    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
+    // ========================================================================
+    // SUPERVISOR CONTEXT VALIDATION
+    // ========================================================================
     
-    // Step 1: Get all messages (don't trim yet - we need full context for validation)
-    const allMessages = state.messages;
-
-    // Step 2: Remove SystemMessages (we'll add our own)
-    let messagesWithoutSystem = allMessages.filter(
-      (msg) => !(msg instanceof SystemMessage) && 
-               msg.constructor.name !== 'SystemMessage'
-    );
-
-    // Step 3: Find last HumanMessage
-    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
-      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
-    );
+    const agentContext = state.agent_context?.weather_agent;
+    if (agentContext) {
+      console.log(`📋 [WEATHER-WORKFLOW] Context from supervisor:`);
+      console.log(`   Priority: ${agentContext.priority}`);
+      console.log(`   Task: ${agentContext.task_description}`);
+      console.log(`   Needs consumption: ${agentContext.needs_consumption}`);
+      console.log(`   Needs port weather: ${agentContext.needs_port_weather}`);
+    }
     
-    // SIMPLIFIED: Only include user query and vessel timeline - nothing else
-    // This gives the LLM a clean context without confusing route agent responses
-    const userMessage = messagesWithoutSystem[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
+    // ========================================================================
+    // PREREQUISITE CHECK: Vessel Timeline Required
+    // ========================================================================
     
-    // Get user query for message
-    const userQueryForMessage = userMessage instanceof HumanMessage 
-      ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-      : 'Get weather for route';
+  if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
+      console.error('❌ [WEATHER-WORKFLOW] Missing prerequisite: vessel_timeline');
+    return {
+        agent_status: { 
+          ...(state.agent_status || {}), 
+          weather_agent: 'failed' 
+        },
+      agent_errors: {
+        ...(state.agent_errors || {}),
+        weather_agent: {
+          error: 'Cannot fetch weather without vessel timeline. Route agent must run first.',
+          timestamp: Date.now(),
+        },
+      },
+    };
+  }
+  
+    console.log(`✅ [WEATHER-WORKFLOW] Prerequisite met: vessel_timeline (${state.vessel_timeline.length} positions)`);
     
-    // NEW: Explicitly inject vessel_timeline data into agent's context
-    // CRITICAL FIX: Sample timeline instead of sending all positions (reduces LLM processing time from ~85s to ~10-15s)
-    // Send only a sample (5-7 positions) to show structure, then instruct LLM to batch tool calls
-    const vesselTimelineForAgent = (() => {
-      const timeline = state.vessel_timeline;
-      if (!timeline || timeline.length === 0) return [];
+    // ========================================================================
+    // STEP 1: Fetch Marine Weather (if missing)
+    // ========================================================================
+    
+    if (!state.weather_forecast) {
+      console.log('🌡️ [WEATHER-WORKFLOW] Weather forecast missing - fetching marine weather...');
       
-      // Sample: first, last, and 3-5 evenly distributed middle positions
-      const sampleSize = Math.min(7, timeline.length);
-      const step = timeline.length > 7 ? Math.floor(timeline.length / (sampleSize - 2)) : 1;
-      
-      const sampled: any[] = [];
-      // Always include first position
-      sampled.push({
-        lat: timeline[0].lat,
-        lon: timeline[0].lon,
-        datetime: timeline[0].datetime
+      // Execute marine weather tool directly
+      const weatherResult = await executeMarineWeatherTool({
+        positions: state.vessel_timeline.map((pos: any) => ({
+          lat: pos.lat,
+          lon: pos.lon,
+          datetime: pos.datetime,
+        })),
       });
       
-      // Sample middle positions evenly
-      for (let i = step; i < timeline.length - step; i += step) {
-        if (sampled.length >= sampleSize - 1) break; // Reserve space for last
-        sampled.push({
-          lat: timeline[i].lat,
-          lon: timeline[i].lon,
-          datetime: timeline[i].datetime
-        });
-      }
+      console.log(`✅ [WEATHER-WORKFLOW] Weather fetched: ${weatherResult.length} forecast points`);
       
-      // Always include last position
-      if (timeline.length > 1) {
-        sampled.push({
-          lat: timeline[timeline.length - 1].lat,
-          lon: timeline[timeline.length - 1].lon,
-          datetime: timeline[timeline.length - 1].datetime
-        });
-      }
+      // Update state with weather forecast
+      state = {
+        ...state,
+        weather_forecast: weatherResult,
+      };
       
-      return sampled;
-    })();
-    
-    // If weather forecast exists but consumption is needed, include weather forecast data
-    const weatherForecastForAgent = (state.weather_forecast || extractedData.weather_forecast)?.map((w: any) => ({
-      datetime: w.datetime || w.position?.datetime,
-      weather: {
-        wave_height_m: w.weather?.wave_height_m || w.position?.weather?.wave_height_m,
-        wind_speed_knots: w.weather?.wind_speed_knots || w.position?.weather?.wind_speed_knots,
-        wind_direction_deg: w.weather?.wind_direction_deg || w.position?.weather?.wind_direction_deg,
-        sea_state: w.weather?.sea_state || w.position?.weather?.sea_state
-      }
-    })) || [];
-    
-    // Use the same variables declared earlier for tool selection
-    // Create explicit state context message
-    // CRITICAL FIX: Simplified instructions - tool handles batching automatically
-    let stateContextText = `CRITICAL STATE DATA:
+      // Stream weather data to frontend
+      console.log('📤 [STREAM] Sending weather forecast');
       
-vessel_timeline is available:
-Total positions: ${state.vessel_timeline.length}
-Sample positions (structure example):
-${JSON.stringify(vesselTimelineForAgent, null, 2)}
-
-Call fetch_marine_weather with ALL ${state.vessel_timeline.length} positions from vessel_timeline.
-The tool automatically handles batching internally - just pass all positions in one call.`;
-
-    // If weather forecast exists and consumption is needed, include it
-    if ((state.weather_forecast || extractedData.weather_forecast) && needsConsumption && !state.weather_consumption) {
-      stateContextText += `\n\nweather_forecast is available (${weatherForecastForAgent.length} points):
-Use this weather_forecast data to call calculate_weather_consumption:
-${JSON.stringify(weatherForecastForAgent.slice(0, 5), null, 2)}${weatherForecastForAgent.length > 5 ? `\n... (${weatherForecastForAgent.length - 5} more points)` : ''}
-
-IMPORTANT: You MUST call calculate_weather_consumption with the weather_forecast data provided above.
-The weather_data parameter should be an array of objects with datetime and weather fields.`;
+    } else {
+      console.log('✅ [WEATHER-WORKFLOW] Weather forecast already exists - skipping fetch');
     }
     
-    stateContextText += `\n\n${requiredTools.length > 0 
-      ? `You MUST call these tools: ${requiredTools.join(', ')}. Use the data provided above.`
-      : 'You MUST use this data to call the appropriate weather tools immediately.'}
-DO NOT ask for this data - it is provided above.
-Call the tool now with the data provided above.`;
+    // ========================================================================
+    // STEP 2: Calculate Weather Consumption (if missing)
+    // ========================================================================
     
-    const stateContextMessage = new HumanMessage(stateContextText);
+    const needsConsumption = agentContext?.needs_consumption ?? false;
     
-    // Minimal message context: system prompt + user query + explicit state injection
-    const messages = [
-      new SystemMessage(systemPrompt),
-      userMessage instanceof HumanMessage ? userMessage : new HumanMessage(userQueryForMessage),
-      stateContextMessage, // NEW: Explicit state injection
-    ];
-  
-    console.log("🔧 [WEATHER-AGENT] Available tools before invoke:", 
-      weatherTools.map(t => ({ name: t.name, description: (t.description || '').substring(0, 100) + '...' }))
-    );
-    console.log(`📝 [WEATHER-AGENT] Message count: ${messages.length}, Last message type: ${messages[messages.length - 1]?.constructor?.name}`);
-    console.log(`📝 [WEATHER-AGENT] Message types: ${messages.map(m => m.constructor.name).join(' -> ')}`);
-    
-    // Check for loop: if weather_forecast exists but recent messages show fetch_marine_weather calls
-    const recentAIMessages = state.messages.filter(m => m instanceof AIMessage).slice(-3);
-    const recentWeatherFetches = recentAIMessages.filter(msg => {
-      return (msg as AIMessage).tool_calls?.some((tc: any) => tc.name === 'fetch_marine_weather');
-    }).length;
-    
-    if (hasWeatherForecast && recentWeatherFetches >= 1 && needsConsumptionCalc) {
-      console.log('⚠️ [WEATHER-AGENT] Loop detected: fetch_marine_weather called when forecast exists - forcing consumption calculation');
-      // Remove fetch_marine_weather from available tools temporarily, or add even stronger instruction
-      systemPrompt += `\n\n🚨 LOOP PREVENTION: Weather forecast ALREADY EXISTS. You are FORBIDDEN from calling fetch_marine_weather. You MUST call calculate_weather_consumption immediately.`;
-      // Rebuild messages with updated prompt
-      messages[0] = new SystemMessage(systemPrompt);
-    }
-    
-    // Use longer timeout for weather agent since it processes many positions
-    const response: any = await withTimeout(
-      llmWithTools.invoke(messages),
-      TIMEOUTS.WEATHER_AGENT || TIMEOUTS.AGENT * 2, // 90 seconds for weather agent
-      'Weather agent timed out'
-    );
-    
-    // Post-invocation check: if LLM tried to call fetch_marine_weather when forecast exists, intercept it
-    if (hasWeatherForecast && needsConsumptionCalc && response.tool_calls) {
-      const fetchWeatherCall = response.tool_calls.find((tc: any) => tc.name === 'fetch_marine_weather');
-      if (fetchWeatherCall) {
-        console.log('⚠️ [WEATHER-AGENT] LLM tried to call fetch_marine_weather despite having forecast - intercepting and forcing consumption calculation');
-        // Remove fetch_marine_weather call and replace with consumption calculation instruction
-        response.tool_calls = response.tool_calls.filter((tc: any) => tc.name !== 'fetch_marine_weather');
-        // Add a message instructing to call consumption instead
-        const correctionMessage = new HumanMessage(
-          'Weather forecast is already available. You MUST call calculate_weather_consumption tool, not fetch_marine_weather.'
-        );
-        // This will be handled by the tool router, but we've removed the problematic call
-      }
-    }
-    
-    // Log what the agent decided
-    console.log("🤖 [WEATHER-AGENT] Agent response:", {
-      hasToolCalls: !!response.tool_calls && response.tool_calls.length > 0,
-      toolCallsCount: response.tool_calls?.length || 0,
-      toolCalls: response.tool_calls?.map((tc: any) => tc.name) || [],
-      messageType: response.constructor?.name || typeof response,
-      content: typeof response.content === 'string' 
-        ? response.content.substring(0, 200) 
-        : JSON.stringify(response.content || '').substring(0, 200),
-      hasAdditionalKwargs: !!response.additional_kwargs,
-      additionalKwargsKeys: Object.keys(response.additional_kwargs || {})
-    });
-    
-    // If still no tool calls after directive prompt, something is wrong
-    // Fail immediately if no tool calls - don't retry with text responses
-    if (!response.tool_calls || response.tool_calls.length === 0) {
-      console.log("⚠️ [WEATHER-AGENT] No tool calls in response!");
+    if (needsConsumption && !state.weather_consumption) {
+      console.log('⚡ [WEATHER-WORKFLOW] Weather consumption missing - calculating...');
       
-      // Fail immediately if no tool calls - don't retry with text responses
-      if (failedWeatherAttempts >= 0) {
-        console.log("⚠️ [WEATHER-AGENT] LLM failed to call tools - marking as failed immediately");
+      if (!state.weather_forecast) {
+        throw new Error('Cannot calculate consumption without weather forecast');
+      }
+      
+      // Extract vessel specs from user query
+      const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
+      const userQuery = userMessage?.content?.toString() || '';
+      const vesselSpecs = extractVesselSpecsFromQuery(userQuery, state);
+      
+      // Calculate base consumption from vessel specs
+      const baseConsumptionMt = (vesselSpecs.fuel_capacity_mt.VLSFO || 650) * 0.5; // Rough estimate
+      
+      // Execute weather consumption tool directly
+      const consumptionResult = await executeWeatherConsumptionTool({
+        weather_data: state.weather_forecast.map((w: any) => ({
+          datetime: w.datetime || w.position?.datetime,
+          weather: w.weather || w.position?.weather,
+        })),
+        base_consumption_mt: baseConsumptionMt,
+        vessel_heading_deg: 90, // Default heading (can be improved)
+        fuel_type_breakdown: vesselSpecs.fuel_capacity_mt,
+      });
+      
+      console.log(`✅ [WEATHER-WORKFLOW] Consumption calculated: ${consumptionResult.consumption_increase_percent}% increase`);
+      
+      // Update state with consumption data
+      state = {
+        ...state,
+        weather_consumption: consumptionResult,
+      };
+      
+      // Stream consumption data to frontend
+      console.log('📤 [STREAM] Sending weather consumption');
+      
+    } else if (state.weather_consumption) {
+      console.log('✅ [WEATHER-WORKFLOW] Weather consumption already exists - skipping calculation');
+    }
+    
+    // ========================================================================
+    // SUCCESS - Mark agent as complete
+    // ========================================================================
+    
+    const duration = Date.now() - startTime;
+    console.log(`✅ [WEATHER-WORKFLOW] Complete in ${duration}ms`);
+    
+    // Record metrics
+    recordAgentExecution('weather_agent', duration, true);
+    
+    return {
+      weather_forecast: state.weather_forecast,
+      weather_consumption: state.weather_consumption,
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        weather_agent: 'success' 
+      },
+      messages: [
+        new AIMessage({
+          content: '',
+          additional_kwargs: {
+            weather_update: state.weather_forecast,
+            consumption_update: state.weather_consumption,
+          }
+        })
+      ],
+    };
+    
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [WEATHER-WORKFLOW] Error after ${duration}ms:`, error.message);
+    
+    // Record error metrics
+    recordAgentExecution('weather_agent', duration, false);
+    
         return {
-          agent_status: { ...(state.agent_status || {}), weather_agent: 'failed' },
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        weather_agent: 'failed' 
+      },
           agent_errors: {
             ...(state.agent_errors || {}),
             weather_agent: {
-              error: 'LLM failed to call weather tools. This may indicate an LLM configuration issue.',
+          error: error.message,
               timestamp: Date.now(),
             },
           },
-          messages: [new AIMessage("[WEATHER-AGENT] No tools called - returning to supervisor")],
-        };
-      }
-    }
-    
-    const agentDuration = Date.now() - agentStartTime;
-    console.log(`✅ [WEATHER-AGENT] Completed successfully`);
-    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
-    console.log(`   • Duration: ${agentDuration}ms`);
-    
-    // NEW DEBUG LOGGING
-    console.log(`📤 [WEATHER-AGENT] Returning to state:`);
-    console.log(`   • Message type: ${response.constructor.name}`);
-    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`   • Tool call count: ${response.tool_calls.length}`);
-      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
-      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
-    }
-    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
-    
-    return {
-      messages: [response as any],
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('❌ [WEATHER-AGENT] Error:', errorMessage);
-    
-    // Check if we got ANY weather data before timeout
-    if (state.weather_forecast && state.weather_forecast.length > 0) {
-      console.warn('⚠️ [WEATHER-AGENT] Partial data available, marking as partial');
-      return {
-        weather_agent_partial: true,
-        agent_status: { ...(state.agent_status || {}), weather_agent: 'success' },
-        messages: [new AIMessage("[WEATHER-AGENT] Partial weather data available - continuing")],
-      };
-    }
-    
-    // No data available - return error message
-    return {
-      messages: [new AIMessage(`[WEATHER-AGENT] Error: ${errorMessage} - returning to supervisor`)],
     };
   }
 }
@@ -2689,7 +2172,7 @@ Provide a clear summary of the route information.`;
 // Register Route Agent
 AgentRegistry.registerAgent({
   agent_name: 'route_agent',
-  description: 'Calculates maritime routes between ports and generates vessel position timeline for weather analysis',
+  description: 'Calculates maritime routes between ports and generates vessel position timeline for weather analysis (deterministic workflow)',
   available_tools: [
     {
       tool_name: 'calculate_route',
@@ -2730,7 +2213,7 @@ AgentRegistry.registerAgent({
 // Register Weather Agent
 AgentRegistry.registerAgent({
   agent_name: 'weather_agent',
-  description: 'Fetches marine weather forecasts, calculates weather-adjusted fuel consumption, and validates bunker port weather safety',
+  description: 'Fetches marine weather forecasts, calculates weather-adjusted fuel consumption, and validates bunker port weather safety (deterministic workflow)',
   available_tools: [
     {
       tool_name: 'fetch_marine_weather',

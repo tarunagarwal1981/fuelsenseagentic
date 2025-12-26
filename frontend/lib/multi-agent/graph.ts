@@ -23,8 +23,6 @@ import {
   finalizeNode,
 } from './agent-nodes';
 import {
-  routeAgentTools,
-  weatherAgentTools,
   bunkerAgentTools,
 } from './tools';
 import { AgentRegistry } from './registry';
@@ -253,27 +251,26 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
  * 
  * State machine that orchestrates the multi-agent system:
  * 
- * Flow:
+ * Workflow:
  * 1. Supervisor → Routes to appropriate agent
- * 2. Agent → Uses tools or returns to supervisor
- * 3. Tools → Execute and return to agent
- * 4. Finalize → Synthesizes recommendation and ends
+ * 2. Route Agent → Deterministic workflow (no tools node needed)
+ * 3. Weather Agent → Deterministic workflow (no tools node needed)
+ * 4. Bunker Agent → Uses LLM + tools for intelligent optimization
+ * 5. Finalize → Synthesizes recommendation and ends
  */
 const workflow = new StateGraph(MultiAgentStateAnnotation)
   // ========================================================================
   // Agent Nodes
   // ========================================================================
   .addNode('supervisor', supervisorAgentNode)
-  .addNode('route_agent', routeAgentNode)
-  .addNode('weather_agent', weatherAgentNode)
-  .addNode('bunker_agent', bunkerAgentNode)
-  .addNode('finalize', finalizeNode)
+  .addNode('route_agent', routeAgentNode)      // Now deterministic workflow
+  .addNode('weather_agent', weatherAgentNode)  // Now deterministic workflow
+  .addNode('bunker_agent', bunkerAgentNode)    // Still LLM-based
+  .addNode('finalize', finalizeNode)           // Still LLM-based
 
   // ========================================================================
-  // Tool Nodes (one per agent)
+  // Tool Nodes (ONLY for bunker agent - route/weather now deterministic)
   // ========================================================================
-  .addNode('route_tools', new ToolNode(routeAgentTools))
-  .addNode('weather_tools', new ToolNode(weatherAgentTools))
   .addNode('bunker_tools', new ToolNode(bunkerAgentTools))
 
   // ========================================================================
@@ -293,25 +290,17 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   })
 
   // ========================================================================
-  // Route Agent Workflow
+  // Route Agent Workflow (deterministic - goes straight back to supervisor)
   // ========================================================================
-  .addConditionalEdges('route_agent', agentToolRouter, {
-    tools: 'route_tools',
-    supervisor: 'supervisor',
-  })
-  .addEdge('route_tools', 'route_agent')
+  .addEdge('route_agent', 'supervisor')
 
   // ========================================================================
-  // Weather Agent Workflow
+  // Weather Agent Workflow (deterministic - goes straight back to supervisor)
   // ========================================================================
-  .addConditionalEdges('weather_agent', agentToolRouter, {
-    tools: 'weather_tools',
-    supervisor: 'supervisor',
-  })
-  .addEdge('weather_tools', 'weather_agent')
+  .addEdge('weather_agent', 'supervisor')
 
   // ========================================================================
-  // Bunker Agent Workflow
+  // Bunker Agent Workflow (LLM-based - still uses tools)
   // ========================================================================
   .addConditionalEdges('bunker_agent', agentToolRouter, {
     tools: 'bunker_tools',
@@ -339,7 +328,7 @@ export const multiAgentApp = workflow.compile();
 console.log('✅ Multi-Agent LangGraph compiled successfully');
 console.log('📊 Graph structure:');
 console.log('   - Entry: supervisor');
-console.log('   - Agents: route_agent, weather_agent, bunker_agent');
-console.log('   - Tools: route_tools, weather_tools, bunker_tools');
-console.log('   - Final: finalize → END');
+console.log('   - Agents: route_agent (deterministic), weather_agent (deterministic), bunker_agent (LLM)');
+console.log('   - Tools: bunker_tools only (route/weather are now deterministic workflows)');
+console.log('   - Final: finalize (LLM) → END');
 
