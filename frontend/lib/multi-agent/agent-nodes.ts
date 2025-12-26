@@ -1170,9 +1170,13 @@ You MUST call these tools. Do not explain - just call the tools.`;
     
     // Filter out SystemMessages (we'll add our own at the beginning)
     // Keep all other message types (HumanMessage, AIMessage, ToolMessage) to preserve tool call pairs
-    const filteredMessages = messagesToInclude.filter(
+    let filteredMessages = messagesToInclude.filter(
       (msg) => !(msg instanceof SystemMessage)
     );
+    
+    // CRITICAL: Validate message pairs to ensure tool_use/tool_result are complete
+    // This prevents API errors when AIMessage with tool_calls is sent without corresponding ToolMessages
+    filteredMessages = validateMessagePairs(filteredMessages);
     
     const messages = [
       new SystemMessage(systemPrompt),
@@ -2306,9 +2310,13 @@ Provide a clear summary of the route information.`;
     
     // Filter out SystemMessages (we'll add our own at the beginning)
     // Keep all other message types (HumanMessage, AIMessage, ToolMessage) to preserve tool call pairs
-    const filteredMessages = messagesToInclude.filter(
+    let filteredMessages = messagesToInclude.filter(
       (msg) => !(msg instanceof SystemMessage)
     );
+    
+    // CRITICAL: Validate message pairs to ensure tool_use/tool_result are complete
+    // This prevents API errors when AIMessage with tool_calls is sent without corresponding ToolMessages
+    filteredMessages = validateMessagePairs(filteredMessages);
     
     // CRITICAL: Only ONE SystemMessage allowed, and it must be first
     const messages = [
