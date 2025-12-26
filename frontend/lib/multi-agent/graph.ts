@@ -162,7 +162,7 @@ function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
   let lastAIMessageWithTools: any = null;
   
   for (let i = recentMessages.length - 1; i >= 0; i--) {
-    const msg = recentMessages[i];
+    const msg: any = recentMessages[i];
     
     // Check if this message has tool_calls (that's how we identify AIMessage with tools)
     if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
