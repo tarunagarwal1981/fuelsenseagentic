@@ -167,31 +167,37 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
   const lastMessage = messages[messages.length - 1];
   
   // Log what we're examining with proper type identification
+  // CRITICAL: Don't use instanceof in production - use property-based detection
   console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last message:`);
   let msgType: string;
-  if (lastMessage instanceof AIMessage) {
-    msgType = lastMessage.tool_calls && lastMessage.tool_calls.length > 0 
-      ? 'AIMessage(with_tools)' 
-      : 'AIMessage';
-  } else if (lastMessage instanceof ToolMessage) {
+  const lastMsgAny = lastMessage as any;
+  const hasToolCalls = lastMsgAny.tool_calls && Array.isArray(lastMsgAny.tool_calls) && lastMsgAny.tool_calls.length > 0;
+  const hasToolCallId = lastMsgAny.tool_call_id;
+  
+  // Property-based detection (works in production/minified code)
+  if (hasToolCalls || (lastMessage as any).tool_calls) {
+    msgType = hasToolCalls ? 'AIMessage(with_tools)' : 'AIMessage';
+  } else if (hasToolCallId) {
     msgType = 'ToolMessage';
   } else {
     msgType = 'HumanMessage/Other';
   }
   
-  // Type guard: ensure lastMessage is an AIMessage with tool_calls
-  if (!(lastMessage instanceof AIMessage)) {
-    console.log(`🔀 [AGENT-TOOL-ROUTER] ❌ Last message is not AIMessage (${msgType}) → supervisor`);
+  // Type guard: check for tool_calls property (works in production)
+  if (!hasToolCalls) {
+    console.log(`🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls (${msgType}) → supervisor`);
     return 'supervisor';
   }
 
-  const toolCount = lastMessage.tool_calls?.length || 0;
-  const toolNames = lastMessage.tool_calls?.map(tc => tc.name).join(', ') || 'none';
+  // Access tool_calls safely (property-based, not instanceof)
+  const toolCalls = lastMsgAny.tool_calls;
+  const toolCount = toolCalls?.length || 0;
+  const toolNames = toolCalls?.map((tc: any) => tc.name).join(', ') || 'none';
   
   console.log(`  [LAST] ${msgType}${toolCount > 0 ? ` → ${toolCount} tools: ${toolNames}` : ''}`);
 
-  // Check if last message has tool_calls
-  if (!lastMessage.tool_calls || !Array.isArray(lastMessage.tool_calls) || lastMessage.tool_calls.length === 0) {
+  // Check if last message has tool_calls (already checked above, but double-check)
+  if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
     console.log('🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls → supervisor');
     return 'supervisor';
   }
@@ -199,9 +205,9 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
   // CRITICAL FIX: Check if these tool_calls have already been executed
   // Extract tool_call IDs, filtering out any undefined/null values
   const toolCallIds = new Set<string>(
-    lastMessage.tool_calls
-      .map(tc => tc.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    toolCalls
+      .map((tc: any) => tc.id)
+      .filter((id: any): id is string => typeof id === 'string' && id.length > 0)
   );
   
   if (toolCallIds.size === 0) {
@@ -213,15 +219,13 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
   // Search forward through all messages to find ToolMessages with matching tool_call_ids
   const executedToolCallIds = new Set<string>();
   
-  // Search through all messages using proper type guards
+  // Search through all messages using property-based detection (works in production)
   for (const msg of messages) {
-    // Type guard: check if message is a ToolMessage with a tool_call_id
-    if (msg instanceof ToolMessage && msg.tool_call_id) {
-      const toolCallId: string = msg.tool_call_id;
-      if (toolCallIds.has(toolCallId)) {
-        executedToolCallIds.add(toolCallId);
-        console.log(`  ✓ Found executed tool: ${toolCallId}`);
-      }
+    // Property-based check: look for tool_call_id property
+    const toolCallId = (msg as any).tool_call_id;
+    if (toolCallId && typeof toolCallId === 'string' && toolCallIds.has(toolCallId)) {
+      executedToolCallIds.add(toolCallId);
+      console.log(`  ✓ Found executed tool: ${toolCallId}`);
     }
   }
   

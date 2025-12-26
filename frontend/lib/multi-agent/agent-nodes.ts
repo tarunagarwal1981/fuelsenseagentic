@@ -1313,6 +1313,18 @@ export async function routeAgentNode(state: MultiAgentState) {
   // Store ports for error handler fallback
   const extractedOriginPort = originPort;
   const extractedDestinationPort = destinationPort;
+  
+  // PROACTIVE: Check for cached route BEFORE trying API (if we have port codes)
+  if (!state.route_data && originPort && destinationPort) {
+    console.log(`🔍 [ROUTE-AGENT] Checking for cached route: ${originPort} → ${destinationPort}`);
+    const cachedResult = await tryUseCachedRoute(originPort, destinationPort);
+    if (cachedResult) {
+      console.log(`✅ [ROUTE-AGENT] Using cached route proactively (before API call)`);
+      return cachedResult;
+    } else {
+      console.log(`ℹ️ [ROUTE-AGENT] No cached route found, will try API`);
+    }
+  }
 
   // STRICT ORCHESTRATION: No direct tool calling - all tools must go through LLM binding
   // This ensures supervisor has full control and agents follow the assigned tool plan
