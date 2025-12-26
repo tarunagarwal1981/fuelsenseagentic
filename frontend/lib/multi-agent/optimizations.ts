@@ -378,8 +378,6 @@ export function validateMessagePairs(messages: any[]): any[] {
  * - Every AIMessage with tool_calls MUST have ALL corresponding ToolMessages immediately after
  * - If ANY tool_result is missing, the ENTIRE AIMessage must be removed
  * 
- * EXCEPTION: The LAST AIMessage with tool_calls is kept even if incomplete (it's the current agent's response)
- * 
  * This is DIFFERENT from validateMessagePairs which is lenient for graph flow.
  */
 export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
@@ -442,10 +440,24 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
         j++;
       }
       
+      const isLast = i === lastAIMessageWithToolCallsIndex;
+      
       // STRICT: Only include this AIMessage if ALL tool results are present
-      // Anthropic API will reject any AIMessage with tool_calls that doesn't have ALL ToolMessages immediately after
-      if (foundToolCallIds.size === toolCallIds.size && toolCallIds.size > 0) {
-        // All tool results found - include the AIMessage and its ToolMessages
+      // EXCEPTION: Keep the LAST AIMessage even if incomplete (it's the current agent's response)
+      if (foundToolCallIds.size === toolCallIds.size || isLast) {
+        if (isLast && foundToolCallIds.size < toolCallIds.size) {
+          // Last AIMessage with incomplete tool_calls - keep it for router, but don't send to API
+          // We'll handle this by not including it in the messages sent to the API
+          // For now, skip it from API validation but it will remain in state.messages for routing
+          console.warn(
+            `⚠️ [API-VALIDATION] Last AIMessage has incomplete tool_calls (found ${foundToolCallIds.size}/${toolCallIds.size}) - keeping in state for routing but skipping from API call`
+          );
+          // Skip this message from API call (don't add to validated)
+          i = j;
+          continue;
+        }
+        
+        // All tool results found OR it's the last one - include the AIMessage and its ToolMessages
         validated.push(msg);
         
         // Add all the ToolMessages that belong to this AIMessage
@@ -458,18 +470,15 @@ export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
         }
         
         console.log(
-          `✅ [API-VALIDATION] Kept AIMessage with ${toolCallIds.size} complete tool calls`
+          `✅ [API-VALIDATION] Kept AIMessage with ${toolCallIds.size} complete tool calls${isLast ? ' [LAST]' : ''}`
         );
         
         // Skip past all the ToolMessages we just added
         i = j;
       } else {
-        // Incomplete tool results - SKIP this AIMessage
-        // NOTE: This only affects messages sent to API, not state.messages
-        // The router will still see the AIMessage in state.messages for routing decisions
-        const isLast = i === lastAIMessageWithToolCallsIndex;
+        // Incomplete tool results - SKIP this AIMessage and its partial ToolMessages
         console.warn(
-          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size})${isLast ? ' [LAST - will be in state for routing]' : ''} - required by Anthropic API`
+          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size}) - required by Anthropic API`
         );
         
         // Skip past this AIMessage and any of its ToolMessages
