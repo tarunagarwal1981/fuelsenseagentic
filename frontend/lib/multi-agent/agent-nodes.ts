@@ -1334,20 +1334,17 @@ You MUST call these tools. Do not explain - just call the tools.`;
                msg.constructor.name !== 'SystemMessage'
     );
 
-    // Step 3: Validate COMPLETE messages (this needs full message array!)
-    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
-
-    // Step 4: NOW find last HumanMessage and slice if needed
-    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+    // Step 3: Find last HumanMessage
+    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
       (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
     );
 
-    // Step 5: Take messages from last human query onward
+    // Step 4: Take messages from last human query onward (keep recent context)
     const messagesToInclude = lastHumanMessageIndex >= 0
-      ? validatedMessages.slice(lastHumanMessageIndex)
-      : validatedMessages.slice(-20);  // Fallback: last 20 messages
+      ? messagesWithoutSystem.slice(lastHumanMessageIndex)
+      : messagesWithoutSystem.slice(-20);  // Fallback: last 20
 
-    // Step 6: Build final message array for LLM
+    // Step 5: Build final message array for LLM
     const messages = [
       new SystemMessage(systemPrompt),
       ...messagesToInclude,
@@ -1841,17 +1838,14 @@ DO NOT respond with explanatory text. CALL THE REQUIRED TOOL IMMEDIATELY.`;
                msg.constructor.name !== 'SystemMessage'
     );
 
-    // Step 3: Validate COMPLETE messages (this needs full message array!)
-    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
-
-    // Step 4: NOW find last HumanMessage and slice if needed
-    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+    // Step 3: Find last HumanMessage
+    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
       (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
     );
     
     // SIMPLIFIED: Only include user query and vessel timeline - nothing else
     // This gives the LLM a clean context without confusing route agent responses
-    const userMessage = validatedMessages[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
+    const userMessage = messagesWithoutSystem[lastHumanMessageIndex >= 0 ? lastHumanMessageIndex : 0];
     
     // Get user query for message
     const userQueryForMessage = userMessage instanceof HumanMessage 
@@ -2231,18 +2225,15 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
                msg.constructor.name !== 'SystemMessage'
     );
 
-    // Step 3: Validate COMPLETE messages (this needs full message array!)
-    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
-
-    // Step 4: NOW find last HumanMessage and slice if needed
-    const lastHumanMessageIndex = validatedMessages.findLastIndex(
+    // Step 3: Find last HumanMessage
+    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
       (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
     );
 
-    // Step 5: Take messages from last human query onward
+    // Step 4: Take messages from last human query onward (keep recent context)
     const messagesToInclude = lastHumanMessageIndex >= 0
-      ? validatedMessages.slice(lastHumanMessageIndex)
-      : validatedMessages.slice(-20);  // Fallback: last 20 messages
+      ? messagesWithoutSystem.slice(lastHumanMessageIndex)
+      : messagesWithoutSystem.slice(-20);  // Fallback: last 20
 
     // Combine system prompt with context about available data
     let fullSystemPrompt = systemPrompt;
@@ -2252,7 +2243,7 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
 - Use route waypoints for find_bunker_ports`;
     }
 
-    // Step 6: Build final message array for LLM
+    // Step 5: Build final message array for LLM
     const messages = [
       new SystemMessage(fullSystemPrompt),
       ...messagesToInclude,
