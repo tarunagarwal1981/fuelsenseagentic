@@ -22,6 +22,7 @@ import {
   recordToolCallTime,
   trimMessageHistory,
   validateMessagePairs,
+  validateMessagesForAnthropicAPI,
 } from './optimizations';
 import {
   recordAgentExecution,
@@ -1319,9 +1320,10 @@ You MUST call these tools. Do not explain - just call the tools.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Validate message pairs to ensure tool_use/tool_result are complete
-    // This prevents API errors when AIMessage with tool_calls is sent without corresponding ToolMessages
-    filteredMessages = validateMessagePairs(filteredMessages);
+    // CRITICAL: Use STRICT validation for Anthropic API calls
+    // This is different from validateMessagePairs (used for graph flow)
+    // Anthropic API requires complete tool_use/tool_result pairs
+    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
     
     const messages = [
       new SystemMessage(systemPrompt),
@@ -2184,8 +2186,10 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Validate message pairs to ensure tool_use/tool_result are complete
-    filteredMessages = validateMessagePairs(filteredMessages);
+    // CRITICAL: Use STRICT validation for Anthropic API calls
+    // This is different from validateMessagePairs (used for graph flow)
+    // Anthropic API requires complete tool_use/tool_result pairs
+    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
     
     // Combine system prompt with context about available data
     let fullSystemPrompt = systemPrompt;
@@ -2472,9 +2476,10 @@ Provide a clear summary of the route information.`;
       (msg) => !(msg instanceof SystemMessage)
     );
     
-    // CRITICAL: Validate message pairs to ensure tool_use/tool_result are complete
-    // This prevents API errors when AIMessage with tool_calls is sent without corresponding ToolMessages
-    filteredMessages = validateMessagePairs(filteredMessages);
+    // CRITICAL: Use STRICT validation for Anthropic API calls
+    // This is different from validateMessagePairs (used for graph flow)
+    // Anthropic API requires complete tool_use/tool_result pairs
+    filteredMessages = validateMessagesForAnthropicAPI(filteredMessages);
     
     // CRITICAL: Only ONE SystemMessage allowed, and it must be first
     const messages = [

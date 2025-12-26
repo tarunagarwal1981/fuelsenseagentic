@@ -372,6 +372,125 @@ export function validateMessagePairs(messages: any[]): any[] {
 }
 
 /**
+ * Validate messages specifically for Anthropic API calls
+ * 
+ * CRITICAL: Anthropic API requires STRICT tool_use/tool_result pairing
+ * - Every AIMessage with tool_calls MUST have ALL corresponding ToolMessages immediately after
+ * - If ANY tool_result is missing, the ENTIRE AIMessage must be removed
+ * 
+ * This is DIFFERENT from validateMessagePairs which is lenient for graph flow.
+ */
+export function validateMessagesForAnthropicAPI(messages: any[]): any[] {
+  const { AIMessage, ToolMessage, SystemMessage, HumanMessage } = require('@langchain/core/messages');
+  
+  const validated: any[] = [];
+  let i = 0;
+  
+  while (i < messages.length) {
+    const msg = messages[i];
+    
+    // Always keep SystemMessages and HumanMessages
+    if (msg instanceof SystemMessage || msg instanceof HumanMessage || 
+        msg.constructor.name === 'SystemMessage' || msg.constructor.name === 'HumanMessage') {
+      validated.push(msg);
+      i++;
+      continue;
+    }
+    
+    // For AIMessages with tool_calls, verify ALL tool results are present
+    if ((msg instanceof AIMessage || msg.constructor.name === 'AIMessage') && 
+        msg.tool_calls && msg.tool_calls.length > 0) {
+      
+      const toolCallIds = new Set(
+        msg.tool_calls.map((tc: any) => tc.id || tc.tool_call_id).filter(Boolean)
+      );
+      
+      // Look at the NEXT messages to find ToolMessages
+      const foundToolCallIds = new Set<string>();
+      let j = i + 1;
+      
+      // Collect all consecutive ToolMessages after this AIMessage
+      while (j < messages.length) {
+        const nextMsg = messages[j];
+        
+        // If we hit another AIMessage or HumanMessage, stop looking
+        if (nextMsg instanceof AIMessage || nextMsg instanceof HumanMessage ||
+            nextMsg.constructor.name === 'AIMessage' || nextMsg.constructor.name === 'HumanMessage') {
+          break;
+        }
+        
+        // If it's a ToolMessage, check if it matches our tool_calls
+        if (nextMsg instanceof ToolMessage || nextMsg.constructor.name === 'ToolMessage') {
+          if (nextMsg.tool_call_id && toolCallIds.has(nextMsg.tool_call_id)) {
+            foundToolCallIds.add(nextMsg.tool_call_id);
+          }
+        }
+        
+        j++;
+      }
+      
+      // STRICT: Only include this AIMessage if ALL tool results are present
+      if (foundToolCallIds.size === toolCallIds.size) {
+        // All tool results found - include the AIMessage and its ToolMessages
+        validated.push(msg);
+        
+        // Add all the ToolMessages that belong to this AIMessage
+        for (let k = i + 1; k < j; k++) {
+          const toolMsg = messages[k];
+          if ((toolMsg instanceof ToolMessage || toolMsg.constructor.name === 'ToolMessage') &&
+              toolMsg.tool_call_id && toolCallIds.has(toolMsg.tool_call_id)) {
+            validated.push(toolMsg);
+          }
+        }
+        
+        console.log(
+          `✅ [API-VALIDATION] Kept AIMessage with ${toolCallIds.size} complete tool calls`
+        );
+        
+        // Skip past all the ToolMessages we just added
+        i = j;
+      } else {
+        // Incomplete tool results - SKIP this AIMessage and its partial ToolMessages
+        console.warn(
+          `⚠️ [API-VALIDATION] Skipping AIMessage with incomplete tool results (found ${foundToolCallIds.size}/${toolCallIds.size}) - required by Anthropic API`
+        );
+        
+        // Skip past this AIMessage and any of its ToolMessages
+        i = j;
+      }
+      
+      continue;
+    }
+    
+    // For AIMessages without tool_calls, keep them
+    if (msg instanceof AIMessage || msg.constructor.name === 'AIMessage') {
+      validated.push(msg);
+      i++;
+      continue;
+    }
+    
+    // For standalone ToolMessages (shouldn't happen after above logic), skip them
+    if (msg instanceof ToolMessage || msg.constructor.name === 'ToolMessage') {
+      console.warn(
+        `⚠️ [API-VALIDATION] Skipping orphaned ToolMessage: ${msg.tool_call_id || 'unknown'}`
+      );
+      i++;
+      continue;
+    }
+    
+    // Any other message type, keep it
+    validated.push(msg);
+    i++;
+  }
+  
+  console.log(
+    `🔒 [API-VALIDATION] Strict validation for Anthropic API: ${messages.length} → ${validated.length} messages`
+  );
+  
+  return validated;
+}
+
+/**
  * Clean up large data structures from state
  */
 export function cleanupStateData(state: any): any {
