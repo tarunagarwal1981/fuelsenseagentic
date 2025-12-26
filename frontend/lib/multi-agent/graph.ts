@@ -167,40 +167,35 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
   const lastMessage = messages[messages.length - 1];
   
   // Log what we're examining with proper type identification
-  // CRITICAL: Don't use instanceof in production - use property-based detection
+  // CRITICAL: Use property-based detection (works in production/minified code)
   console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last message:`);
-  let msgType: string;
+  
+  // Property-based detection - check for tool_calls directly
   const lastMsgAny = lastMessage as any;
-  const hasToolCalls = lastMsgAny.tool_calls && Array.isArray(lastMsgAny.tool_calls) && lastMsgAny.tool_calls.length > 0;
+  const toolCalls = lastMsgAny.tool_calls;
+  const hasToolCalls = toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0;
   const hasToolCallId = lastMsgAny.tool_call_id;
   
-  // Property-based detection (works in production/minified code)
-  if (hasToolCalls || (lastMessage as any).tool_calls) {
-    msgType = hasToolCalls ? 'AIMessage(with_tools)' : 'AIMessage';
+  // Determine message type for logging
+  let msgType: string;
+  if (hasToolCalls) {
+    msgType = 'AIMessage(with_tools)';
   } else if (hasToolCallId) {
     msgType = 'ToolMessage';
   } else {
     msgType = 'HumanMessage/Other';
   }
   
+  console.log(`  [LAST] ${msgType}${hasToolCalls ? ` → ${toolCalls.length} tools` : ''}`);
+
   // Type guard: check for tool_calls property (works in production)
   if (!hasToolCalls) {
     console.log(`🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls (${msgType}) → supervisor`);
     return 'supervisor';
   }
 
-  // Access tool_calls safely (property-based, not instanceof)
-  const toolCalls = lastMsgAny.tool_calls;
-  const toolCount = toolCalls?.length || 0;
-  const toolNames = toolCalls?.map((tc: any) => tc.name).join(', ') || 'none';
-  
-  console.log(`  [LAST] ${msgType}${toolCount > 0 ? ` → ${toolCount} tools: ${toolNames}` : ''}`);
-
-  // Check if last message has tool_calls (already checked above, but double-check)
-  if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
-    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls → supervisor');
-    return 'supervisor';
-  }
+  const toolCount = toolCalls.length;
+  const toolNames = toolCalls.map((tc: any) => tc.name).join(', ') || 'none';
 
   // CRITICAL FIX: Check if these tool_calls have already been executed
   // Extract tool_call IDs, filtering out any undefined/null values
