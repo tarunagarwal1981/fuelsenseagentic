@@ -479,7 +479,7 @@ export async function supervisorAgentNode(
     cache_hit: cacheHit
   });
 
-  // ADD THIS: Loop detection - more aggressive
+  // Log message count for debugging
   const messageCount = state.messages.length;
   console.log(`📊 [SUPERVISOR] Message count: ${messageCount}`);
   
@@ -498,14 +498,38 @@ export async function supervisorAgentNode(
     };
   }
   
-  // If we have more than 25 messages and still no progress, force finalize
-  if (messageCount > 25) {
-    console.log("⚠️ [SUPERVISOR] Loop detected (25+ messages) - forcing finalize");
+  // Safety check: prevent infinite loops with higher limit
+  // Multi-agent flow needs ~10-30 messages for complex queries
+  if (messageCount > 60) {  // Increased from 25 to 60
+    console.error('❌ [SUPERVISOR] Hard limit reached (60+ messages) - forcing finalize');
     return {
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
     };
+  }
+
+  // Additional check: If we have 40+ messages but NO progress, something is stuck
+  if (messageCount > 40) {
+    // Check if we have ANY data
+    const hasRoute = !!state.route_data;
+    const hasWeather = !!state.weather_forecast || !!state.weather_consumption;
+    const hasBunker = !!state.bunker_analysis;
+    const hasAnyProgress = hasRoute || hasWeather || hasBunker;
+    
+    if (!hasAnyProgress) {
+      console.error('❌ [SUPERVISOR] 40+ messages with ZERO progress - system stuck!');
+      console.error('📊 [SUPERVISOR] Debugging: route=', hasRoute, ', weather=', hasWeather, ', bunker=', hasBunker);
+      console.error('📊 [SUPERVISOR] Agent status:', state.agent_status);
+      console.error('📊 [SUPERVISOR] Last 5 messages:', state.messages.slice(-5).map(m => m.constructor.name));
+      
+      return {
+        next_agent: "finalize",
+        agent_context: agentContext,
+        messages: [],
+        final_recommendation: "⚠️ SYSTEM ERROR: Multi-agent workflow failed to make progress after 40 iterations. This typically indicates a routing or tool execution issue. Please try again or use the manual workflow.",
+      };
+    }
   }
   
   // Early detection: If we have 10+ messages and weather is needed but missing, likely stuck
@@ -1350,6 +1374,17 @@ You MUST call these tools. Do not explain - just call the tools.`;
     console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
     console.log(`   • Duration: ${agentDuration}ms`);
 
+    // NEW DEBUG LOGGING
+    console.log(`📤 [ROUTE-AGENT] Returning to state:`);
+    console.log(`   • Message type: ${response.constructor.name}`);
+    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      console.log(`   • Tool call count: ${response.tool_calls.length}`);
+      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
+      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
+    }
+    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
+
     return { ...stateUpdates, messages: [response], agent_status: { route_agent: 'success' } };
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
@@ -1947,6 +1982,17 @@ Call the tool now with the data provided above.`;
     console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
     console.log(`   • Duration: ${agentDuration}ms`);
     
+    // NEW DEBUG LOGGING
+    console.log(`📤 [WEATHER-AGENT] Returning to state:`);
+    console.log(`   • Message type: ${response.constructor.name}`);
+    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      console.log(`   • Tool call count: ${response.tool_calls.length}`);
+      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
+      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
+    }
+    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
+    
     return {
       messages: [response as any],
     };
@@ -2220,6 +2266,17 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
     console.log(`✅ [BUNKER-AGENT] Completed successfully`);
     console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
     console.log(`   • Duration: ${agentDuration}ms`);
+
+    // NEW DEBUG LOGGING
+    console.log(`📤 [BUNKER-AGENT] Returning to state:`);
+    console.log(`   • Message type: ${response.constructor.name}`);
+    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      console.log(`   • Tool call count: ${response.tool_calls.length}`);
+      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
+      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
+    }
+    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
 
     // Return both the LLM response and any state updates from extracted data
     return { 
