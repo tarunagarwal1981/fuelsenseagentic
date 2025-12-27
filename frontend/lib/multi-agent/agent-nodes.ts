@@ -2790,7 +2790,7 @@ AgentRegistry.registerAgent({
 // Register Bunker Agent
 AgentRegistry.registerAgent({
   agent_name: 'bunker_agent',
-  description: 'Finds bunker ports along route, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis',
+  description: 'Finds bunker ports along route, validates weather safety, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis',
   available_tools: [
     {
       tool_name: 'find_bunker_ports',
@@ -2807,6 +2807,22 @@ AgentRegistry.registerAgent({
       ],
       prerequisites: ['route_data'],
       produces: ['bunker_ports']
+    },
+    {
+      tool_name: 'check_bunker_port_weather',
+      description: 'Check weather safety conditions at bunker ports (SHARED with weather_agent)',
+      when_to_use: [
+        'bunker_ports exist in state',
+        'User query mentions safe bunkering, weather safety, or bunkering conditions',
+        'Need to validate port weather before final recommendation'
+      ],
+      when_not_to_use: [
+        'bunker_ports is missing',
+        'Query does not mention weather or safety',
+        'port_weather_status already exists in state'
+      ],
+      prerequisites: ['bunker_ports', 'vessel_timeline'],
+      produces: ['port_weather_status']
     },
     {
       tool_name: 'get_fuel_prices',
@@ -2840,6 +2856,6 @@ AgentRegistry.registerAgent({
     }
   ],
   prerequisites: ['route_data'],
-  outputs: ['bunker_ports', 'port_prices', 'bunker_analysis']
+  outputs: ['bunker_ports', 'port_weather_status', 'port_prices', 'bunker_analysis']
 });
 

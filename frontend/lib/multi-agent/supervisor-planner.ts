@@ -172,6 +172,7 @@ Rules:
    - "weather conditions", "bunkering conditions"
    Then bunker_agent MUST be assigned the check_bunker_port_weather tool.
    This tool checks if ports have safe conditions (wave ≤1.5m, wind ≤25kt) during bunkering window.
+   Note: This tool is SHARED between weather_agent and bunker_agent.
 
 8. MULTI-FUEL TYPE HANDLING:
    - If query specifies multiple fuel types (e.g., "650 MT VLSFO and 80 MT LSGO"), extract:
@@ -193,6 +194,14 @@ Rules:
       * "large_quantity" - Fuel quantity >500 MT (high-cost decision)
       * "weather_marginal" - Weather conditions are borderline
     - These flags will be used by future human-in-loop UI components
+
+11. DEFAULT DEPARTURE DATE:
+    - If query does NOT specify departure date/time
+    - Assume departure is tomorrow (next day from current date)
+    - Calculate based on current date: ${new Date().toISOString()}
+    - Add to task_description: "Departure: Tomorrow (not specified by user)"
+    - Estimate arrival times for bunker ports based on this assumption
+    - Note: User should be informed in final output that departure was assumed
 
 Return a JSON object with this structure:
 {

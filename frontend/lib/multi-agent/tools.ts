@@ -636,6 +636,7 @@ export const weatherAgentTools = [
  */
 export const bunkerAgentTools = [
   findBunkerPortsTool,
+  checkPortWeatherTool,  // SHARED: Also in weatherAgentTools
   getFuelPricesTool,
   analyzeBunkerOptionsTool,
 ];
