@@ -2032,8 +2032,8 @@ export async function bunkerAgentNode(
           'Bunker analyzer timed out'
         );
         
-        const rankedCount = bunkerAnalysis?.ranked_ports?.length || 0;
-        const bestPort = bunkerAnalysis?.ranked_ports?.[0];
+        const rankedCount = bunkerAnalysis?.recommendations?.length || 0;
+        const bestPort = bunkerAnalysis?.recommendations?.[0];
         console.log(`✅ [BUNKER-WORKFLOW] Analysis complete: ${rankedCount} ports ranked`);
         
         if (bestPort) {
@@ -2059,11 +2059,36 @@ export async function bunkerAgentNode(
     
     recordAgentExecution('bunker_agent', duration, true);
     
+    // ========================================================================
+    // CRITICAL: Extract correct values for state
+    // State expects specific types, not the raw tool outputs
+    // ========================================================================
+    
+    // Extract ports array from FoundPortsResult
+    const portsArray = bunkerPorts?.ports || null;
+    const portsCount = portsArray?.length || 0;
+    
+    // port_prices is already in correct format (PriceFetcherOutput)
+    const priceData = portPrices || null;
+    const pricesCount = priceData?.prices_by_port 
+      ? Object.keys(priceData.prices_by_port).length 
+      : 0;
+    
+    // bunker_analysis is already in correct format
+    const analysisData = bunkerAnalysis || null;
+    const recommendationsCount = analysisData?.recommendations?.length || 0;
+    
+    console.log(`📊 [BUNKER-WORKFLOW] Returning to state:`);
+    console.log(`   - Ports: ${portsCount} found`);
+    console.log(`   - Weather: ${portWeather?.length || 0} ports checked`);
+    console.log(`   - Prices: ${pricesCount} ports`);
+    console.log(`   - Analysis: ${recommendationsCount} recommendations`);
+    
     return {
-      bunker_ports: bunkerPorts,
-      port_weather_status: portWeather,
-      port_prices: portPrices,
-      bunker_analysis: bunkerAnalysis,
+      bunker_ports: portsArray,              // ✅ FIXED: Array of ports, not full object
+      port_weather_status: portWeather,      // ✅ Already correct (array)
+      port_prices: priceData,                 // ✅ Already correct (PriceFetcherOutput)
+      bunker_analysis: analysisData,          // ✅ Already correct (BunkerAnalysis)
       agent_status: { 
         ...(state.agent_status || {}), 
         bunker_agent: 'success' 
@@ -2073,13 +2098,14 @@ export async function bunkerAgentNode(
         new AIMessage({
           content: JSON.stringify({
             type: 'bunker_workflow_complete',
-            ports_found: bunkerPorts.total_ports_found,
-            weather_checked: portWeather ? portWeather.length : 0,
-            prices_fetched: portPrices ? portPrices.length : 0,
-            recommended_port: bunkerAnalysis?.ranked_ports?.[0]?.port_name || 'Unknown',
-          }),
-        }),
-      ],
+            ports_found: portsCount,
+            weather_checked: portWeather?.length || 0,
+            prices_fetched: pricesCount,
+            recommendations: recommendationsCount,
+            recommended_port: analysisData?.recommendations?.[0]?.port_name || 'Unknown'
+          })
+        })
+      ]
     };
     
   } catch (error: any) {
