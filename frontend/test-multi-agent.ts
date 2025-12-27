@@ -53,6 +53,11 @@ async function testMultiAgent() {
         agent_context: null,
         selected_route_id: null,
         weather_agent_partial: false,
+        agent_call_counts: {
+          route_agent: 0,
+          weather_agent: 0,
+          bunker_agent: 0,
+        },
       };
       
       const result = await multiAgentApp.invoke(initialState, {
