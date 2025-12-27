@@ -362,13 +362,13 @@ Use this tool with weather data from fetch_marine_weather to calculate weather i
  */
 export const checkPortWeatherTool = tool(
   async (input) => {
-    console.log('⚓ [WEATHER-AGENT] Executing check_bunker_port_weather');
+    console.log('⚓ [BUNKER-AGENT] Executing check_bunker_port_weather');
     try {
       const result = await executePortWeatherTool(input);
-      return result;
+      return JSON.stringify(result);
     } catch (error: any) {
-      console.error('❌ [WEATHER-AGENT] Port weather error:', error.message);
-      return { error: error.message };
+      console.error('❌ [BUNKER-AGENT] Port weather error:', error.message);
+      return JSON.stringify({ error: error.message });
     }
   },
   {
