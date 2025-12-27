@@ -317,6 +317,22 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   }),
 
   /**
+   * Agent call counts for circuit breaker (tracks consecutive calls per agent)
+   */
+  agent_call_counts: Annotation<Record<string, number>>({
+    reducer: (x, y) => {
+      // Merge counts, new values overwrite old
+      const result = { ...(x || {}), ...(y || {}) };
+      return result;
+    },
+    default: () => ({
+      route_agent: 0,
+      weather_agent: 0,
+      bunker_agent: 0,
+    }),
+  }),
+
+  /**
    * Selected cached route ID (from UI route selector)
    */
   selected_route_id: Annotation<string | null>({

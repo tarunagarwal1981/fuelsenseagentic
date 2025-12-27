@@ -72,6 +72,66 @@ import { extractPortsFromQuery as lookupPorts } from '@/lib/utils/port-lookup';
  * Count how many times each agent has been called
  * Used for circuit breaker to prevent infinite loops
  */
+/**
+ * Circuit breaker helper: Check if agent has exceeded max calls and apply circuit breaker
+ */
+function applyCircuitBreaker(
+  nextAgent: string,
+  state: MultiAgentState,
+  defaultReturn: Partial<MultiAgentState>
+): Partial<MultiAgentState> {
+  // Initialize call counts if not present
+  const callCounts = state.agent_call_counts || {
+    route_agent: 0,
+    weather_agent: 0,
+    bunker_agent: 0,
+  };
+
+  // CIRCUIT BREAKER: Prevent infinite loops
+  const MAX_AGENT_CALLS = 3;
+  const currentCallCount = callCounts[nextAgent] || 0;
+
+  console.log(`🔄 [SUPERVISOR-CIRCUIT-BREAKER]`, {
+    next_agent: nextAgent,
+    current_count: currentCallCount,
+    max_allowed: MAX_AGENT_CALLS,
+    will_trigger: currentCallCount >= MAX_AGENT_CALLS
+  });
+
+  if (currentCallCount >= MAX_AGENT_CALLS) {
+    console.error(`🚨 [SUPERVISOR] Circuit breaker triggered!`, {
+      agent: nextAgent,
+      calls: currentCallCount,
+      forcing_finalize: true,
+      reason: "Agent called too many times without completing"
+    });
+    
+    return {
+      next_agent: "finalize",
+      messages: [
+        new HumanMessage({
+          content: `Circuit breaker activated: ${nextAgent} exceeded ${MAX_AGENT_CALLS} attempts. Forcing completion with partial results.`,
+          name: "supervisor_circuit_breaker"
+        })
+      ],
+      agent_call_counts: callCounts,
+      ...defaultReturn
+    };
+  }
+
+  // Increment counter for next agent
+  const updatedCounts = { ...callCounts };
+  updatedCounts[nextAgent] = currentCallCount + 1;
+
+  console.log(`🎯 [SUPERVISOR] Routing to ${nextAgent} (attempt ${updatedCounts[nextAgent]}/${MAX_AGENT_CALLS})`);
+
+  // Return with updated counts
+  return {
+    ...defaultReturn,
+    agent_call_counts: updatedCounts,
+  };
+}
+
 function countAgentCalls(messages: any[]): Record<string, number> {
   const counts: Record<string, number> = {
     route_agent: 0,
@@ -691,11 +751,11 @@ export async function supervisorAgentNode(
         console.log(`⚠️ [SUPERVISOR] No execution plan tools for bunker_agent, using legacy context`);
       }
       
-      return {
+      return applyCircuitBreaker("bunker_agent", state, {
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
-      };
+      });
     } else {
       // Neither weather nor bunker needed - shouldn't happen, but finalize
       console.log("⚠️ [SUPERVISOR] Weather agent stuck but not needed - finalizing");
@@ -714,11 +774,11 @@ export async function supervisorAgentNode(
     // Weather agent has partial data, continue to next step if needed
     if (needsBunker && !state.bunker_analysis) {
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
-      return {
+      return applyCircuitBreaker("bunker_agent", state, {
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
-      };
+      });
     } else {
       console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
       return {
@@ -862,11 +922,11 @@ export async function supervisorAgentNode(
     }
     
     console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent (prerequisites validated)');
-    return {
+    return applyCircuitBreaker("route_agent", state, {
       next_agent: "route_agent",
       agent_context: agentContext,
       messages: [],
-    };
+    });
   }
   
   // 2. If route is complete (for this query type), check what else is needed based on query intent
@@ -885,11 +945,11 @@ export async function supervisorAgentNode(
         // Skip to bunker if needed, otherwise finalize
         if (needsBunker && !state.bunker_analysis) {
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, go to bunker');
-          return {
+          return applyCircuitBreaker("bunker_agent", state, {
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
-          };
+          });
         } else {
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, finalize with partial data');
           return {
@@ -907,11 +967,11 @@ export async function supervisorAgentNode(
         // Skip weather agent, try next priority
       } else {
         console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent (prerequisites validated)');
-        return {
+        return applyCircuitBreaker("weather_agent", state, {
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
-        };
+        });
       }
     }
     
@@ -942,11 +1002,11 @@ export async function supervisorAgentNode(
         
         // Consumption is needed for bunker planning
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
-        return {
+        return applyCircuitBreaker("weather_agent", state, {
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
-        };
+        });
       }
       
       // Weather and consumption complete, bunker needed
@@ -968,11 +1028,11 @@ export async function supervisorAgentNode(
           // Skip bunker agent, finalize with available data
         } else {
           console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent (prerequisites validated)');
-          return {
+          return applyCircuitBreaker("bunker_agent", state, {
             next_agent: "bunker_agent",
             agent_context: agentContext,
             messages: [],
-          };
+          });
         }
       }
     }
@@ -1002,11 +1062,11 @@ export async function supervisorAgentNode(
           // Skip bunker agent, finalize with available data
         } else {
           console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent (prerequisites validated)');
-          return {
+          return applyCircuitBreaker("bunker_agent", state, {
             next_agent: "bunker_agent",
             agent_context: agentContext,
             messages: [],
-          };
+          });
         }
       }
     }
@@ -1047,11 +1107,11 @@ export async function supervisorAgentNode(
     };
   }
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
-  return {
+  return applyCircuitBreaker("route_agent", state, {
     next_agent: "route_agent",
     agent_context: agentContext,
     messages: [],
-  };
+  });
 }
 
 /**
@@ -1683,14 +1743,91 @@ function extractBunkerDataFromMessages(messages: any[]): {
  * Finds best bunker option using port finder, price fetcher, and bunker analyzer tools.
  */
 export async function bunkerAgentNode(state: MultiAgentState) {
-  console.log('⚓ [BUNKER-AGENT] Node: Starting bunker analysis...');
+  console.log("\n⚓ [BUNKER-AGENT] Starting...");
   const agentStartTime = Date.now();
 
   // Get agent context from supervisor
   const context = state.agent_context?.bunker_agent;
   const requiredTools = context?.required_tools || [];
   
+  // DIAGNOSTIC: Verify tool assignment from supervisor
+  console.log("🔍 [TOOL-ASSIGNMENT-CHECK]", {
+    supervisor_assigned_tools: requiredTools,
+    context_priority: context?.priority,
+    has_context: !!context,
+    required_tools_count: requiredTools.length
+  });
+  
   console.log(`📋 [BUNKER-AGENT] Context: required_tools=${requiredTools.join(', ') || 'none'}`);
+
+  // EARLY EXIT: Check if bunker analysis already complete
+  const isComplete = !!(state.bunker_ports && state.port_prices && state.bunker_analysis);
+
+  console.log("🔍 [COMPLETION-CHECK]", {
+    has_bunker_ports: !!state.bunker_ports,
+    has_port_prices: !!state.port_prices,
+    has_bunker_analysis: !!state.bunker_analysis,
+    is_complete: isComplete,
+    action: isComplete ? "EARLY EXIT" : "PROCEED WITH ANALYSIS"
+  });
+
+  if (isComplete) {
+    console.log("✅ [BUNKER-AGENT] All data present - early exit");
+    console.log("\n📊 [BUNKER-AGENT-COMPLETION] Early Exit Triggered", {
+      bunker_ports_populated: !!state.bunker_ports,
+      port_prices_populated: !!state.port_prices,
+      bunker_analysis_populated: !!state.bunker_analysis,
+      state_updates_preview: {
+        bunker_ports_count: Array.isArray(state.bunker_ports) ? state.bunker_ports.length : (state.bunker_ports ? 1 : 0),
+        port_prices_count: Array.isArray(state.port_prices) ? state.port_prices.length : (state.port_prices ? 1 : 0),
+        has_analysis: !!state.bunker_analysis
+      },
+      next_expected_state: "Early exit prevents infinite loop - supervisor should route to finalize"
+    });
+    return {
+      messages: [
+        new HumanMessage({
+          content: "Bunker analysis complete - all required data already present.",
+          name: "bunker_agent_complete"
+        })
+      ],
+      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' }
+    };
+  }
+
+  // PREREQUISITE CHECK: Verify required input data exists
+  const hasPrerequisites = !!(state.route_data && state.vessel_timeline);
+
+  console.log("🔍 [PREREQUISITE-CHECK]", {
+    has_route_data: !!state.route_data,
+    has_vessel_timeline: !!state.vessel_timeline,
+    has_weather_consumption: !!state.weather_consumption,
+    can_proceed: hasPrerequisites
+  });
+
+  if (!hasPrerequisites) {
+    console.error("❌ [BUNKER-AGENT] Missing prerequisites - cannot proceed");
+    const missing = [];
+    if (!state.route_data) missing.push('route_data');
+    if (!state.vessel_timeline) missing.push('vessel_timeline');
+    return {
+      messages: [
+        new HumanMessage({
+          content: `Cannot proceed with bunker analysis: Missing ${missing.join(', ')}`,
+          name: "bunker_agent_error"
+        })
+      ],
+      agent_status: { ...(state.agent_status || {}), bunker_agent: 'failed' },
+      agent_errors: {
+        bunker_agent: {
+          error: `Missing prerequisites: ${missing.join(', ')}`,
+          timestamp: Date.now(),
+        },
+      }
+    };
+  }
+
+  console.log("✅ [BUNKER-AGENT] Prerequisites met - proceeding with analysis");
 
   // FIRST: Check if we have tool results to extract (like route and weather agents do)
   console.log(`🔍 [BUNKER-AGENT] Checking for tool results in ${state.messages.length} messages`);
@@ -1786,17 +1923,132 @@ export async function bunkerAgentNode(state: MultiAgentState) {
   // Use tiered LLM (Claude Haiku 4.5 for complex tool calling)
   const bunkerAgentLLM = LLMFactory.getLLMForAgent('bunker_agent', state.agent_context || undefined);
   const llmWithTools = (bunkerAgentLLM as any).bindTools(bunkerTools);
+  
+  // DIAGNOSTIC: Verify tool binding
+  console.log("🔍 [TOOL-BINDING-CHECK]", {
+    llm_type: bunkerAgentLLM.constructor.name,
+    has_bound_property: 'bound' in llmWithTools,
+    bound_count: (llmWithTools as any).bound?.length || 0,
+    bound_tool_names: (llmWithTools as any).bound?.map((t: any) => t.name) || [],
+    supervisor_assigned_tools: requiredTools,
+    context_priority: context?.priority,
+    bunker_tools_count: bunkerTools.length,
+    bunker_tools_names: bunkerTools.map((t: any) => t.name || t.constructor.name)
+  });
 
-  const systemPrompt = `You are the Bunker Agent. Your role is to:
-1. Find bunker ports along the route using route waypoints
-2. Fetch current fuel prices for those ports
-3. Analyze and rank bunker options based on total cost
+  // DIAGNOSTIC: Verify state data availability
+  console.log("🔍 [STATE-DATA-CHECK]", {
+    has_route_data: !!state.route_data,
+    route_data_structure: state.route_data ? {
+      has_waypoints: !!state.route_data.waypoints,
+      waypoint_count: state.route_data.waypoints?.length,
+      first_waypoint: state.route_data.waypoints?.[0],
+      has_origin_port: !!state.route_data.origin_port_code,
+      origin_port_code: state.route_data.origin_port_code,
+      has_destination_port: !!state.route_data.destination_port_code,
+      destination_port_code: state.route_data.destination_port_code,
+      distance_nm: state.route_data.distance_nm
+    } : null,
+    has_vessel_timeline: !!state.vessel_timeline,
+    timeline_length: state.vessel_timeline?.length,
+    has_weather_consumption: !!state.weather_consumption,
+    weather_data: state.weather_consumption ? {
+      base_consumption_mt: state.weather_consumption.base_consumption_mt,
+      weather_adjusted_consumption_mt: state.weather_consumption.weather_adjusted_consumption_mt,
+      consumption_increase_percent: state.weather_consumption.consumption_increase_percent
+    } : null,
+    bunker_data_status: {
+      has_bunker_ports: !!state.bunker_ports,
+      bunker_ports_count: Array.isArray(state.bunker_ports) ? state.bunker_ports.length : 0,
+      has_port_prices: !!state.port_prices,
+      has_bunker_analysis: !!state.bunker_analysis
+    }
+  });
 
-Use find_bunker_ports with route waypoints.
-Then use get_fuel_prices for the found ports.
-Finally, use analyze_bunker_options to rank all options.
+  const systemPrompt = `You are a maritime bunker optimization specialist for FuelSense 360.
 
-Be thorough and ensure you complete the full bunker optimization analysis.`;
+CRITICAL INSTRUCTIONS:
+1. You MUST call all required tools to complete bunker analysis
+2. You have access to state data below - use it as input to tools
+3. Call tools in sequence: find_bunker_ports → get_fuel_prices → analyze_bunker_options
+4. Do NOT provide explanations or summaries - ONLY call the tools with the data provided
+
+═══════════════════════════════════════════════════════════════════
+AVAILABLE STATE DATA (use this in tool arguments):
+═══════════════════════════════════════════════════════════════════
+
+${state.route_data ? `
+📍 ROUTE DATA (required for find_bunker_ports tool):
+
+Origin Port: ${state.route_data.origin_port_code || 'N/A'}
+Destination Port: ${state.route_data.destination_port_code || 'N/A'}
+Total Distance: ${state.route_data.distance_nm} nautical miles
+Route Type: ${state.route_data.route_type || 'N/A'}
+Total Waypoints: ${state.route_data.waypoints?.length || 0}
+
+WAYPOINTS FOR TOOL INPUT (copy these into find_bunker_ports arguments):
+${JSON.stringify(state.route_data.waypoints?.slice(0, 10) || [], null, 2)}
+${state.route_data.waypoints && state.route_data.waypoints.length > 10 ? `
+... and ${state.route_data.waypoints.length - 10} more waypoints (use full array from state.route_data.waypoints)
+` : ''}
+
+` : '❌ ERROR: Route data not available - cannot proceed'}
+
+${state.vessel_timeline ? `
+🚢 VESSEL TIMELINE (${state.vessel_timeline.length} positions available):
+First Position: ${JSON.stringify(state.vessel_timeline[0], null, 2)}
+Last Position: ${JSON.stringify(state.vessel_timeline[state.vessel_timeline.length - 1], null, 2)}
+` : '⚠️ Vessel timeline not available'}
+
+${state.weather_consumption ? `
+🌊 WEATHER-ADJUSTED CONSUMPTION DATA:
+- Base Consumption: ${state.weather_consumption.base_consumption_mt} MT
+- Weather Impact: +${state.weather_consumption.consumption_increase_percent}%
+- Adjusted Consumption: ${state.weather_consumption.weather_adjusted_consumption_mt} MT
+- Additional Fuel Needed: ${state.weather_consumption.additional_fuel_needed_mt} MT
+` : '⚠️ Weather consumption data not available'}
+
+═══════════════════════════════════════════════════════════════════
+TASK CHECKLIST (complete in order):
+═══════════════════════════════════════════════════════════════════
+
+${!state.bunker_ports ? `
+⬜ STEP 1: Call find_bunker_ports tool NOW
+   - Use the route waypoints shown above
+   - Set max_deviation_nm to 50 if not specified
+   - The tool will return available bunker ports along the route
+` : '✅ STEP 1: Bunker ports already found'}
+
+${!state.port_prices ? `
+⬜ STEP 2: Call get_fuel_prices tool NEXT
+   - Wait for find_bunker_ports to complete first
+   - Use the port_codes returned from Step 1
+   - The tool will return current fuel prices at those ports
+` : '✅ STEP 2: Port prices already fetched'}
+
+${!state.bunker_analysis ? `
+⬜ STEP 3: Call analyze_bunker_options tool LAST
+   - Wait for get_fuel_prices to complete first
+   - Combine bunker_ports + port_prices + consumption_data
+   - The tool will provide optimal bunkering recommendations
+` : '✅ STEP 3: Analysis already complete'}
+
+═══════════════════════════════════════════════════════════════════
+ACTION REQUIRED:
+═══════════════════════════════════════════════════════════════════
+
+${!state.bunker_ports || !state.port_prices || !state.bunker_analysis ? `
+YOU MUST CALL THE UNCHECKED TOOLS (⬜) NOW.
+
+Do NOT respond with explanations.
+Do NOT summarize the data.
+ONLY call the required tools using the data provided above.
+
+Start by calling the first unchecked tool in the sequence.
+` : `
+All tasks complete. Respond with: "Bunker analysis complete."
+`}
+`;
 
   try {
     // Build messages with system prompt and conversation history
@@ -1821,13 +2073,8 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       ? messagesWithoutSystem.slice(lastHumanMessageIndex)
       : messagesWithoutSystem.slice(-20);  // Fallback: last 20
 
-    // Combine system prompt with context about available data
-    let fullSystemPrompt = systemPrompt;
-    if (state.route_data) {
-      fullSystemPrompt += `\n\nAvailable data:
-- Route waypoints: ${state.route_data.waypoints.length} waypoints
-- Use route waypoints for find_bunker_ports`;
-    }
+    // System prompt already includes all state data, no need to append
+    const fullSystemPrompt = systemPrompt;
 
     // Step 5: Build final message array for LLM
     const messages = [
@@ -1840,6 +2087,36 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       TIMEOUTS.AGENT,
       'Bunker agent timed out'
     );
+
+    // DIAGNOSTIC: Inspect LLM response structure
+    console.log("🔬 [LLM-RESPONSE-STRUCTURE]", {
+      response_type: response.constructor.name,
+      response_has_tool_calls: 'tool_calls' in response,
+      tool_calls_value: response.tool_calls,
+      tool_calls_is_array: Array.isArray(response.tool_calls),
+      tool_calls_count: response.tool_calls?.length || 0,
+      content_length: response.content?.length || 0,
+      additional_keys: Object.keys(response).filter(k => !['content', 'tool_calls', 'id'].includes(k))
+    });
+
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      console.log("🔧 [LLM-TOOL-CALLS-DETAIL]");
+      response.tool_calls.forEach((tc: any, idx: number) => {
+        console.log(`  Tool Call [${idx}]:`, {
+          name: tc.name,
+          has_id: !!tc.id,
+          id: tc.id,
+          has_args: !!tc.args,
+          args_keys: tc.args ? Object.keys(tc.args) : [],
+          args_preview: tc.args ? JSON.stringify(tc.args).slice(0, 100) : null
+        });
+      });
+    } else {
+      console.log("⚠️ [NO-TOOL-CALLS]", {
+        content_preview: typeof response.content === 'string' ? response.content.slice(0, 200) : String(response.content || '').slice(0, 200),
+        this_indicates: "LLM responded with text instead of tool calls"
+      });
+    }
 
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('bunker_agent', agentDuration);
@@ -1864,6 +2141,25 @@ Be thorough and ensure you complete the full bunker optimization analysis.`;
       console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
     }
     console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
+
+    // Calculate final state after updates
+    const finalBunkerPorts = stateUpdates.bunker_ports || state.bunker_ports;
+    const finalPortPrices = stateUpdates.port_prices || state.port_prices;
+    const finalBunkerAnalysis = stateUpdates.bunker_analysis || state.bunker_analysis;
+
+    // Completion logging - verify state fields are populated
+    console.log("\n📊 [BUNKER-AGENT-COMPLETION]", {
+      bunker_ports_populated: !!finalBunkerPorts,
+      port_prices_populated: !!finalPortPrices,
+      bunker_analysis_populated: !!finalBunkerAnalysis,
+      state_updates_preview: {
+        bunker_ports_count: Array.isArray(finalBunkerPorts) ? finalBunkerPorts.length : (finalBunkerPorts ? 1 : 0),
+        port_prices_count: Array.isArray(finalPortPrices) ? finalPortPrices.length : (finalPortPrices ? 1 : 0),
+        has_analysis: !!finalBunkerAnalysis
+      },
+      state_updates_keys: Object.keys(stateUpdates),
+      next_expected_state: "All bunker data should be present for next iteration or finalize"
+    });
 
     // Return both the LLM response and any state updates from extracted data
     return { 

@@ -139,11 +139,9 @@ function shouldEscapeToSupervisor(state: MultiAgentState): boolean {
  *    routing to tools indefinitely.
  */
 export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' {
-  const messages = state.messages;
-
-  console.log(`🔀 [AGENT-TOOL-ROUTER] Decision point - Total messages: ${messages.length}`);
-
-  // Circuit breaker: escape if agent is stuck
+  const messages = state.messages || [];
+  
+  // Circuit breaker: escape if agent is stuck (check early)
   if (shouldEscapeToSupervisor(state)) {
     return 'supervisor';
   }
@@ -153,93 +151,98 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
     console.warn(`⚠️ [AGENT-TOOL-ROUTER] Too many messages (${messages.length}), forcing supervisor`);
     return 'supervisor';
   }
-
-  // Edge case: no messages
+  
+  // Early validation
   if (messages.length === 0) {
-    console.log('🔀 [AGENT-TOOL-ROUTER] ❌ No messages → supervisor');
-    return 'supervisor';
+    console.error("❌ [ROUTER] No messages in state");
+    return "supervisor";
   }
-
-  // CRITICAL FIX: Only check the LAST message, not historical messages
-  // This prevents routing on old tool_calls that were already executed
+  
   const lastMessage = messages[messages.length - 1];
   
-  // Log what we're examining with proper type identification
-  // CRITICAL: Use property-based detection (works in production/minified code)
-  console.log(`🔍 [AGENT-TOOL-ROUTER] Examining last message:`);
+  // Multiple type detection methods (handles LangChain quirks)
+  const isAIMessage = lastMessage instanceof AIMessage || 
+                      (lastMessage as any)._getType?.() === 'ai' ||
+                      lastMessage.constructor.name === 'AIMessage' ||
+                      (lastMessage as any).type === 'ai';
   
-  // Property-based detection - check for tool_calls directly
-  const lastMsgAny = lastMessage as any;
-  const toolCalls = lastMsgAny.tool_calls;
-  const hasToolCalls = toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0;
-  const hasToolCallId = lastMsgAny.tool_call_id;
+  // Validate tool_calls structure
+  const hasToolCallsProperty = 'tool_calls' in lastMessage;
+  const toolCallsIsArray = Array.isArray((lastMessage as any).tool_calls);
+  const toolCallsHasItems = (lastMessage as any).tool_calls && (lastMessage as any).tool_calls.length > 0;
   
-  // Determine message type for logging
-  let msgType: string;
-  if (hasToolCalls) {
-    msgType = 'AIMessage(with_tools)';
-  } else if (hasToolCallId) {
-    msgType = 'ToolMessage';
-  } else {
-    msgType = 'HumanMessage/Other';
-  }
+  // Validate each tool call has required fields
+  const allToolCallsValid = toolCallsHasItems && 
+    (lastMessage as any).tool_calls.every((tc: any) => 
+      tc.name && 
+      tc.id && 
+      tc.args !== undefined
+    );
   
-  console.log(`  [LAST] ${msgType}${hasToolCalls ? ` → ${toolCalls.length} tools` : ''}`);
-
-  // Type guard: check for tool_calls property (works in production)
-  if (!hasToolCalls) {
-    console.log(`🔀 [AGENT-TOOL-ROUTER] ❌ Last message has no tool_calls (${msgType}) → supervisor`);
-    return 'supervisor';
-  }
-
-  const toolCount = toolCalls.length;
-  const toolNames = toolCalls.map((tc: any) => tc.name).join(', ') || 'none';
-
-  // CRITICAL FIX: Check if these tool_calls have already been executed
-  // Extract tool_call IDs, filtering out any undefined/null values
-  const toolCallIds = new Set<string>(
-    toolCalls
-      .map((tc: any) => tc.id)
-      .filter((id: any): id is string => typeof id === 'string' && id.length > 0)
-  );
+  console.log("🔀 [ROUTER-ANALYSIS]", {
+    is_ai_message: isAIMessage,
+    has_tool_calls_prop: hasToolCallsProperty,
+    tool_calls_is_array: toolCallsIsArray,
+    tool_calls_count: (lastMessage as any).tool_calls?.length || 0,
+    all_valid: allToolCallsValid,
+    decision: allToolCallsValid ? "→ tools" : "→ supervisor"
+  });
   
-  if (toolCallIds.size === 0) {
-    console.warn('⚠️ [AGENT-TOOL-ROUTER] Tool calls have no IDs, routing to tools anyway');
-    return 'tools';
-  }
-  
-  // Look for ToolMessages that match these tool_call_ids
-  // Search forward through all messages to find ToolMessages with matching tool_call_ids
-  const executedToolCallIds = new Set<string>();
-  
-  // Search through all messages using property-based detection (works in production)
-  for (const msg of messages) {
-    // Property-based check: look for tool_call_id property
-    const toolCallId = (msg as any).tool_call_id;
-    if (toolCallId && typeof toolCallId === 'string' && toolCallIds.has(toolCallId)) {
-      executedToolCallIds.add(toolCallId);
-      console.log(`  ✓ Found executed tool: ${toolCallId}`);
+  // Route to tools if valid tool calls exist
+  if (allToolCallsValid) {
+    // Check if these tool_calls have already been executed
+    const toolCalls = (lastMessage as any).tool_calls;
+    const toolCallIds = new Set<string>(
+      toolCalls
+        .map((tc: any) => tc.id)
+        .filter((id: any): id is string => typeof id === 'string' && id.length > 0)
+    );
+    
+    if (toolCallIds.size === 0) {
+      console.warn('⚠️ [AGENT-TOOL-ROUTER] Tool calls have no IDs, routing to tools anyway');
+      console.log("  ✅ Routing to tools node");
+      console.log("  📋 Tools to execute:", toolCalls.map((tc: any) => tc.name).join(", "));
+      return "tools";
+    }
+    
+    // Check for already executed tool calls
+    const executedToolCallIds = new Set<string>();
+    for (const msg of messages) {
+      const toolCallId = (msg as any).tool_call_id;
+      if (toolCallId && typeof toolCallId === 'string' && toolCallIds.has(toolCallId)) {
+        executedToolCallIds.add(toolCallId);
+      }
+    }
+    
+    const unexecutedToolCallIds = Array.from(toolCallIds).filter(
+      id => !executedToolCallIds.has(id)
+    );
+    
+    if (unexecutedToolCallIds.length > 0) {
+      console.log("  ✅ Routing to tools node");
+      console.log("  📋 Tools to execute:", toolCalls.map((tc: any) => tc.name).join(", "));
+      return "tools";
+    } else {
+      console.log("  ⚠️ All tool calls already executed → supervisor");
+      return "supervisor";
     }
   }
   
-  // Determine which tool_calls are still unexecuted
-  const unexecutedToolCallIds = Array.from(toolCallIds).filter(
-    id => !executedToolCallIds.has(id)
-  );
+  // Check for completion signals
+  const messageName = (lastMessage as any).name;
+  const messageContent = typeof (lastMessage as any).content === 'string' 
+    ? (lastMessage as any).content 
+    : String((lastMessage as any).content || '');
   
-  // Route to tools ONLY if there are unexecuted tool_calls
-  if (unexecutedToolCallIds.length > 0) {
-    console.log(
-      `🔀 [AGENT-TOOL-ROUTER] ✅✅ ROUTING TO TOOLS! ${unexecutedToolCallIds.length}/${toolCallIds.size} unexecuted tools: ${toolNames}`
-    );
-    return 'tools';
+  if (messageName?.includes("_complete") || 
+      messageName?.includes("_error") ||
+      (messageContent && messageContent.toLowerCase().includes("complete"))) {
+    console.log("  ✅ Completion signal detected → supervisor");
+    return "supervisor";
   }
-
-  // All tool_calls have been executed - return to supervisor
-  console.log(
-    `🔀 [AGENT-TOOL-ROUTER] ❌ All ${toolCallIds.size} tool_calls already executed → supervisor`
-  );
-  return 'supervisor';
+  
+  console.log("  ⚠️ No valid tool calls → supervisor");
+  return "supervisor";
 }
 
 // ============================================================================
