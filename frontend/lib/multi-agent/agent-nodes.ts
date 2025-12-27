@@ -1923,7 +1923,7 @@ export async function bunkerAgentNode(
           
           return {
             port_code: port.port.port_code,
-            port_name: port.port.port_name,
+            port_name: port.port.name,
             lat: port.port.coordinates.lat,
             lon: port.port.coordinates.lon,
             estimated_arrival: nearestWaypoint?.datetime || new Date().toISOString(),
@@ -1979,7 +1979,9 @@ export async function bunkerAgentNode(
           'Price fetcher timed out'
         );
         
-        console.log(`✅ [BUNKER-WORKFLOW] Fetched prices for ${portPrices.length} ports`);
+        // Log with actual count
+        const priceCount = Array.isArray(portPrices) ? portPrices.length : 0;
+        console.log(`✅ [BUNKER-WORKFLOW] Fetched prices for ${priceCount} ports`);
         
       } catch (error: any) {
         console.error('❌ [BUNKER-WORKFLOW] Price fetcher error:', error.message);
@@ -2001,13 +2003,28 @@ export async function bunkerAgentNode(
       console.log('📊 [BUNKER-WORKFLOW] Analyzing bunker options...');
       
       try {
+        // Extract fuel parameters from fuelRequirements
+        const primaryFuelType = fuelRequirements.fuel_types[0] || 'VLSFO';
+        const fuelQuantity = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
+        
+        // Match manual implementation parameter structure exactly
         const analyzerInput = {
-          ports: bunkerPorts.ports,
-          prices: portPrices,
-          fuel_requirements: fuelRequirements,
-          port_weather: portWeather, // Include weather if available
-          vessel_speed_knots: 14, // Default speed
+          bunker_ports: bunkerPorts.ports,
+          port_prices: portPrices,
+          fuel_quantity_mt: fuelQuantity,
+          fuel_type: primaryFuelType,
+          vessel_speed_knots: 14,                  // Default speed (route_data doesn't store speed)
+          vessel_consumption_mt_per_day: 35,       // Default consumption rate
+          port_weather: portWeather,               // Optional weather data
         };
+        
+        console.log('📊 [BUNKER-WORKFLOW] Analyzer input:', {
+          ports_count: bunkerPorts.ports.length,
+          prices_count: Array.isArray(portPrices) ? portPrices.length : 0,
+          fuel_quantity_mt: fuelQuantity,
+          fuel_type: primaryFuelType,
+          has_weather_data: !!portWeather
+        });
         
         bunkerAnalysis = await withTimeout(
           executeBunkerAnalyzerTool(analyzerInput),
@@ -2015,7 +2032,13 @@ export async function bunkerAgentNode(
           'Bunker analyzer timed out'
         );
         
-        console.log(`✅ [BUNKER-WORKFLOW] Analysis complete: ${bunkerAnalysis.ranked_ports?.length || 0} ports ranked`);
+        const rankedCount = bunkerAnalysis?.ranked_ports?.length || 0;
+        const bestPort = bunkerAnalysis?.ranked_ports?.[0];
+        console.log(`✅ [BUNKER-WORKFLOW] Analysis complete: ${rankedCount} ports ranked`);
+        
+        if (bestPort) {
+          console.log(`   Best option: ${bestPort.port_name} - Total cost: $${bestPort.total_cost?.toFixed(2) || 'N/A'}`);
+        }
         
       } catch (error: any) {
         console.error('❌ [BUNKER-WORKFLOW] Bunker analyzer error:', error.message);
