@@ -748,12 +748,6 @@ export async function supervisorAgentNode(
           agentContext.bunker_agent.needs_port_weather = true;
         }
       }
-      } else if (!agentContext || !agentContext.bunker_agent?.required_tools || agentContext.bunker_agent.required_tools.length === 0) {
-        // Fallback to generating context if no execution plan
-        const intent = analyzeQueryIntent(userQuery);
-        agentContext = generateAgentContext(intent, state);
-        console.log(`⚠️ [SUPERVISOR] No execution plan tools for bunker_agent, using legacy context`);
-      }
       
       return applyCircuitBreaker("bunker_agent", state, {
         next_agent: "bunker_agent",
