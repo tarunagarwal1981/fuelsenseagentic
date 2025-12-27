@@ -167,6 +167,33 @@ Rules:
    - calculate_weather_consumption (to calculate weather-adjusted fuel consumption)
    This is required because bunker analysis needs weather consumption data to provide accurate recommendations.
 
+7. WEATHER SAFETY FOR BUNKERING: If query contains keywords like:
+   - "safe bunkering", "bunkering weather", "weather for bunkering", "weather safety"
+   - "weather conditions", "bunkering conditions"
+   Then bunker_agent MUST be assigned the check_bunker_port_weather tool.
+   This tool checks if ports have safe conditions (wave ≤1.5m, wind ≤25kt) during bunkering window.
+
+8. MULTI-FUEL TYPE HANDLING:
+   - If query specifies multiple fuel types (e.g., "650 MT VLSFO and 80 MT LSGO"), extract:
+     * Primary fuel type and quantity (e.g., "VLSFO: 650 MT")
+     * Secondary fuel type and quantity (e.g., "LSGO: 80 MT")
+   - Include fuel requirements in bunker_agent's task_description
+   - Bunker agent must find ports with ALL required fuel types
+   - Example task_description: "Find ports with VLSFO (650 MT) and LSGO (80 MT), check weather safety"
+
+9. DEFAULT FUEL TYPE:
+   - If query does NOT specify fuel type, assume VLSFO as default
+   - Add to task_description: "Fuel type not specified, using VLSFO as default"
+   - Note: Future enhancement will add human-in-loop to confirm fuel type selection
+
+10. HUMAN-IN-LOOP ARCHITECTURE (FUTURE):
+    - System is designed to support human approval for high-stakes decisions
+    - Flag in task_description when human confirmation would be beneficial:
+      * "fuel_type_unspecified" - User didn't mention fuel type
+      * "large_quantity" - Fuel quantity >500 MT (high-cost decision)
+      * "weather_marginal" - Weather conditions are borderline
+    - These flags will be used by future human-in-loop UI components
+
 Return a JSON object with this structure:
 {
   "execution_order": ["route_agent", "weather_agent", "bunker_agent"],

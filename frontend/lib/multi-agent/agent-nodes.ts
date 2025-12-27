@@ -1829,6 +1829,12 @@ export async function bunkerAgentNode(state: MultiAgentState) {
 
   console.log("✅ [BUNKER-AGENT] Prerequisites met - proceeding with analysis");
 
+  // Extract user query for context
+  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
+  const userQuery = userMessage 
+    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+    : '';
+
   // FIRST: Check if we have tool results to extract (like route and weather agents do)
   console.log(`🔍 [BUNKER-AGENT] Checking for tool results in ${state.messages.length} messages`);
   const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
@@ -1882,6 +1888,7 @@ export async function bunkerAgentNode(state: MultiAgentState) {
     'find_bunker_ports': findBunkerPortsTool,
     'get_fuel_prices': getFuelPricesTool,
     'analyze_bunker_options': analyzeBunkerOptionsTool,
+    'check_bunker_port_weather': checkPortWeatherTool,
   };
   
   // STRICT: Only use supervisor-assigned tools
@@ -1965,17 +1972,130 @@ export async function bunkerAgentNode(state: MultiAgentState) {
     }
   });
 
-  const systemPrompt = `You are a maritime bunker optimization specialist for FuelSense 360.
+  const systemPrompt = `You are the Bunker Agent - a specialized maritime fuel optimization expert.
 
-CRITICAL INSTRUCTIONS:
-1. You MUST call all required tools to complete bunker analysis
-2. You have access to state data below - use it as input to tools
-3. Call tools in sequence: find_bunker_ports → get_fuel_prices → analyze_bunker_options
-4. Do NOT provide explanations or summaries - ONLY call the tools with the data provided
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORE RESPONSIBILITIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-═══════════════════════════════════════════════════════════════════
-AVAILABLE STATE DATA (use this in tool arguments):
-═══════════════════════════════════════════════════════════════════
+1. Find optimal bunker ports along the maritime route
+2. Fetch current fuel prices for all required fuel types
+3. Check weather safety at bunker ports (if assigned)
+4. Analyze and rank options by total cost
+5. Ensure all fuel type requirements are met
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WORKFLOW SEQUENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: FIND BUNKER PORTS
+   Tool: find_bunker_ports
+   Input: Route waypoints (available in state.route_data.waypoints)
+   Output: List of candidate ports with distances from route
+
+Step 2: FETCH FUEL PRICES
+   Tool: get_fuel_prices
+   Input: Port codes from Step 1 + required fuel types
+   Output: Prices for each fuel type at each port
+   
+   ⚠️ CRITICAL: Always specify fuel_types parameter!
+   - If user requested specific types: Use those (e.g., ["VLSFO", "LSGO"])
+   - If no type mentioned: Use ["VLSFO"] as default
+   - Multi-fuel: Request ALL types (e.g., ["VLSFO", "LSGO", "MGO"])
+
+Step 3: CHECK WEATHER SAFETY (if tool assigned)
+   Tool: check_bunker_port_weather
+   Input: Bunker ports with estimated arrival times
+   Output: Weather risk assessment, bunkering feasibility
+   
+   Safety Limits:
+   - Max wave height: 1.5 meters
+   - Max wind speed: 25 knots
+   - Both must be satisfied for "safe" classification
+   
+   Risk Levels:
+   - Low: wave <1.2m AND wind <20kt (ideal conditions)
+   - Medium: wave 1.2-1.5m OR wind 20-25kt (acceptable)
+   - High: wave >1.5m OR wind >25kt (unsafe - exclude from recommendations)
+
+Step 4: ANALYZE OPTIONS
+   Tool: analyze_bunker_options
+   Input: Ports, prices, fuel quantities
+   Output: Ranked recommendations by total cost
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MULTI-FUEL TYPE HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When user requests multiple fuel types (e.g., "650 MT VLSFO and 80 MT LSGO"):
+
+1. VERIFY AVAILABILITY:
+   - Only recommend ports that have ALL required fuel types
+   - Exclude ports missing any fuel type
+   - Check prices for each type individually
+
+2. CALCULATE TOTAL COST:
+   Formula: Total = (Qty1 × Price1) + (Qty2 × Price2) + ... + Deviation Cost
+   
+   Example for VLSFO + LSGO:
+   - VLSFO cost: 650 MT × $580/MT = $377,000
+   - LSGO cost: 80 MT × $720/MT = $57,600
+   - Deviation: 50 nm × $X/nm = $Y
+   - TOTAL: $377,000 + $57,600 + $Y = $434,600 + $Y
+
+3. PROVIDE BREAKDOWN:
+   Always show cost breakdown by fuel type:
+   "Port X: VLSFO $377k + LSGO $57.6k + Deviation $10k = TOTAL $444.6k"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WEATHER SAFETY INTEGRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If check_bunker_port_weather tool is assigned:
+
+1. CHECK ALL CANDIDATE PORTS:
+   - Use estimated arrival times from route calculation
+   - Default bunkering window: 8 hours
+   - Check weather during entire bunkering operation
+
+2. EXCLUDE UNSAFE PORTS:
+   - High risk ports (wave >1.5m OR wind >25kt) → EXCLUDE
+   - Medium risk ports → Include with warning
+   - Low risk ports → Preferred
+
+3. REPORT WEATHER CONDITIONS:
+   For each port include:
+   - "Weather Risk: Low/Medium/High"
+   - "Max wave: X.Xm (limit: 1.5m)"
+   - "Max wind: XXkt (limit: 25kt)"
+   - "Bunkering window: Safe ✓" or "Unsafe ✗"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEFAULT FUEL TYPE HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If user did NOT specify fuel type:
+- Default to VLSFO (most common marine fuel)
+- Mention in final output: "Note: Using VLSFO as default fuel type"
+- Future: This will trigger human-in-loop to confirm fuel selection
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUPERVISOR CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Your assigned task: ${context?.task_description || 'Complete bunker analysis'}
+Priority level: ${context?.priority || 'critical'}
+Required tools: ${requiredTools.join(', ')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USER QUERY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"${userQuery}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AVAILABLE STATE DATA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${state.route_data ? `
 📍 ROUTE DATA (required for find_bunker_ports tool):
@@ -2008,9 +2128,9 @@ ${state.weather_consumption ? `
 - Additional Fuel Needed: ${state.weather_consumption.additional_fuel_needed_mt} MT
 ` : '⚠️ Weather consumption data not available'}
 
-═══════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TASK CHECKLIST (complete in order):
-═══════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${!state.bunker_ports ? `
 ⬜ STEP 1: Call find_bunker_ports tool NOW
@@ -2023,32 +2143,36 @@ ${!state.port_prices ? `
 ⬜ STEP 2: Call get_fuel_prices tool NEXT
    - Wait for find_bunker_ports to complete first
    - Use the port_codes returned from Step 1
+   - Specify fuel_types parameter (use user's request or ["VLSFO"] as default)
    - The tool will return current fuel prices at those ports
 ` : '✅ STEP 2: Port prices already fetched'}
 
+${requiredTools.includes('check_bunker_port_weather') && !state.port_weather_status ? `
+⬜ STEP 3: Call check_bunker_port_weather tool
+   - Wait for find_bunker_ports to complete first
+   - Use the port_codes and estimated arrival times
+   - This will check weather safety for bunkering operations
+` : requiredTools.includes('check_bunker_port_weather') ? '✅ STEP 3: Weather safety already checked' : ''}
+
 ${!state.bunker_analysis ? `
-⬜ STEP 3: Call analyze_bunker_options tool LAST
-   - Wait for get_fuel_prices to complete first
+⬜ STEP ${requiredTools.includes('check_bunker_port_weather') ? '4' : '3'}: Call analyze_bunker_options tool LAST
+   - Wait for previous steps to complete first
    - Combine bunker_ports + port_prices + consumption_data
+   - Exclude High risk ports if weather was checked
    - The tool will provide optimal bunkering recommendations
-` : '✅ STEP 3: Analysis already complete'}
+` : `✅ STEP ${requiredTools.includes('check_bunker_port_weather') ? '4' : '3'}: Analysis already complete`}
 
-═══════════════════════════════════════════════════════════════════
-ACTION REQUIRED:
-═══════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXECUTION INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${!state.bunker_ports || !state.port_prices || !state.bunker_analysis ? `
-YOU MUST CALL THE UNCHECKED TOOLS (⬜) NOW.
+1. Use ALL assigned tools in sequence
+2. Wait for each tool to complete before calling the next
+3. If weather safety assigned: Exclude High risk ports from final recommendations
+4. Always provide cost breakdowns for multi-fuel scenarios
+5. Be thorough and complete the full analysis
 
-Do NOT respond with explanations.
-Do NOT summarize the data.
-ONLY call the required tools using the data provided above.
-
-Start by calling the first unchecked tool in the sequence.
-` : `
-All tasks complete. Respond with: "Bunker analysis complete."
-`}
-`;
+Begin with find_bunker_ports using the route waypoints.`;
 
   try {
     // Build messages with system prompt and conversation history
@@ -2352,33 +2476,140 @@ ${state.weather_forecast ? 'Use the weather forecast data to provide detailed we
 IMPORTANT: Focus ONLY on weather information. Do NOT include bunker port recommendations, fuel cost analysis, or bunkering advice.`;
   } else if (needsBunker) {
     // Bunker query - include bunker analysis
-    systemPrompt = `You are the Finalization Agent. Your role is to create a comprehensive bunker recommendation from all the collected data.
+    // Build comprehensive data context
+    let dataContext = `Available Data:\n`;
+    if (state.route_data) {
+      dataContext += `- Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}${(state.route_data as any)._from_cache ? ' (from cache)' : ''}, ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h\n`;
+    }
+    if (state.weather_consumption) {
+      dataContext += `- Weather impact: +${state.weather_consumption.consumption_increase_percent.toFixed(2)}% consumption increase\n`;
+    }
+    if (state.bunker_analysis) {
+      dataContext += `- Bunker analysis: ${state.bunker_analysis.recommendations.length} options analyzed\n`;
+      if (state.bunker_analysis.best_option) {
+        dataContext += `- Best option: ${state.bunker_analysis.best_option.port_name} - $${state.bunker_analysis.best_option.total_cost_usd?.toFixed(2) || 'N/A'}\n`;
+      }
+    }
+    if (state.port_weather_status) {
+      dataContext += `- Port weather: ${state.port_weather_status.length} ports checked for safety\n`;
+    }
+    dataContext += stateSummary;
+    if (errorContext) {
+      dataContext += errorContext;
+    }
 
-User Query: "${userQuery}"
+    systemPrompt = `You are synthesizing the final recommendation for a maritime bunker planning query.
 
-Available data:
-- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}${(state.route_data as any)._from_cache ? ' (from cache)' : ''}` : 'Not available'}
-- Weather impact: ${state.weather_consumption ? `${state.weather_consumption.consumption_increase_percent.toFixed(2)}% increase` : 'Not available'}
-- Bunker analysis: ${state.bunker_analysis ? `${state.bunker_analysis.recommendations.length} options analyzed` : 'Not available'}
-- Port weather: ${state.port_weather_status ? `${state.port_weather_status.length} ports checked` : 'Not available'}${errorContext}${stateSummary}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESPONSE STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Create a comprehensive, well-structured recommendation that includes:
-1. Route summary${state.route_data ? '' : ' (if available)'}
-2. Weather impact on fuel consumption${state.weather_consumption ? '' : ' (if available - note if missing)'}
-3. Best bunker port recommendation with justification${state.bunker_analysis ? '' : ' (if available - note if missing)'}
-4. Port weather conditions assessment${state.port_weather_status ? '' : ' (if available - note if missing)'}
-5. Total cost analysis${state.bunker_analysis ? '' : ' (if available - note if missing)'}
-6. Risk assessment
+Format your response based on query complexity:
+
+FOR MULTI-FUEL BUNKER QUERIES (e.g., "VLSFO and LSGO"):
+
+📍 ROUTE SUMMARY
+Origin → Destination: [ports], Distance: [nm], Duration: [hours]
+
+🌊 WEATHER IMPACT
+- Consumption increase: [X]% due to weather
+- Severe conditions: [Yes/No - describe if any]
+
+⚓ RECOMMENDED BUNKER PORT
+
+Port: [Port Name] ([Port Code])
+Distance from route: [X] nm
+
+Fuel Availability:
+✓ VLSFO - Available
+✓ LSGO - Available
+[✗ MGO - Not available]
+
+Cost Breakdown:
+• VLSFO: [quantity] MT × $[price]/MT = $[subtotal]
+• LSGO: [quantity] MT × $[price]/MT = $[subtotal]
+• Deviation cost: $[amount]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOTAL COST: $[sum]
+
+Weather Conditions: [If check_port_weather was used]
+• Risk Level: Low/Medium/High
+• Wave height: [X]m (limit: 1.5m)
+• Wind speed: [X]kt (limit: 25kt)
+• Bunkering window: Safe ✓ / Unsafe ✗
+
+🔄 ALTERNATIVE OPTIONS
+[List 1-2 other ports with their total costs]
+
+💰 POTENTIAL SAVINGS
+Choosing this port saves $[amount] vs most expensive option
+
+---
+
+FOR SIMPLE BUNKER QUERIES (single fuel type):
+
+[Use simpler format - route summary, recommended port with single fuel price, weather if applicable, alternatives]
+
+FOR ROUTE-ONLY QUERIES:
+
+[Just route and weather summary, no bunker analysis]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WEATHER SAFETY REPORTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If weather safety was checked:
+- Always include weather conditions in port recommendations
+- Highlight risk level (Low/Medium/High)
+- If High risk: Explain why port was excluded
+- If Medium risk: Add warning but allow recommendation
+- If Low risk: Emphasize safe conditions
+
+Weather Risk Criteria:
+• Low: wave <1.2m AND wind <20kt
+• Medium: wave 1.2-1.5m OR wind 20-25kt
+• High: wave >1.5m OR wind >25kt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FUEL TYPE HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Multi-fuel requirements:
+- Show EACH fuel type with quantity and price
+- Calculate subtotal for EACH fuel type
+- Show combined TOTAL cost
+
+Default fuel type:
+- If analysis used default VLSFO, mention: "Note: Using VLSFO as default fuel type (not specified in query)"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AVAILABLE DATA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${dataContext}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ORIGINAL USER QUERY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"${userQuery}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Use the appropriate response structure based on query type
+2. Include all fuel types if multi-fuel query
+3. Always show cost breakdowns with specific numbers
+4. Include weather safety if data available
+5. Be specific, clear, and well-formatted
+6. Use emojis for visual structure (📍 🌊 ⚓ etc.)
 
 ${hasErrors ? 'IMPORTANT: Clearly indicate which data is missing and how it affects the recommendation. Be transparent about limitations.' : ''}
 
-Be clear, concise, and actionable.
+${!state.route_data ? 'IMPORTANT: If route calculation failed, provide a helpful but concise explanation. Focus on:\n1. What went wrong (route service unavailable)\n2. What this means for the user (cannot provide bunker recommendations without route)\n3. What they can do (retry in a few moments, or use general port knowledge)\n4. Keep it brief - avoid overly technical details or lengthy disclaimers.' : ''}
 
-IMPORTANT: If route calculation failed, provide a helpful but concise explanation. Focus on:
-1. What went wrong (route service unavailable)
-2. What this means for the user (cannot provide bunker recommendations without route)
-3. What they can do (retry in a few moments, or use general port knowledge)
-4. Keep it brief - avoid overly technical details or lengthy disclaimers.`;
+Generate a comprehensive, well-structured recommendation now.`;
   } else {
     // Route-only query or general query
     systemPrompt = `You are the Route Planning Agent. Provide information about the requested route.
