@@ -722,28 +722,32 @@ export async function supervisorAgentNode(
       // Always use execution plan's tool assignments if available, otherwise fall back to legacy
       let agentContext = state.agent_context;
       
-      // If execution plan exists and has bunker agent tools, use them
-      if (executionPlan && executionPlan.agent_tool_assignments['bunker_agent'] && executionPlan.agent_tool_assignments['bunker_agent'].length > 0) {
-        const bunkerTools = executionPlan.agent_tool_assignments['bunker_agent'];
-        console.log(`✅ [SUPERVISOR] Using execution plan tools for bunker_agent: ${bunkerTools.join(', ')}`);
-        
-        // Ensure agentContext exists and has bunker_agent
-        if (!agentContext) {
-          const intent = analyzeQueryIntent(userQuery);
-          agentContext = generateAgentContext(intent, state);
+      // Bunker agent is now deterministic - doesn't need tool assignments
+      // Ensure agentContext exists and has bunker_agent
+      if (!agentContext) {
+        const intent = analyzeQueryIntent(userQuery);
+        agentContext = generateAgentContext(intent, state);
+      }
+      
+      // Set bunker agent context (no tools needed - deterministic workflow)
+      if (!agentContext.bunker_agent) {
+        agentContext.bunker_agent = {
+          needs_weather_consumption: true,
+          needs_port_weather: executionPlan?.agent_tool_assignments['bunker_agent']?.includes('check_bunker_port_weather') || false,
+          required_tools: [], // Deterministic - no tools needed
+          task_description: executionPlan?.agent_tool_assignments['bunker_agent'] 
+            ? `Execute bunker workflow: ${executionPlan.agent_tool_assignments['bunker_agent'].join(', ')}`
+            : 'Execute bunker analysis workflow',
+          priority: 'critical' as const
+        };
+      } else {
+        // Ensure required_tools is empty (deterministic workflow)
+        agentContext.bunker_agent.required_tools = [];
+        // Update needs_port_weather from execution plan if available
+        if (executionPlan?.agent_tool_assignments['bunker_agent']?.includes('check_bunker_port_weather')) {
+          agentContext.bunker_agent.needs_port_weather = true;
         }
-        
-        // Set bunker agent tools from execution plan
-        if (!agentContext.bunker_agent) {
-          agentContext.bunker_agent = {
-            needs_weather_consumption: true,
-            needs_port_weather: true,
-            required_tools: [],
-            task_description: '',
-            priority: 'critical' as const
-          };
-        }
-        agentContext.bunker_agent.required_tools = bunkerTools;
+      }
       } else if (!agentContext || !agentContext.bunker_agent?.required_tools || agentContext.bunker_agent.required_tools.length === 0) {
         // Fallback to generating context if no execution plan
         const intent = analyzeQueryIntent(userQuery);
@@ -1193,6 +1197,50 @@ function extractVesselSpecsFromQuery(query: string, state: MultiAgentState): any
       LSGO: 3,
     },
   };
+}
+
+/**
+ * Extract fuel requirements from user message
+ */
+function extractFuelRequirements(message: string): {
+  fuel_types: string[];
+  quantities: { [key: string]: number };
+  total_quantity: number;
+} {
+  const fuelTypes: string[] = [];
+  const quantities: { [key: string]: number } = {};
+  let totalQuantity = 0;
+  
+  // Enhanced patterns to match Query 15 complexity
+  const fuelPatterns = [
+    { type: 'VLSFO', regex: /(\d+)\s*MT\s*VLSFO/i },
+    { type: 'LSGO', regex: /(\d+)\s*MT\s*LSGO/i },
+    { type: 'MGO', regex: /(\d+)\s*MT\s*MGO/i },
+    { type: 'HSFO', regex: /(\d+)\s*MT\s*HSFO/i },
+    // Also match "35 MT/day VLSFO" consumption patterns
+    { type: 'VLSFO', regex: /(\d+)\s*MT\/day\s*VLSFO/i },
+    { type: 'LSGO', regex: /(\d+)\s*MT\/day\s*LSGO/i },
+  ];
+  
+  for (const pattern of fuelPatterns) {
+    const match = message.match(pattern.regex);
+    if (match) {
+      const quantity = parseInt(match[1]);
+      if (!fuelTypes.includes(pattern.type)) {
+        fuelTypes.push(pattern.type);
+      }
+      quantities[pattern.type] = (quantities[pattern.type] || 0) + quantity;
+      totalQuantity += quantity;
+    }
+  }
+  
+  // Default to VLSFO if nothing found
+  if (fuelTypes.length === 0) {
+    fuelTypes.push('VLSFO');
+    quantities['VLSFO'] = 0; // Will be calculated from consumption
+  }
+  
+  return { fuel_types: fuelTypes, quantities, total_quantity: totalQuantity };
 }
 
 /**
@@ -1738,583 +1786,308 @@ function extractBunkerDataFromMessages(messages: any[]): {
 }
 
 /**
- * Bunker Agent Node
+ * Bunker Agent Node - DETERMINISTIC WORKFLOW (No LLM)
  * 
- * Finds best bunker option using port finder, price fetcher, and bunker analyzer tools.
+ * Executes bunker analysis workflow without LLM decision-making.
+ * Flow:
+ * 1. Find ports along route (if needed)
+ * 2. Check weather safety (if user requested)
+ * 3. Get fuel prices (always)
+ * 4. Analyze and rank options (always)
+ * 
+ * This is a deterministic workflow - no LLM decisions needed.
  */
-export async function bunkerAgentNode(state: MultiAgentState) {
-  console.log("\n⚓ [BUNKER-AGENT] Starting...");
-  const agentStartTime = Date.now();
-
-  // Get agent context from supervisor
-  const context = state.agent_context?.bunker_agent;
-  const requiredTools = context?.required_tools || [];
+export async function bunkerAgentNode(
+  state: MultiAgentState
+): Promise<Partial<MultiAgentState>> {
+  console.log('\n⚓ [BUNKER-WORKFLOW] Starting deterministic workflow...');
+  const startTime = Date.now();
   
-  // DIAGNOSTIC: Verify tool assignment from supervisor
-  console.log("🔍 [TOOL-ASSIGNMENT-CHECK]", {
-    supervisor_assigned_tools: requiredTools,
-    context_priority: context?.priority,
-    has_context: !!context,
-    required_tools_count: requiredTools.length
-  });
-  
-  console.log(`📋 [BUNKER-AGENT] Context: required_tools=${requiredTools.join(', ') || 'none'}`);
-
-  // EARLY EXIT: Check if bunker analysis already complete
-  const isComplete = !!(state.bunker_ports && state.port_prices && state.bunker_analysis);
-
-  console.log("🔍 [COMPLETION-CHECK]", {
-    has_bunker_ports: !!state.bunker_ports,
-    has_port_prices: !!state.port_prices,
-    has_bunker_analysis: !!state.bunker_analysis,
-    is_complete: isComplete,
-    action: isComplete ? "EARLY EXIT" : "PROCEED WITH ANALYSIS"
-  });
-
-  if (isComplete) {
-    console.log("✅ [BUNKER-AGENT] All data present - early exit");
-    console.log("\n📊 [BUNKER-AGENT-COMPLETION] Early Exit Triggered", {
-      bunker_ports_populated: !!state.bunker_ports,
-      port_prices_populated: !!state.port_prices,
-      bunker_analysis_populated: !!state.bunker_analysis,
-      state_updates_preview: {
-        bunker_ports_count: Array.isArray(state.bunker_ports) ? state.bunker_ports.length : (state.bunker_ports ? 1 : 0),
-        port_prices_count: Array.isArray(state.port_prices) ? state.port_prices.length : (state.port_prices ? 1 : 0),
-        has_analysis: !!state.bunker_analysis
-      },
-      next_expected_state: "Early exit prevents infinite loop - supervisor should route to finalize"
-    });
-    return {
-      messages: [
-        new HumanMessage({
-          content: "Bunker analysis complete - all required data already present.",
-          name: "bunker_agent_complete"
-        })
-      ],
-      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' }
-    };
-  }
-
-  // PREREQUISITE CHECK: Verify required input data exists
-  const hasPrerequisites = !!(state.route_data && state.vessel_timeline);
-
-  console.log("🔍 [PREREQUISITE-CHECK]", {
-    has_route_data: !!state.route_data,
-    has_vessel_timeline: !!state.vessel_timeline,
-    has_weather_consumption: !!state.weather_consumption,
-    can_proceed: hasPrerequisites
-  });
-
-  if (!hasPrerequisites) {
-    console.error("❌ [BUNKER-AGENT] Missing prerequisites - cannot proceed");
-    const missing = [];
-    if (!state.route_data) missing.push('route_data');
-    if (!state.vessel_timeline) missing.push('vessel_timeline');
-    return {
-      messages: [
-        new HumanMessage({
-          content: `Cannot proceed with bunker analysis: Missing ${missing.join(', ')}`,
-          name: "bunker_agent_error"
-        })
-      ],
-      agent_status: { ...(state.agent_status || {}), bunker_agent: 'failed' },
-      agent_errors: {
-        bunker_agent: {
-          error: `Missing prerequisites: ${missing.join(', ')}`,
-          timestamp: Date.now(),
-        },
-      }
-    };
-  }
-
-  console.log("✅ [BUNKER-AGENT] Prerequisites met - proceeding with analysis");
-
-  // Extract user query for context
-  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQuery = userMessage 
-    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-    : '';
-
-  // FIRST: Check if we have tool results to extract (like route and weather agents do)
-  console.log(`🔍 [BUNKER-AGENT] Checking for tool results in ${state.messages.length} messages`);
-  const toolMessages = state.messages.filter(m => m instanceof ToolMessage);
-  console.log(`🔍 [BUNKER-AGENT] Found ${toolMessages.length} ToolMessages`);
-  
-  const extractedData = extractBunkerDataFromMessages(state.messages);
-  const stateUpdates: any = {};
-  
-  if (extractedData.bunker_ports && !state.bunker_ports) {
-    stateUpdates.bunker_ports = extractedData.bunker_ports;
-    console.log(`✅ [BUNKER-AGENT] Extracted bunker_ports from tool results (${extractedData.bunker_ports.length} ports)`);
-  }
-  
-  if (extractedData.port_prices && !state.port_prices) {
-    stateUpdates.port_prices = extractedData.port_prices;
-    console.log('✅ [BUNKER-AGENT] Extracted port_prices from tool results');
-  }
-  
-  if (extractedData.bunker_analysis && !state.bunker_analysis) {
-    stateUpdates.bunker_analysis = extractedData.bunker_analysis;
-    console.log(`✅ [BUNKER-AGENT] Extracted bunker_analysis from tool results`);
-  }
-  
-  // If we got all bunker data from tool results, we're done
-  if (extractedData.bunker_ports && extractedData.port_prices && extractedData.bunker_analysis) {
-    console.log('✅ [BUNKER-AGENT] All bunker data extracted, returning state update');
-    return { 
-      ...stateUpdates, 
-      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' } 
-    };
-  }
-
-  // STRICT ORCHESTRATION: Enforce supervisor tool assignments
-  // Agents can ONLY use tools assigned by supervisor - no fallback to all tools
-  if (requiredTools.length === 0) {
-    console.error('❌ [BUNKER-AGENT] No tools assigned by supervisor - cannot proceed');
-    return {
-      agent_status: { bunker_agent: 'failed' },
-      agent_errors: {
-        bunker_agent: {
-          error: 'No tools assigned by supervisor. Supervisor must assign tools before agent can execute.',
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[BUNKER-AGENT] Cannot proceed - supervisor has not assigned any tools')],
-    };
-  }
-  
-  // Map tool names to actual tool objects (only bunker agent's tools)
-  const toolMap: Record<string, any> = {
-    'find_bunker_ports': findBunkerPortsTool,
-    'get_fuel_prices': getFuelPricesTool,
-    'analyze_bunker_options': analyzeBunkerOptionsTool,
-    'check_bunker_port_weather': checkPortWeatherTool,
-  };
-  
-  // STRICT: Only use supervisor-assigned tools
-  console.log(`✅ [BUNKER-AGENT] Using supervisor-specified tools: ${requiredTools.join(', ')}`);
-  const bunkerTools = requiredTools
-    .map(toolName => toolMap[toolName])
-    .filter(Boolean); // Remove undefined
-  
-  if (bunkerTools.length === 0) {
-    console.error('❌ [BUNKER-AGENT] Supervisor assigned tools but none matched bunker agent tools');
-    return {
-      agent_status: { bunker_agent: 'failed' },
-      agent_errors: {
-        bunker_agent: {
-          error: `Supervisor assigned invalid tools: ${requiredTools.join(', ')}. Bunker agent only has: find_bunker_ports, get_fuel_prices, analyze_bunker_options`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[BUNKER-AGENT] Invalid tool assignments from supervisor')],
-    };
-  }
-  
-  // Validate all assigned tools belong to bunker agent
-  const invalidTools = requiredTools.filter(toolName => !toolMap[toolName]);
-  if (invalidTools.length > 0) {
-    console.error(`❌ [BUNKER-AGENT] Supervisor assigned tools from other agents: ${invalidTools.join(', ')}`);
-    return {
-      agent_status: { bunker_agent: 'failed' },
-      agent_errors: {
-        bunker_agent: {
-          error: `Supervisor assigned tools from other agents: ${invalidTools.join(', ')}. Bunker agent cannot use other agents' tools.`,
-          timestamp: Date.now(),
-        },
-      },
-      messages: [new AIMessage('[BUNKER-AGENT] Cannot use tools from other agents')],
-    };
-  }
-  
-  // Use tiered LLM (Claude Haiku 4.5 for complex tool calling)
-  const bunkerAgentLLM = LLMFactory.getLLMForAgent('bunker_agent', state.agent_context || undefined);
-  const llmWithTools = (bunkerAgentLLM as any).bindTools(bunkerTools);
-  
-  // DIAGNOSTIC: Verify tool binding
-  console.log("🔍 [TOOL-BINDING-CHECK]", {
-    llm_type: bunkerAgentLLM.constructor.name,
-    has_bound_property: 'bound' in llmWithTools,
-    bound_count: (llmWithTools as any).bound?.length || 0,
-    bound_tool_names: (llmWithTools as any).bound?.map((t: any) => t.name) || [],
-    supervisor_assigned_tools: requiredTools,
-    context_priority: context?.priority,
-    bunker_tools_count: bunkerTools.length,
-    bunker_tools_names: bunkerTools.map((t: any) => t.name || t.constructor.name)
-  });
-
-  // DIAGNOSTIC: Verify state data availability
-  console.log("🔍 [STATE-DATA-CHECK]", {
-    has_route_data: !!state.route_data,
-    route_data_structure: state.route_data ? {
-      has_waypoints: !!state.route_data.waypoints,
-      waypoint_count: state.route_data.waypoints?.length,
-      first_waypoint: state.route_data.waypoints?.[0],
-      has_origin_port: !!state.route_data.origin_port_code,
-      origin_port_code: state.route_data.origin_port_code,
-      has_destination_port: !!state.route_data.destination_port_code,
-      destination_port_code: state.route_data.destination_port_code,
-      distance_nm: state.route_data.distance_nm
-    } : null,
-    has_vessel_timeline: !!state.vessel_timeline,
-    timeline_length: state.vessel_timeline?.length,
-    has_weather_consumption: !!state.weather_consumption,
-    weather_data: state.weather_consumption ? {
-      base_consumption_mt: state.weather_consumption.base_consumption_mt,
-      weather_adjusted_consumption_mt: state.weather_consumption.weather_adjusted_consumption_mt,
-      consumption_increase_percent: state.weather_consumption.consumption_increase_percent
-    } : null,
-    bunker_data_status: {
-      has_bunker_ports: !!state.bunker_ports,
-      bunker_ports_count: Array.isArray(state.bunker_ports) ? state.bunker_ports.length : 0,
-      has_port_prices: !!state.port_prices,
-      has_bunker_analysis: !!state.bunker_analysis
-    }
-  });
-
-  const systemPrompt = `You are the Bunker Agent - a specialized maritime fuel optimization expert.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CORE RESPONSIBILITIES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Find optimal bunker ports along the maritime route
-2. Fetch current fuel prices for all required fuel types
-3. Check weather safety at bunker ports (if assigned)
-4. Analyze and rank options by total cost
-5. Ensure all fuel type requirements are met
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WORKFLOW SEQUENCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Step 1: FIND BUNKER PORTS
-   Tool: find_bunker_ports
-   Input: Route waypoints (available in state.route_data.waypoints)
-   Output: List of candidate ports with distances from route
-
-Step 2: FETCH FUEL PRICES
-   Tool: get_fuel_prices
-   Input: Port codes from Step 1 + required fuel types
-   Output: Prices for each fuel type at each port
-   
-   ⚠️ CRITICAL: Always specify fuel_types parameter!
-   - If user requested specific types: Use those (e.g., ["VLSFO", "LSGO"])
-   - If no type mentioned: Use ["VLSFO"] as default
-   - Multi-fuel: Request ALL types (e.g., ["VLSFO", "LSGO", "MGO"])
-
-Step 3: CHECK WEATHER SAFETY (if tool assigned)
-   Tool: check_bunker_port_weather
-   Input: Bunker ports with estimated arrival times
-   Output: Weather risk assessment, bunkering feasibility
-   
-   Safety Limits:
-   - Max wave height: 1.5 meters
-   - Max wind speed: 25 knots
-   - Both must be satisfied for "safe" classification
-   
-   Risk Levels:
-   - Low: wave <1.2m AND wind <20kt (ideal conditions)
-   - Medium: wave 1.2-1.5m OR wind 20-25kt (acceptable)
-   - High: wave >1.5m OR wind >25kt (unsafe - exclude from recommendations)
-
-Step 4: ANALYZE OPTIONS
-   Tool: analyze_bunker_options
-   Input: Ports, prices, fuel quantities
-   Output: Ranked recommendations by total cost
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MULTI-FUEL TYPE HANDLING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-When user requests multiple fuel types (e.g., "650 MT VLSFO and 80 MT LSGO"):
-
-1. VERIFY AVAILABILITY:
-   - Only recommend ports that have ALL required fuel types
-   - Exclude ports missing any fuel type
-   - Check prices for each type individually
-
-2. CALCULATE TOTAL COST:
-   Formula: Total = (Qty1 × Price1) + (Qty2 × Price2) + ... + Deviation Cost
-   
-   Example for VLSFO + LSGO:
-   - VLSFO cost: 650 MT × $580/MT = $377,000
-   - LSGO cost: 80 MT × $720/MT = $57,600
-   - Deviation: 50 nm × $X/nm = $Y
-   - TOTAL: $377,000 + $57,600 + $Y = $434,600 + $Y
-
-3. PROVIDE BREAKDOWN:
-   Always show cost breakdown by fuel type:
-   "Port X: VLSFO $377k + LSGO $57.6k + Deviation $10k = TOTAL $444.6k"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WEATHER SAFETY INTEGRATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-If check_bunker_port_weather tool is assigned:
-
-1. CHECK ALL CANDIDATE PORTS:
-   - Use estimated arrival times from route calculation
-   - Default bunkering window: 8 hours
-   - Check weather during entire bunkering operation
-
-2. EXCLUDE UNSAFE PORTS:
-   - High risk ports (wave >1.5m OR wind >25kt) → EXCLUDE
-   - Medium risk ports → Include with warning
-   - Low risk ports → Preferred
-
-3. REPORT WEATHER CONDITIONS:
-   For each port include:
-   - "Weather Risk: Low/Medium/High"
-   - "Max wave: X.Xm (limit: 1.5m)"
-   - "Max wind: XXkt (limit: 25kt)"
-   - "Bunkering window: Safe ✓" or "Unsafe ✗"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DEFAULT FUEL TYPE HANDLING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-If user did NOT specify fuel type:
-- Default to VLSFO (most common marine fuel)
-- Mention in final output: "Note: Using VLSFO as default fuel type"
-- Future: This will trigger human-in-loop to confirm fuel selection
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SUPERVISOR CONTEXT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Your assigned task: ${context?.task_description || 'Complete bunker analysis'}
-Priority level: ${context?.priority || 'critical'}
-Required tools: ${requiredTools.join(', ')}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-USER QUERY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-"${userQuery}"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE STATE DATA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${state.route_data ? `
-📍 ROUTE DATA (required for find_bunker_ports tool):
-
-Origin Port: ${state.route_data.origin_port_code || 'N/A'}
-Destination Port: ${state.route_data.destination_port_code || 'N/A'}
-Total Distance: ${state.route_data.distance_nm} nautical miles
-Route Type: ${state.route_data.route_type || 'N/A'}
-Total Waypoints: ${state.route_data.waypoints?.length || 0}
-
-WAYPOINTS FOR TOOL INPUT (copy these into find_bunker_ports arguments):
-${JSON.stringify(state.route_data.waypoints?.slice(0, 10) || [], null, 2)}
-${state.route_data.waypoints && state.route_data.waypoints.length > 10 ? `
-... and ${state.route_data.waypoints.length - 10} more waypoints (use full array from state.route_data.waypoints)
-` : ''}
-
-` : '❌ ERROR: Route data not available - cannot proceed'}
-
-${state.vessel_timeline ? `
-🚢 VESSEL TIMELINE (${state.vessel_timeline.length} positions available):
-First Position: ${JSON.stringify(state.vessel_timeline[0], null, 2)}
-Last Position: ${JSON.stringify(state.vessel_timeline[state.vessel_timeline.length - 1], null, 2)}
-` : '⚠️ Vessel timeline not available'}
-
-${state.weather_consumption ? `
-🌊 WEATHER-ADJUSTED CONSUMPTION DATA:
-- Base Consumption: ${state.weather_consumption.base_consumption_mt} MT
-- Weather Impact: +${state.weather_consumption.consumption_increase_percent}%
-- Adjusted Consumption: ${state.weather_consumption.weather_adjusted_consumption_mt} MT
-- Additional Fuel Needed: ${state.weather_consumption.additional_fuel_needed_mt} MT
-` : '⚠️ Weather consumption data not available'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK CHECKLIST (complete in order):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${!state.bunker_ports ? `
-⬜ STEP 1: Call find_bunker_ports tool NOW
-   - Use the route waypoints shown above
-   - Set max_deviation_nm to 50 if not specified
-   - The tool will return available bunker ports along the route
-` : '✅ STEP 1: Bunker ports already found'}
-
-${!state.port_prices ? `
-⬜ STEP 2: Call get_fuel_prices tool NEXT
-   - Wait for find_bunker_ports to complete first
-   - Use the port_codes returned from Step 1
-   - Specify fuel_types parameter (use user's request or ["VLSFO"] as default)
-   - The tool will return current fuel prices at those ports
-` : '✅ STEP 2: Port prices already fetched'}
-
-${requiredTools.includes('check_bunker_port_weather') && !state.port_weather_status ? `
-⬜ STEP 3: Call check_bunker_port_weather tool
-   - Wait for find_bunker_ports to complete first
-   - Use the port_codes and estimated arrival times
-   - This will check weather safety for bunkering operations
-` : requiredTools.includes('check_bunker_port_weather') ? '✅ STEP 3: Weather safety already checked' : ''}
-
-${!state.bunker_analysis ? `
-⬜ STEP ${requiredTools.includes('check_bunker_port_weather') ? '4' : '3'}: Call analyze_bunker_options tool LAST
-   - Wait for previous steps to complete first
-   - Combine bunker_ports + port_prices + consumption_data
-   - Exclude High risk ports if weather was checked
-   - The tool will provide optimal bunkering recommendations
-` : `✅ STEP ${requiredTools.includes('check_bunker_port_weather') ? '4' : '3'}: Analysis already complete`}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXECUTION INSTRUCTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Use ALL assigned tools in sequence
-2. Wait for each tool to complete before calling the next
-3. If weather safety assigned: Exclude High risk ports from final recommendations
-4. Always provide cost breakdowns for multi-fuel scenarios
-5. Be thorough and complete the full analysis
-
-Begin with find_bunker_ports using the route waypoints.`;
-
   try {
-    // Build messages with system prompt and conversation history
-    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
+    // ========================================================================
+    // Extract context from supervisor
+    // ========================================================================
     
-    // Step 1: Get all messages (don't trim yet - we need full context for validation)
-    const allMessages = state.messages;
-
-    // Step 2: Remove SystemMessages (we'll add our own)
-    let messagesWithoutSystem = allMessages.filter(
-      (msg) => !(msg instanceof SystemMessage) && 
-               msg.constructor.name !== 'SystemMessage'
-    );
-
-    // Step 3: Find last HumanMessage
-    const lastHumanMessageIndex = messagesWithoutSystem.findLastIndex(
-      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
-    );
-
-    // Step 4: Take messages from last human query onward (keep recent context)
-    const messagesToInclude = lastHumanMessageIndex >= 0
-      ? messagesWithoutSystem.slice(lastHumanMessageIndex)
-      : messagesWithoutSystem.slice(-20);  // Fallback: last 20
-
-    // System prompt already includes all state data, no need to append
-    const fullSystemPrompt = systemPrompt;
-
-    // Step 5: Build final message array for LLM
-    const messages = [
-      new SystemMessage(fullSystemPrompt),
-      ...messagesToInclude,
-    ];
-
-    const response: any = await withTimeout(
-      llmWithTools.invoke(messages),
-      TIMEOUTS.AGENT,
-      'Bunker agent timed out'
-    );
-
-    // DIAGNOSTIC: Inspect LLM response structure
-    console.log("🔬 [LLM-RESPONSE-STRUCTURE]", {
-      response_type: response.constructor.name,
-      response_has_tool_calls: 'tool_calls' in response,
-      tool_calls_value: response.tool_calls,
-      tool_calls_is_array: Array.isArray(response.tool_calls),
-      tool_calls_count: response.tool_calls?.length || 0,
-      content_length: response.content?.length || 0,
-      additional_keys: Object.keys(response).filter(k => !['content', 'tool_calls', 'id'].includes(k))
-    });
-
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log("🔧 [LLM-TOOL-CALLS-DETAIL]");
-      response.tool_calls.forEach((tc: any, idx: number) => {
-        console.log(`  Tool Call [${idx}]:`, {
-          name: tc.name,
-          has_id: !!tc.id,
-          id: tc.id,
-          has_args: !!tc.args,
-          args_keys: tc.args ? Object.keys(tc.args) : [],
-          args_preview: tc.args ? JSON.stringify(tc.args).slice(0, 100) : null
-        });
-      });
+    const agentContext = state.agent_context?.bunker_agent;
+    console.log('📋 [BUNKER-WORKFLOW] Context from supervisor:');
+    console.log(`   Priority: ${agentContext?.priority || 'normal'}`);
+    console.log(`   Task: ${agentContext?.task_description || 'none'}`);
+    console.log(`   Needs weather safety: ${agentContext?.needs_port_weather || false}`);
+    
+    // ========================================================================
+    // Check prerequisites
+    // ========================================================================
+    
+    if (!state.route_data?.waypoints || state.route_data.waypoints.length === 0) {
+      console.error('❌ [BUNKER-WORKFLOW] Missing route waypoints - cannot find ports');
+      return {
+        agent_status: { 
+          ...(state.agent_status || {}), 
+          bunker_agent: 'failed' 
+        },
+        agent_errors: {
+          bunker_agent: {
+            error: 'Route data is required to find bunker ports. Please calculate route first.',
+            timestamp: Date.now(),
+          },
+        },
+        messages: [
+          ...state.messages,
+          new AIMessage({
+            content: 'Error: Route data is required to find bunker ports. Please calculate route first.',
+          }),
+        ],
+      };
+    }
+    
+    console.log('✅ [BUNKER-WORKFLOW] Prerequisite met: route_data (waypoints available)');
+    
+    // ========================================================================
+    // Extract user query details
+    // ========================================================================
+    
+    const userMessage = state.messages.find(m => m instanceof HumanMessage);
+    const userQuery = userMessage?.content?.toString() || '';
+    
+    // Extract fuel requirements from query
+    const fuelRequirements = extractFuelRequirements(userQuery);
+    console.log('📊 [BUNKER-WORKFLOW] Fuel requirements:', fuelRequirements);
+    
+    // Check if user wants weather safety analysis
+    const needsWeatherSafety = 
+      agentContext?.needs_port_weather || 
+      userQuery.toLowerCase().includes('safe') ||
+      userQuery.toLowerCase().includes('weather');
+    console.log(`🌊 [BUNKER-WORKFLOW] Weather safety check: ${needsWeatherSafety ? 'YES' : 'NO'}`);
+    
+    // ========================================================================
+    // STEP 1: Find Bunker Ports
+    // ========================================================================
+    
+    let bunkerPorts: any = null;
+    
+    if (!state.bunker_ports) {
+      console.log('🔍 [BUNKER-WORKFLOW] Finding bunker ports along route...');
+      
+      try {
+        const portFinderInput = {
+          route_waypoints: state.route_data.waypoints,
+          max_deviation_nm: 150, // Standard deviation limit
+          fuel_types: fuelRequirements.fuel_types.length > 0 
+            ? fuelRequirements.fuel_types 
+            : ['VLSFO'], // Default to VLSFO if not specified
+        };
+        
+        bunkerPorts = await withTimeout(
+          executePortFinderTool(portFinderInput),
+          TIMEOUTS.ROUTE_CALCULATION,
+          'Port finder timed out'
+        );
+        
+        console.log(`✅ [BUNKER-WORKFLOW] Found ${bunkerPorts.total_ports_found} ports within 150nm of route`);
+        
+        if (bunkerPorts.total_ports_found === 0) {
+          console.warn('⚠️ [BUNKER-WORKFLOW] No bunker ports found along route');
+          return {
+            bunker_ports: bunkerPorts,
+            agent_status: { 
+              ...(state.agent_status || {}), 
+              bunker_agent: 'success' 
+            },
+            messages: [
+              ...state.messages,
+              new AIMessage({
+                content: 'No suitable bunker ports found within 150 nautical miles of the route. Consider increasing deviation limit or choosing an alternative route.',
+              }),
+            ],
+          };
+        }
+      } catch (error: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Port finder error:', error.message);
+        recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        throw error;
+      }
     } else {
-      console.log("⚠️ [NO-TOOL-CALLS]", {
-        content_preview: typeof response.content === 'string' ? response.content.slice(0, 200) : String(response.content || '').slice(0, 200),
-        this_indicates: "LLM responded with text instead of tool calls"
-      });
+      console.log('✅ [BUNKER-WORKFLOW] Using existing bunker ports from state');
+      bunkerPorts = state.bunker_ports;
     }
-
-    const agentDuration = Date.now() - agentStartTime;
-    recordAgentTime('bunker_agent', agentDuration);
-    recordAgentExecution('bunker_agent', agentDuration, true);
-
-    console.log('✅ [BUNKER-AGENT] Node: LLM responded');
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`🔧 [BUNKER-AGENT] Agent wants to call: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
+    
+    // ========================================================================
+    // STEP 2: Check Port Weather Safety (if requested)
+    // ========================================================================
+    
+    let portWeather: any = null;
+    
+    if (needsWeatherSafety && !state.port_weather_status) {
+      console.log('🌊 [BUNKER-WORKFLOW] Checking weather safety at bunker ports...');
+      
+      try {
+        // Calculate estimated arrival times for each port
+        const bunkerPortsWithArrival = bunkerPorts.ports.map((port: any) => {
+          // Find the waypoint nearest to this port
+          const nearestWaypoint = state.vessel_timeline?.[port.nearest_waypoint_index];
+          
+          return {
+            port_code: port.port.port_code,
+            port_name: port.port.port_name,
+            lat: port.port.coordinates.lat,
+            lon: port.port.coordinates.lon,
+            estimated_arrival: nearestWaypoint?.datetime || new Date().toISOString(),
+            bunkering_duration_hours: 8, // Standard bunkering duration
+          };
+        });
+        
+        const portWeatherInput = {
+          bunker_ports: bunkerPortsWithArrival,
+        };
+        
+        portWeather = await withTimeout(
+          executePortWeatherTool(portWeatherInput),
+          TIMEOUTS.WEATHER_API,
+          'Port weather check timed out'
+        );
+        
+        const safePortsCount = portWeather.filter((p: any) => p.bunkering_feasible).length;
+        console.log(`✅ [BUNKER-WORKFLOW] Weather checked: ${safePortsCount}/${portWeather.length} ports have safe conditions`);
+        
+      } catch (error: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Port weather error:', error.message);
+        console.warn('⚠️ [BUNKER-WORKFLOW] Continuing without weather safety data');
+        // Don't fail the entire workflow - continue without weather data
+      }
+    } else if (state.port_weather_status) {
+      console.log('✅ [BUNKER-WORKFLOW] Using existing port weather from state');
+      portWeather = state.port_weather_status;
+    } else {
+      console.log('⏭️ [BUNKER-WORKFLOW] Skipping weather safety check (not requested)');
     }
-
-    console.log(`✅ [BUNKER-AGENT] Completed successfully`);
-    console.log(`   • Tools called: ${response.tool_calls?.map((tc: any) => tc.name).join(', ') || 'none'}`);
-    console.log(`   • Duration: ${agentDuration}ms`);
-
-    // NEW DEBUG LOGGING
-    console.log(`📤 [BUNKER-AGENT] Returning to state:`);
-    console.log(`   • Message type: ${response.constructor.name}`);
-    console.log(`   • Has tool_calls: ${response.tool_calls ? 'YES' : 'NO'}`);
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      console.log(`   • Tool call count: ${response.tool_calls.length}`);
-      console.log(`   • Tool names: ${response.tool_calls.map((tc: any) => tc.name).join(', ')}`);
-      console.log(`   • Tool IDs: ${response.tool_calls.map((tc: any) => tc.id).join(', ')}`);
+    
+    // ========================================================================
+    // STEP 3: Get Fuel Prices
+    // ========================================================================
+    
+    let portPrices: any = null;
+    
+    if (!state.port_prices) {
+      console.log('💰 [BUNKER-WORKFLOW] Fetching fuel prices for candidate ports...');
+      
+      try {
+        const priceFetcherInput = {
+          port_codes: bunkerPorts.ports.map((p: any) => p.port.port_code),
+          fuel_types: fuelRequirements.fuel_types.length > 0 
+            ? fuelRequirements.fuel_types 
+            : ['VLSFO'],
+        };
+        
+        portPrices = await withTimeout(
+          executePriceFetcherTool(priceFetcherInput),
+          TIMEOUTS.PRICE_FETCH,
+          'Price fetcher timed out'
+        );
+        
+        console.log(`✅ [BUNKER-WORKFLOW] Fetched prices for ${portPrices.length} ports`);
+        
+      } catch (error: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Price fetcher error:', error.message);
+        recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        throw error;
+      }
+    } else {
+      console.log('✅ [BUNKER-WORKFLOW] Using existing port prices from state');
+      portPrices = state.port_prices;
     }
-    console.log(`   • State updates: ${JSON.stringify(Object.keys(stateUpdates))}`);
-
-    // Calculate final state after updates
-    const finalBunkerPorts = stateUpdates.bunker_ports || state.bunker_ports;
-    const finalPortPrices = stateUpdates.port_prices || state.port_prices;
-    const finalBunkerAnalysis = stateUpdates.bunker_analysis || state.bunker_analysis;
-
-    // Completion logging - verify state fields are populated
-    console.log("\n📊 [BUNKER-AGENT-COMPLETION]", {
-      bunker_ports_populated: !!finalBunkerPorts,
-      port_prices_populated: !!finalPortPrices,
-      bunker_analysis_populated: !!finalBunkerAnalysis,
-      state_updates_preview: {
-        bunker_ports_count: Array.isArray(finalBunkerPorts) ? finalBunkerPorts.length : (finalBunkerPorts ? 1 : 0),
-        port_prices_count: Array.isArray(finalPortPrices) ? finalPortPrices.length : (finalPortPrices ? 1 : 0),
-        has_analysis: !!finalBunkerAnalysis
-      },
-      state_updates_keys: Object.keys(stateUpdates),
-      next_expected_state: "All bunker data should be present for next iteration or finalize"
-    });
-
-    // Return both the LLM response and any state updates from extracted data
-    return { 
-      ...stateUpdates,
-      messages: [response], 
-      agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' } 
-    };
-  } catch (error) {
-    const agentDuration = Date.now() - agentStartTime;
-    recordAgentTime('bunker_agent', agentDuration);
-    recordAgentExecution('bunker_agent', agentDuration, false);
     
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
+    // ========================================================================
+    // STEP 4: Analyze and Rank Bunker Options
+    // ========================================================================
     
-    console.error(`❌ [BUNKER-AGENT] Node error: ${errorMessage}`);
-    console.warn(`⚠️ [BUNKER-AGENT] Marking bunker agent as failed, supervisor will proceed to finalize`);
+    let bunkerAnalysis: any = null;
     
-    // Mark as failed - don't throw, let supervisor handle it
+    if (!state.bunker_analysis) {
+      console.log('📊 [BUNKER-WORKFLOW] Analyzing bunker options...');
+      
+      try {
+        const analyzerInput = {
+          ports: bunkerPorts.ports,
+          prices: portPrices,
+          fuel_requirements: fuelRequirements,
+          port_weather: portWeather, // Include weather if available
+          vessel_speed_knots: 14, // Default speed
+        };
+        
+        bunkerAnalysis = await withTimeout(
+          executeBunkerAnalyzerTool(analyzerInput),
+          TIMEOUTS.AGENT,
+          'Bunker analyzer timed out'
+        );
+        
+        console.log(`✅ [BUNKER-WORKFLOW] Analysis complete: ${bunkerAnalysis.ranked_ports?.length || 0} ports ranked`);
+        
+      } catch (error: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Bunker analyzer error:', error.message);
+        recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        throw error;
+      }
+    } else {
+      console.log('✅ [BUNKER-WORKFLOW] Using existing bunker analysis from state');
+      bunkerAnalysis = state.bunker_analysis;
+    }
+    
+    // ========================================================================
+    // Complete workflow
+    // ========================================================================
+    
+    const duration = Date.now() - startTime;
+    console.log(`✅ [BUNKER-WORKFLOW] Complete in ${duration}ms`);
+    
+    recordAgentExecution('bunker_agent', duration, true);
+    
     return {
-      agent_status: { bunker_agent: 'failed' },
+      bunker_ports: bunkerPorts,
+      port_weather_status: portWeather,
+      port_prices: portPrices,
+      bunker_analysis: bunkerAnalysis,
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        bunker_agent: 'success' 
+      },
+      messages: [
+        ...state.messages,
+        new AIMessage({
+          content: JSON.stringify({
+            type: 'bunker_workflow_complete',
+            ports_found: bunkerPorts.total_ports_found,
+            weather_checked: portWeather ? portWeather.length : 0,
+            prices_fetched: portPrices ? portPrices.length : 0,
+            recommended_port: bunkerAnalysis?.ranked_ports?.[0]?.port_name || 'Unknown',
+          }),
+        }),
+      ],
+    };
+    
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [BUNKER-WORKFLOW] Error after ${duration}ms:`, error.message);
+    
+    // Record error metrics
+    recordAgentExecution('bunker_agent', duration, false);
+    
+    return {
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        bunker_agent: 'failed' 
+      },
       agent_errors: {
         bunker_agent: {
-          error: isTimeout ? 'Bunker agent timed out after 30 seconds' : errorMessage,
+          error: error.message,
           timestamp: Date.now(),
         },
       },
       messages: [
-        new SystemMessage(
-          `Bunker agent encountered an error: ${errorMessage}. The system will continue with available data.`
-        ),
+        ...state.messages,
+        new AIMessage({
+          content: `Bunker workflow encountered an error: ${error.message}. The system will continue with available data.`,
+        }),
       ],
     };
   }
@@ -2787,10 +2560,20 @@ AgentRegistry.registerAgent({
   outputs: ['weather_forecast', 'weather_consumption', 'port_weather_status']
 });
 
-// Register Bunker Agent
+// Register Bunker Agent (DETERMINISTIC WORKFLOW)
 AgentRegistry.registerAgent({
   agent_name: 'bunker_agent',
-  description: 'Finds bunker ports along route, validates weather safety, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis',
+  description: 'Deterministic workflow: Finds bunker ports along route, validates weather safety, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis. No LLM tool-calling - executes workflow directly.',
+  is_deterministic: true,
+  workflow_steps: [
+    '1. Find bunker ports along route (if needed)',
+    '2. Check weather safety at ports (if requested)',
+    '3. Fetch fuel prices for all required fuel types',
+    '4. Analyze and rank options by total cost'
+  ],
+  available_tools: [], // No tools - calls functions directly
+  /*
+  // DEPRECATED: Tools are now called directly in deterministic workflow
   available_tools: [
     {
       tool_name: 'find_bunker_ports',
@@ -2855,6 +2638,7 @@ AgentRegistry.registerAgent({
       produces: ['bunker_analysis']
     }
   ],
+  */
   prerequisites: ['route_data'],
   outputs: ['bunker_ports', 'port_weather_status', 'port_prices', 'bunker_analysis']
 });

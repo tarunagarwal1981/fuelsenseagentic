@@ -119,7 +119,7 @@ export function generateAgentContext(
       needs_weather_consumption: intent.needs_weather && intent.needs_bunker,
       // Port weather check needed for bunker feasibility
       needs_port_weather: intent.needs_bunker,
-      // Legacy fallback: empty tools means use all tools
+      // Deterministic workflow - no tools needed (calls functions directly)
       required_tools: [],
       task_description: intent.needs_bunker
         ? 'Find bunker ports and analyze fuel options'

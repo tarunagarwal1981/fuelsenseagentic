@@ -45,6 +45,10 @@ export interface AgentRegistryEntry {
   prerequisites: string[];
   /** State fields this agent produces */
   outputs: string[];
+  /** Whether this agent uses deterministic workflow (no LLM tool-calling) */
+  is_deterministic?: boolean;
+  /** Workflow steps for deterministic agents */
+  workflow_steps?: string[];
 }
 
 // ============================================================================

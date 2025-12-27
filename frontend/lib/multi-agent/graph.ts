@@ -22,9 +22,6 @@ import {
   bunkerAgentNode,
   finalizeNode,
 } from './agent-nodes';
-import {
-  bunkerAgentTools,
-} from './tools';
 import { AgentRegistry } from './registry';
 
 // ============================================================================
@@ -258,7 +255,7 @@ export function agentToolRouter(state: MultiAgentState): 'tools' | 'supervisor' 
  * 1. Supervisor → Routes to appropriate agent
  * 2. Route Agent → Deterministic workflow (no tools node needed)
  * 3. Weather Agent → Deterministic workflow (no tools node needed)
- * 4. Bunker Agent → Uses LLM + tools for intelligent optimization
+ * 4. Bunker Agent → Deterministic workflow (no tools node needed)
  * 5. Finalize → Synthesizes recommendation and ends
  */
 const workflow = new StateGraph(MultiAgentStateAnnotation)
@@ -268,13 +265,13 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   .addNode('supervisor', supervisorAgentNode)
   .addNode('route_agent', routeAgentNode)      // Now deterministic workflow
   .addNode('weather_agent', weatherAgentNode)  // Now deterministic workflow
-  .addNode('bunker_agent', bunkerAgentNode)    // Still LLM-based
+  .addNode('bunker_agent', bunkerAgentNode)    // Now deterministic workflow
   .addNode('finalize', finalizeNode)           // Still LLM-based
 
   // ========================================================================
-  // Tool Nodes (ONLY for bunker agent - route/weather now deterministic)
+  // Tool Nodes (REMOVED - all agents now deterministic workflows)
   // ========================================================================
-  .addNode('bunker_tools', new ToolNode(bunkerAgentTools))
+  // No tool nodes needed - all agents call functions directly
 
   // ========================================================================
   // Entry Point
@@ -303,13 +300,9 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   .addEdge('weather_agent', 'supervisor')
 
   // ========================================================================
-  // Bunker Agent Workflow (LLM-based - still uses tools)
+  // Bunker Agent Workflow (deterministic - goes straight back to supervisor)
   // ========================================================================
-  .addConditionalEdges('bunker_agent', agentToolRouter, {
-    tools: 'bunker_tools',
-    supervisor: 'supervisor',
-  })
-  .addEdge('bunker_tools', 'bunker_agent')
+  .addEdge('bunker_agent', 'supervisor')
 
   // ========================================================================
   // Finalize to End
@@ -332,6 +325,6 @@ console.log('✅ Multi-Agent LangGraph compiled successfully');
 console.log('📊 Graph structure:');
 console.log('   - Entry: supervisor');
 console.log('   - Agents: route_agent (deterministic), weather_agent (deterministic), bunker_agent (LLM)');
-console.log('   - Tools: bunker_tools only (route/weather are now deterministic workflows)');
+console.log('   - Tools: None (all agents are now deterministic workflows)');
 console.log('   - Final: finalize (LLM) → END');
 

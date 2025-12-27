@@ -630,16 +630,18 @@ export const weatherAgentTools = [
 ];
 
 /**
- * Bunker Agent Tools
+ * Bunker Agent Tools - DEPRECATED
  * 
- * Tools for bunker port discovery, price fetching, and analysis.
+ * Bunker agent is now deterministic and calls these functions directly.
+ * Keeping exports for backward compatibility and reference.
+ * 
+ * The bunker agent workflow now uses:
+ * - executePortFinderTool() directly
+ * - executePortWeatherTool() directly
+ * - executePriceFetcherTool() directly
+ * - executeBunkerAnalyzerTool() directly
  */
-export const bunkerAgentTools = [
-  findBunkerPortsTool,
-  checkPortWeatherTool,  // SHARED: Also in weatherAgentTools
-  getFuelPricesTool,
-  analyzeBunkerOptionsTool,
-];
+export const bunkerAgentTools: any[] = []; // Empty - bunker agent doesn't use tool binding
 
 /**
  * All Tools (for reference)
