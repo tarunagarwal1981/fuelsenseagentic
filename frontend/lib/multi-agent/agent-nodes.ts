@@ -865,10 +865,37 @@ export async function supervisorAgentNode(
       }
       
       // Check if agent's work is already done
-      const agentDone = 
-        (agentName === 'route_agent' && routeCompleteForQuery) ||
-        (agentName === 'weather_agent' && state.weather_forecast && (!needsBunker || state.weather_consumption)) ||
-        (agentName === 'bunker_agent' && state.bunker_analysis);
+      const routeAgentDone = agentName === 'route_agent' && routeCompleteForQuery;
+      const weatherAgentDone = agentName === 'weather_agent' && 
+        state.weather_forecast && 
+        (!needsBunker || state.weather_consumption);
+      
+      // Bunker agent is only done if it has actual analysis data with recommendations
+      const bunkerAgentDone = agentName === 'bunker_agent' && 
+        state.bunker_analysis && 
+        state.bunker_analysis.recommendations && 
+        Array.isArray(state.bunker_analysis.recommendations) && 
+        state.bunker_analysis.recommendations.length > 0 &&
+        state.bunker_analysis.best_option;
+      
+      const agentDone = routeAgentDone || weatherAgentDone || bunkerAgentDone;
+      
+      // Debug logging for bunker_agent to diagnose issues
+      if (agentName === 'bunker_agent') {
+        console.log(`🔍 [SUPERVISOR] Checking bunker_agent completion:`, {
+          has_bunker_analysis: !!state.bunker_analysis,
+          type: typeof state.bunker_analysis,
+          is_null: state.bunker_analysis === null,
+          is_undefined: state.bunker_analysis === undefined,
+          has_recommendations: !!(state.bunker_analysis as any)?.recommendations,
+          recommendations_length: Array.isArray((state.bunker_analysis as any)?.recommendations) 
+            ? (state.bunker_analysis as any).recommendations.length 
+            : 'not an array',
+          has_best_option: !!(state.bunker_analysis as any)?.best_option,
+          bunker_analysis_keys: state.bunker_analysis ? Object.keys(state.bunker_analysis) : 'N/A',
+          agentDone: bunkerAgentDone,
+        });
+      }
       
       if (!agentDone) {
         console.log(`🎯 [SUPERVISOR] Using execution plan: routing to ${agentName} (prerequisites validated)`);
