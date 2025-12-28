@@ -462,7 +462,10 @@ export function ChatInterfaceMultiAgent() {
                     break;
 
                   case "final_complete":
+                    console.log('📝 [MULTI-AGENT-FRONTEND] Received final_complete event');
+                    console.log('📝 [MULTI-AGENT-FRONTEND] Recommendation length:', data.recommendation?.length || 0);
                     assistantMessage = data.recommendation || "Analysis completed.";
+                    console.log('📝 [MULTI-AGENT-FRONTEND] Set assistantMessage:', assistantMessage.substring(0, 100));
                     setCurrentAgent(null);
                     setThinkingState(null);
                     addAgentLog("supervisor", "Final recommendation ready", "complete");
@@ -509,6 +512,8 @@ export function ChatInterfaceMultiAgent() {
         });
 
         // Add assistant message
+        console.log('📝 [MULTI-AGENT-FRONTEND] Adding assistant message, length:', assistantMessage?.length || 0);
+        console.log('📝 [MULTI-AGENT-FRONTEND] Assistant message preview:', assistantMessage?.substring(0, 200));
         setMessages((prev) => [
           ...prev,
           {

@@ -420,6 +420,30 @@ export async function POST(req: Request) {
 
           clearInterval(keepAliveInterval);
 
+          // Final check: Send final recommendation if it wasn't sent yet
+          if (accumulatedState.final_recommendation && !lastSentFinal) {
+            console.log('📤 [STREAM] Sending final recommendation (final check)');
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'final_complete',
+                  recommendation: accumulatedState.final_recommendation,
+                  errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
+                    agent_errors: accumulatedState.agent_errors,
+                    agent_status: accumulatedState.agent_status,
+                  } : undefined,
+                  warnings: Object.entries(accumulatedState.agent_status || {})
+                    .filter(([_, status]) => status === 'failed' || status === 'skipped')
+                    .map(([agent, status]) => {
+                      const error = accumulatedState.agent_errors[agent];
+                      return `${agent} ${status}: ${error?.error || 'Unknown error'}`;
+                    }),
+                })}\n\n`
+              )
+            );
+            lastSentFinal = true;
+          }
+
           // Send completion signal
           const executionTime = Date.now() - startTime;
           console.log(`✅ [MULTI-AGENT-API] Stream completed in ${executionTime}ms`);
