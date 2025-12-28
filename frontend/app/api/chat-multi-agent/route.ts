@@ -137,6 +137,9 @@ export async function POST(req: Request) {
           let lastSentBunker = false;
           let lastSentFinal = false;
           
+          // Track previous agent to detect transitions
+          let previousAgent = '';
+          
           // Track accumulated state
           let accumulatedState: any = {
             route_data: null,
@@ -217,6 +220,20 @@ export async function POST(req: Request) {
 
           // Process stream events
           for await (const event of streamResult) {
+            // Detect agent transitions and send agent_start events
+            if (event.next_agent && event.next_agent !== previousAgent && event.next_agent !== '__end__') {
+              console.log(`📤 [STREAM] Agent transition: ${previousAgent} → ${event.next_agent}`);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'agent_start',
+                    agent: event.next_agent,
+                  })}\n\n`
+                )
+              );
+              previousAgent = event.next_agent;
+            }
+
             // Update accumulated state
             if (event.route_data) accumulatedState.route_data = event.route_data;
             if (event.vessel_timeline) accumulatedState.vessel_timeline = event.vessel_timeline;
@@ -230,9 +247,40 @@ export async function POST(req: Request) {
             if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
             if (event.agent_status) accumulatedState.agent_status = { ...accumulatedState.agent_status, ...event.agent_status };
 
-            // Stream route data when available
+            // Send granular route_data event immediately when available
             if (accumulatedState.route_data && !lastSentRoute) {
-              console.log('📤 [STREAM] Sending route data');
+              console.log('📤 [STREAM] Sending route_data event');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'route_data',
+                    data: {
+                      distance_nm: accumulatedState.route_data.distance_nm,
+                      estimated_hours: accumulatedState.route_data.estimated_hours,
+                      waypoints: accumulatedState.route_data.waypoints,
+                      route_type: accumulatedState.route_data.route_type,
+                      origin_port_code: accumulatedState.route_data.origin_port_code,
+                      destination_port_code: accumulatedState.route_data.destination_port_code,
+                      origin_port_name: accumulatedState.route_data.origin_port_name,
+                      destination_port_name: accumulatedState.route_data.destination_port_name,
+                    },
+                  })}\n\n`
+                )
+              );
+              // Send agent_complete for route_agent
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'agent_complete',
+                    agent: 'route_agent',
+                  })}\n\n`
+                )
+              );
+            }
+
+            // Stream route data when available (backward compatibility)
+            if (accumulatedState.route_data && !lastSentRoute) {
+              console.log('📤 [STREAM] Sending route_complete event');
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
@@ -251,9 +299,35 @@ export async function POST(req: Request) {
               lastSentRoute = true;
             }
 
-            // Stream weather data when available
+            // Send granular weather_data event immediately when available
+            if ((accumulatedState.weather_forecast || accumulatedState.weather_consumption) && !lastSentWeather) {
+              console.log('📤 [STREAM] Sending weather_data event');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'weather_data',
+                    data: {
+                      weather_forecast: accumulatedState.weather_forecast,
+                      weather_consumption: accumulatedState.weather_consumption,
+                      port_weather_status: accumulatedState.port_weather_status,
+                    },
+                  })}\n\n`
+                )
+              );
+              // Send agent_complete for weather_agent
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'agent_complete',
+                    agent: 'weather_agent',
+                  })}\n\n`
+                )
+              );
+            }
+
+            // Stream weather data when available (backward compatibility)
             if (accumulatedState.weather_consumption && !lastSentWeather) {
-              console.log('📤 [STREAM] Sending weather data');
+              console.log('📤 [STREAM] Sending weather_complete event');
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
@@ -273,9 +347,35 @@ export async function POST(req: Request) {
               lastSentWeather = true;
             }
 
-            // Stream bunker data when available
+            // Send granular bunker_data event immediately when available
+            if ((accumulatedState.bunker_ports || accumulatedState.port_prices || accumulatedState.bunker_analysis) && !lastSentBunker) {
+              console.log('📤 [STREAM] Sending bunker_data event');
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'bunker_data',
+                    data: {
+                      bunker_ports: accumulatedState.bunker_ports,
+                      port_prices: accumulatedState.port_prices,
+                      bunker_analysis: accumulatedState.bunker_analysis,
+                    },
+                  })}\n\n`
+                )
+              );
+              // Send agent_complete for bunker_agent
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'agent_complete',
+                    agent: 'bunker_agent',
+                  })}\n\n`
+                )
+              );
+            }
+
+            // Stream bunker data when available (backward compatibility)
             if (accumulatedState.bunker_analysis && !lastSentBunker) {
-              console.log('📤 [STREAM] Sending bunker data');
+              console.log('📤 [STREAM] Sending bunker_complete event');
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
