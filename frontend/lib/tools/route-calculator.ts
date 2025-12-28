@@ -13,6 +13,7 @@
 
 import { z } from 'zod';
 import { Coordinates, Route } from '@/lib/types';
+import { PortLogger } from '@/lib/utils/debug-logger';
 
 /**
  * Input parameters for route calculation
@@ -229,21 +230,31 @@ async function loadPortsData(): Promise<Array<{ port_code: string; coordinates: 
 
 /**
  * Fetches port coordinates from the ports database
- * In a real implementation, this would query a database or API
+ * Uses port-resolver to validate against static data and API
  */
 async function getPortCoordinates(portCode: string): Promise<Coordinates> {
   try {
+    // Try static data first (fast path)
     const ports = await loadPortsData();
     const port = ports.find((p) => p.port_code === portCode);
     
-    if (!port) {
-      throw new RouteCalculationError(
-        `Port code ${portCode} not found in database`,
-        'PORT_NOT_FOUND'
-      );
+    if (port) {
+      return port.coordinates;
     }
     
-    return port.coordinates;
+    // Try port-resolver as fallback (API validation)
+    const { validatePortCode } = await import('@/lib/utils/port-resolver');
+    const validation = await validatePortCode(portCode);
+    
+    if (validation.valid && validation.coordinates) {
+      console.log(`[ROUTE-CALC] Port ${portCode} validated via ${validation.source}`);
+      return validation.coordinates;
+    }
+    
+    throw new RouteCalculationError(
+      `Port code ${portCode} not found in database or API`,
+      'PORT_NOT_FOUND'
+    );
   } catch (error) {
     if (error instanceof RouteCalculationError) {
       throw error;
@@ -467,18 +478,39 @@ export async function calculateRoute(
     );
     
     // Convert API geometry ([lon, lat]) to our Coordinates format ({lat, lon})
-    // Normalize longitudes to [-180, 180] range to handle routes crossing International Date Line
+    // Only normalize longitudes if clearly out of range, preserve route continuity
     const normalizeLongitude = (lon: number): number => {
-      // Normalize to [-180, 180] range
-      while (lon > 180) lon -= 360;
-      while (lon < -180) lon += 360;
+      // Only normalize if clearly out of range
+      if (lon > 180 && lon <= 360) return lon - 360;
+      if (lon < -180 && lon >= -360) return lon + 360;
+      // Otherwise trust the API (preserves route continuity)
       return lon;
     };
     
-    const waypoints: Coordinates[] = apiResponse.geometry.map(([lon, lat]) => ({
-      lat,
-      lon: normalizeLongitude(lon),
-    }));
+    // Check for route continuity issues (suspicious longitude jumps)
+    const waypoints: Coordinates[] = apiResponse.geometry.map(([lon, lat], index) => {
+      const normalizedLon = normalizeLongitude(lon);
+      
+      // Check for suspicious jumps between consecutive waypoints
+      if (index > 0) {
+        const prevLon = waypoints[index - 1]?.lon;
+        if (prevLon !== undefined) {
+          const lonDiff = Math.abs(normalizedLon - prevLon);
+          // If longitude difference > 180°, flag as suspicious (but don't auto-correct)
+          if (lonDiff > 180 && lonDiff < 360) {
+            console.warn(
+              `[ROUTE-CALC] Suspicious longitude jump detected at waypoint ${index}: ` +
+              `${prevLon}° → ${normalizedLon}° (diff: ${lonDiff.toFixed(1)}°)`
+            );
+          }
+        }
+      }
+      
+      return {
+        lat,
+        lon: normalizedLon,
+      };
+    });
     
     // Determine route type
     const routeType = determineRouteType(waypoints, origin_port_code, destination_port_code);
@@ -488,7 +520,7 @@ export async function calculateRoute(
       ? apiResponse.duration 
       : apiResponse.distance / vessel_speed_knots;
     
-    return {
+    const result = {
       distance_nm: apiResponse.distance,
       estimated_hours: Math.round(estimatedHours * 100) / 100, // Round to 2 decimal places
       waypoints,
@@ -496,6 +528,10 @@ export async function calculateRoute(
       origin_port_code,
       destination_port_code,
     };
+    
+    PortLogger.logRouteCalculation(origin_port_code, destination_port_code, result.distance_nm, waypoints.length);
+    
+    return result;
   } catch (error) {
     // Handle Zod validation errors (don't fallback for validation errors)
     if (error instanceof z.ZodError) {

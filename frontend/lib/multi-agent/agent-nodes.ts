@@ -1282,6 +1282,29 @@ export async function routeAgentNode(
       
       console.log(`📍 [ROUTE-WORKFLOW] Calculating route: ${origin} → ${destination}`);
       
+      // Validate route before calculation
+      try {
+        const { validateRoute } = await import('@/lib/utils/route-validator');
+        const { PortLogger } = await import('@/lib/utils/debug-logger');
+        const validation = await validateRoute(origin, destination, userQuery, userQuery);
+        
+        PortLogger.logValidation(validation);
+        
+        if (!validation.valid || validation.warnings.length > 0) {
+          console.warn(`⚠️ [ROUTE-WORKFLOW] Route validation warnings:`, validation.warnings);
+          if (validation.suggestions) {
+            console.warn(`💡 [ROUTE-WORKFLOW] Suggestions:`, validation.suggestions);
+          }
+        } else {
+          console.log(`✅ [ROUTE-WORKFLOW] Route validated successfully`);
+        }
+      } catch (validationError) {
+        const { PortLogger } = await import('@/lib/utils/debug-logger');
+        PortLogger.logError('route-validation', validationError);
+        console.warn(`⚠️ [ROUTE-WORKFLOW] Route validation failed:`, validationError);
+        // Continue with route calculation even if validation fails
+      }
+      
       // Try primary API, with fallback to cached routes
       try {
         // Try main API
@@ -1292,6 +1315,29 @@ export async function routeAgentNode(
         });
         
         console.log(`✅ [ROUTE-WORKFLOW] Route calculated: ${routeResult.distance_nm} nm`);
+        
+        // Validate route after calculation with actual distance
+        try {
+          const { validateRoute } = await import('@/lib/utils/route-validator');
+          const { PortLogger } = await import('@/lib/utils/debug-logger');
+          const postValidation = await validateRoute(
+            origin,
+            destination,
+            userQuery,
+            userQuery,
+            routeResult.distance_nm
+          );
+          
+          PortLogger.logValidation(postValidation);
+          
+          if (postValidation.warnings.length > 0) {
+            console.warn(`⚠️ [ROUTE-WORKFLOW] Post-calculation validation warnings:`, postValidation.warnings);
+          }
+        } catch (validationError) {
+          const { PortLogger } = await import('@/lib/utils/debug-logger');
+          PortLogger.logError('post-route-validation', validationError);
+          // Ignore validation errors after calculation
+        }
         
         // Update state with route data
         state = {

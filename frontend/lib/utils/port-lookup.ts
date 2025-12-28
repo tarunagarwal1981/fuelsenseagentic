@@ -5,6 +5,7 @@
  */
 
 import portsData from '@/lib/data/ports.json';
+import { PortLogger, startLoggingSession } from './debug-logger';
 
 interface Port {
   port_code: string;
@@ -19,13 +20,166 @@ interface Port {
 const PORTS: Port[] = portsData as Port[];
 
 /**
+ * Parse GPS coordinates from query string
+ * Supports patterns: "10°N 65°E", "10N 65E", "10.5°N, 65.2°E", "25.5N 55.3E"
+ * Returns {lat, lon} or null if not found
+ */
+export function parseCoordinates(query: string): { lat: number; lon: number } | null {
+  // Pattern 1: "10°N 65°E" or "10N 65E"
+  const pattern1 = /(\d+\.?\d*)\s*°?\s*([NS])\s+(\d+\.?\d*)\s*°?\s*([EW])/i;
+  const match1 = query.match(pattern1);
+  
+  if (match1) {
+    const latValue = parseFloat(match1[1]);
+    const latDir = match1[2].toUpperCase();
+    const lonValue = parseFloat(match1[3]);
+    const lonDir = match1[4].toUpperCase();
+    
+    const lat = latDir === 'N' ? latValue : -latValue;
+    const lon = lonDir === 'E' ? lonValue : -lonValue;
+    
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      const coords = { lat, lon };
+      PortLogger.logCoordinateExtraction(coords, 'pattern1');
+      return coords;
+    }
+  }
+  
+  // Pattern 2: "10.5°N, 65.2°E" (with comma)
+  const pattern2 = /(\d+\.?\d*)\s*°?\s*([NS])\s*,\s*(\d+\.?\d*)\s*°?\s*([EW])/i;
+  const match2 = query.match(pattern2);
+  
+  if (match2) {
+    const latValue = parseFloat(match2[1]);
+    const latDir = match2[2].toUpperCase();
+    const lonValue = parseFloat(match2[3]);
+    const lonDir = match2[4].toUpperCase();
+    
+    const lat = latDir === 'N' ? latValue : -latValue;
+    const lon = lonDir === 'E' ? lonValue : -lonValue;
+    
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      const coords = { lat, lon };
+      PortLogger.logCoordinateExtraction(coords, 'pattern2');
+      return coords;
+    }
+  }
+  
+  // Pattern 3: "position 10°N 65°E" or "at 10N 65E"
+  const pattern3 = /(?:position|at|location)\s+(\d+\.?\d*)\s*°?\s*([NS])\s+(\d+\.?\d*)\s*°?\s*([EW])/i;
+  const match3 = query.match(pattern3);
+  
+  if (match3) {
+    const latValue = parseFloat(match3[1]);
+    const latDir = match3[2].toUpperCase();
+    const lonValue = parseFloat(match3[3]);
+    const lonDir = match3[4].toUpperCase();
+    
+    const lat = latDir === 'N' ? latValue : -latValue;
+    const lon = lonDir === 'E' ? lonValue : -lonValue;
+    
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      const coords = { lat, lon };
+      PortLogger.logCoordinateExtraction(coords, 'pattern3');
+      return coords;
+    }
+  }
+  
+  PortLogger.logCoordinateExtraction(null, 'none');
+  return null;
+}
+
+/**
+ * Calculate haversine distance between two coordinate points in nautical miles
+ * Earth radius = 3440.065 nm
+ */
+export function haversineDistance(
+  coord1: { lat: number; lon: number },
+  coord2: { lat: number; lon: number }
+): number {
+  const R = 3440.065; // Earth radius in nautical miles
+  
+  const lat1Rad = (coord1.lat * Math.PI) / 180;
+  const lat2Rad = (coord2.lat * Math.PI) / 180;
+  const deltaLatRad = ((coord2.lat - coord1.lat) * Math.PI) / 180;
+  const deltaLonRad = ((coord2.lon - coord1.lon) * Math.PI) / 180;
+  
+  const a =
+    Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
+    Math.cos(lat1Rad) *
+      Math.cos(lat2Rad) *
+      Math.sin(deltaLonRad / 2) *
+      Math.sin(deltaLonRad / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  return distance;
+}
+
+/**
+ * Find nearest port to given coordinates
+ * Returns port with distance in nautical miles
+ */
+export function findNearestPort(coords: { lat: number; lon: number }): {
+  port_code: string;
+  name: string;
+  distance_nm: number;
+  coordinates: { lat: number; lon: number };
+} | null {
+  if (!PORTS || PORTS.length === 0) {
+    console.warn('[PORT-LOOKUP] No ports data available');
+    return null;
+  }
+  
+  let nearestPort: Port | null = null;
+  let minDistance = Infinity;
+  
+  for (const port of PORTS) {
+    if (!port.coordinates || !port.coordinates.lat || !port.coordinates.lon) {
+      continue;
+    }
+    
+    const distance = haversineDistance(coords, port.coordinates);
+    
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestPort = port;
+    }
+  }
+  
+  if (!nearestPort) {
+    return null;
+  }
+  
+  // If nearest port is >500nm away, likely in middle of ocean
+  if (minDistance > 500) {
+    console.warn(`[PORT-LOOKUP] Nearest port is ${minDistance.toFixed(0)}nm away - may be in open ocean`);
+  }
+  
+  PortLogger.logPortResolution(
+    nearestPort.port_code,
+    nearestPort.coordinates,
+    'static'
+  );
+  
+  return {
+    port_code: nearestPort.port_code,
+    name: nearestPort.name,
+    distance_nm: minDistance,
+    coordinates: nearestPort.coordinates,
+  };
+}
+
+/**
  * Fuzzy search for port by name or code
  * Returns port code if found, null otherwise
+ * Uses scoring system to pick best match
  */
 export function findPortCode(query: string): string | null {
   const normalizedQuery = query.toLowerCase().trim();
   
-  // Direct code match (SGSIN, AEJEA, etc.)
+  // Direct code match (SGSIN, AEJEA, etc.) - highest priority
   const directMatch = PORTS.find(
     p => p.port_code.toLowerCase() === normalizedQuery
   );
@@ -33,39 +187,91 @@ export function findPortCode(query: string): string | null {
     return directMatch.port_code;
   }
   
-  // Exact name match
-  const exactNameMatch = PORTS.find(
-    p => p.name.toLowerCase() === normalizedQuery
-  );
-  if (exactNameMatch) {
-    return exactNameMatch.port_code;
-  }
-  
-  // Partial name match (Singapore → SGSIN)
-  const partialMatch = PORTS.find(
-    p => p.name.toLowerCase().includes(normalizedQuery) ||
-         normalizedQuery.includes(p.name.toLowerCase())
-  );
-  if (partialMatch) {
-    return partialMatch.port_code;
-  }
-  
-  // Common aliases
+  // Check aliases first (before scoring)
   const aliases: Record<string, string> = {
+    // Singapore
     'spore': 'SGSIN',
     'sing': 'SGSIN',
+    'singapore': 'SGSIN',
+    'sgp': 'SGSIN',
+    
+    // Dubai area
+    'jebel ali': 'AEJEA',
+    'jebel': 'AEJEA',
+    'dubai port': 'AEDXB',
+    'dubai': 'AEJEA',  // Default to Jebel Ali (main bunker port)
+    
+    // Fujairah
     'fuji': 'AEFJR',
     'fujairah': 'AEFJR',
-    'jebel ali': 'AEJEA',
-    'dubai': 'AEDXB',
+    
+    // Rotterdam area
+    'europort': 'NLRTM',
     'rotterdam': 'NLRTM',
+    'rtm': 'NLRTM',
+    'europoort': 'NLRTM',
+    
+    // Houston
     'houston': 'USHOU',
+    'houst': 'USHOU',
+    
+    // Los Angeles
     'la': 'USLAX',
     'los angeles': 'USLAX',
+    'lax': 'USLAX',
+    
+    // Shanghai
     'shanghai': 'CNSHA',
+    'sha': 'CNSHA',
+    
+    // Hong Kong
     'hong kong': 'HKHKG',
+    'hk': 'HKHKG',
+    'hkg': 'HKHKG',
+    
+    // Mumbai
     'mumbai': 'INMUN',
+    'bombay': 'INMUN',
+    
+    // Colombo
     'colombo': 'LKCMB',
+    'cmb': 'LKCMB',
+    
+    // New York
+    'new york': 'USNYC',
+    'nyc': 'USNYC',
+    'ny': 'USNYC',
+    
+    // London
+    'london': 'GBLON',
+    'lon': 'GBLON',
+    
+    // Hamburg
+    'hamburg': 'DEHAM',
+    'ham': 'DEHAM',
+    
+    // Antwerp
+    'antwerp': 'BEANR',
+    'anr': 'BEANR',
+    
+    // Tokyo
+    'tokyo': 'JPTYO',
+    'tyo': 'JPTYO',
+    
+    // Busan
+    'busan': 'KRPUS',
+    'pusan': 'KRPUS',
+    'pus': 'KRPUS',
+    
+    // Port Klang
+    'port klang': 'MYPKG',
+    'klang': 'MYPKG',
+    'pkg': 'MYPKG',
+    
+    // Tanjung Pelepas
+    'tanjung pelepas': 'MYTPP',
+    'pelepas': 'MYTPP',
+    'tpp': 'MYTPP',
   };
   
   const aliasMatch = aliases[normalizedQuery];
@@ -73,35 +279,166 @@ export function findPortCode(query: string): string | null {
     return aliasMatch;
   }
   
+  // Collect all potential matches
+  const candidates: Port[] = [];
+  
+  // Exact name match
+  const exactNameMatch = PORTS.find(
+    p => p.name.toLowerCase() === normalizedQuery
+  );
+  if (exactNameMatch) {
+    candidates.push(exactNameMatch);
+  }
+  
+  // Partial name match (Singapore → SGSIN)
+  const partialMatches = PORTS.filter(
+    p => p.name.toLowerCase().includes(normalizedQuery) ||
+         normalizedQuery.includes(p.name.toLowerCase())
+  );
+  candidates.push(...partialMatches);
+  
+  // Use scoring to select best match
+  const bestMatch = selectBestMatch(query, candidates);
+  if (bestMatch) {
+    return bestMatch.port_code;
+  }
+  
   return null;
 }
 
 /**
+ * Score how well a port matches a query (0-100)
+ */
+function scorePortMatch(query: string, port: Port): number {
+  const normalizedQuery = query.toLowerCase().trim();
+  const portCodeLower = port.port_code.toLowerCase();
+  const portNameLower = port.name.toLowerCase();
+  
+  // Exact code match: 100 points
+  if (portCodeLower === normalizedQuery) {
+    return 100;
+  }
+  
+  // Exact name match: 90 points
+  if (portNameLower === normalizedQuery) {
+    return 90;
+  }
+  
+  // Alias match: 80 points (checked separately in findPortCode)
+  
+  // Contains match: 50 points
+  if (portNameLower.includes(normalizedQuery) || normalizedQuery.includes(portNameLower)) {
+    return 50;
+  }
+  
+  // Fuzzy match: 30 points (simple word overlap)
+  const queryWords = normalizedQuery.split(/\s+/);
+  const portWords = portNameLower.split(/\s+/);
+  const matchingWords = queryWords.filter(qw => portWords.some(pw => pw.includes(qw) || qw.includes(pw)));
+  if (matchingWords.length > 0) {
+    return 30;
+  }
+  
+  return 0;
+}
+
+/**
+ * Select best port match from candidates using scoring
+ * Returns null if ambiguous (top 2 scores within 10 points)
+ */
+function selectBestMatch(query: string, candidates: Port[]): Port | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+  
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  
+  // Score all candidates
+  const scored = candidates.map(port => ({
+    port,
+    score: scorePortMatch(query, port),
+  }));
+  
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+  
+  // If top score is 0, no good match
+  if (scored[0].score === 0) {
+    return null;
+  }
+  
+  // If only one candidate with score > 0, return it
+  if (scored[0].score > 0 && (scored.length === 1 || scored[1].score === 0)) {
+    return scored[0].port;
+  }
+  
+  // Check if ambiguous (top 2 scores within 10 points)
+  if (scored.length >= 2 && scored[0].score - scored[1].score <= 10) {
+    console.warn(`[PORT-LOOKUP] Ambiguous match for "${query}": ${scored[0].port.port_code} (${scored[0].score}pts) vs ${scored[1].port.port_code} (${scored[1].score}pts)`);
+    return null; // Ambiguous, let caller handle
+  }
+  
+  return scored[0].port;
+}
+
+/**
  * Extract origin and destination from query using fuzzy port lookup
+ * Priority: coordinates > string match > defaults
  */
 export function extractPortsFromQuery(query: string): { origin: string | null; destination: string | null } {
-  console.log('🔍 [PORT-LOOKUP] Analyzing query:', query);
+  startLoggingSession();
+  PortLogger.logQuery(query);
   
-  // Pattern 1: "X to Y" or "from X to Y"
-  const toPattern = /(?:from\s+)?([A-Za-z\s]+)\s+to\s+([A-Za-z\s]+)/i;
+  // STEP 1: Check for coordinates in query (highest priority)
+  const coords = parseCoordinates(query);
+  let originFromCoords: string | null = null;
+  
+  if (coords) {
+    const nearest = findNearestPort(coords);
+    if (nearest) {
+      originFromCoords = nearest.port_code;
+      console.log(`[PORT-LOOKUP] Using coordinates for origin: ${nearest.port_code} (${nearest.name}) - ${nearest.distance_nm.toFixed(0)}nm away`);
+    }
+  }
+  
+  // STEP 2: Pattern matching for "X to Y" or "from X to Y"
+  const toPattern = /(?:from\s+)?([A-Za-z0-9°\s,\.]+?)\s+to\s+([A-Za-z\s]+)/i;
   const toMatch = query.match(toPattern);
   
   if (toMatch) {
     const originQuery = toMatch[1].trim();
     const destQuery = toMatch[2].trim();
     
-    const origin = findPortCode(originQuery);
+    // If we found coordinates, use that for origin, otherwise try string match
+    let origin: string | null = originFromCoords;
+    if (!origin) {
+      origin = findPortCode(originQuery);
+    }
+    
     const destination = findPortCode(destQuery);
     
     if (origin && destination) {
-      console.log('✅ [PORT-LOOKUP] Found:', origin, '→', destination);
+      PortLogger.logPortIdentification(origin, destination, originFromCoords ? 'coordinates+string' : 'string');
       return { origin, destination };
+    }
+    
+    // If we have origin from coordinates but no destination match, still return origin
+    if (origin && !destination) {
+      console.log('✅ [PORT-LOOKUP] Found origin from coordinates:', origin, 'but destination not found');
+      return { origin, destination: null };
     }
   }
   
-  // Pattern 2: Look for any port mentions
+  // STEP 3: Look for any port mentions (if no "to" pattern found)
   const words = query.split(/\s+/);
   const foundPorts: string[] = [];
+  
+  // If we have origin from coordinates, don't search for it again
+  if (originFromCoords) {
+    foundPorts.push(originFromCoords);
+  }
   
   for (let i = 0; i < words.length; i++) {
     // Try single word
@@ -127,8 +464,19 @@ export function extractPortsFromQuery(query: string): { origin: string | null; d
   }
   
   if (foundPorts.length === 1) {
-    console.log('✅ [PORT-LOOKUP] Found destination only:', foundPorts[0]);
-    return { origin: null, destination: foundPorts[0] };
+    if (originFromCoords) {
+      console.log('✅ [PORT-LOOKUP] Found origin from coordinates:', foundPorts[0]);
+      return { origin: foundPorts[0], destination: null };
+    } else {
+      console.log('✅ [PORT-LOOKUP] Found destination only:', foundPorts[0]);
+      return { origin: null, destination: foundPorts[0] };
+    }
+  }
+  
+  // If we have coordinates but no port found nearby, still return the coordinates as origin
+  if (coords && originFromCoords) {
+    console.log('✅ [PORT-LOOKUP] Using coordinates for origin:', originFromCoords);
+    return { origin: originFromCoords, destination: null };
   }
   
   console.warn('⚠️ [PORT-LOOKUP] No ports found in query');
