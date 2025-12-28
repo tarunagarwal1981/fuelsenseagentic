@@ -861,6 +861,58 @@ export function ChatInterfaceMultiAgent() {
                           pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
                           blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
                           a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                          table: ({ children }) => (
+                            <div className="my-4 overflow-x-auto">
+                              <table className="w-full border-collapse border border-green-200/30 dark:border-green-900/20 rounded-lg overflow-hidden shadow-sm">
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }) => (
+                            <thead className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b-2 border-blue-200 dark:border-blue-800">
+                              {children}
+                            </thead>
+                          ),
+                          tbody: ({ children }) => (
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-green-100/50 dark:divide-green-900/20">
+                              {children}
+                            </tbody>
+                          ),
+                          tr: ({ children, ...props }) => {
+                            // Helper function to extract text from React nodes
+                            const extractText = (node: any): string => {
+                              if (typeof node === 'string') return node;
+                              if (typeof node === 'number') return String(node);
+                              if (Array.isArray(node)) return node.map(extractText).join('');
+                              if (node?.props?.children) return extractText(node.props.children);
+                              return '';
+                            };
+                            
+                            // Check if row contains "BEST" or "⭐" for special styling
+                            const rowText = extractText(children);
+                            const isBestRow = rowText.includes('BEST') || rowText.includes('⭐') || rowText.includes('vs. Cheapest');
+                            
+                            return (
+                              <tr 
+                                className={`hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors ${
+                                  isBestRow ? 'bg-green-50/40 dark:bg-green-950/20 border-l-2 border-green-300/50 dark:border-green-600/30' : ''
+                                }`}
+                                {...props}
+                              >
+                                {children}
+                              </tr>
+                            );
+                          },
+                          th: ({ children }) => (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
+                              {children}
+                            </td>
+                          ),
                         }}
                       >
                         {message.content}

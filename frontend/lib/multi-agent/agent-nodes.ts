@@ -844,11 +844,8 @@ export async function supervisorAgentNode(
   if (executionPlan && executionPlan.execution_order.length > 0) {
     // Find first agent in execution order that hasn't completed its work
     for (const agentName of executionPlan.execution_order) {
-      const tools = executionPlan.agent_tool_assignments[agentName] || [];
-      if (tools.length === 0) {
-        // Agent has no tools assigned, skip it
-        continue;
-      }
+      // REMOVED: tools.length check - if agent is in execution plan, it should run
+      // Tools are metadata, not execution requirements. Deterministic agents don't need tools.
       
       // DATA VALIDATION: Check prerequisites before routing
       const validation = validateAgentPrerequisites(agentName);
