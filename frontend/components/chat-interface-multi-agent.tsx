@@ -37,6 +37,7 @@ import portsData from "@/lib/data/ports.json";
 import cachedRoutesData from "@/lib/data/cached-routes.json";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
@@ -852,6 +853,7 @@ export function ChatInterfaceMultiAgent() {
                   >
                       <ReactMarkdown
                         className="prose prose-sm dark:prose-invert max-w-none"
+                        remarkPlugins={[remarkGfm]}
                         components={{
                           p: ({ children }) => <p className="mb-1 last:mb-0 text-sm leading-relaxed">{children}</p>,
                           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
