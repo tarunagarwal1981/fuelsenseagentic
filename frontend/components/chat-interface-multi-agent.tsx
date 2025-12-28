@@ -851,30 +851,30 @@ export function ChatInterfaceMultiAgent() {
                           : "bg-white dark:bg-gray-800 border border-green-200/20 dark:border-green-900/15 shadow-sm dark:text-gray-100"
                     }`}
                   >
-                      <ReactMarkdown
-                        className="prose prose-sm dark:prose-invert max-w-none"
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p className="mb-1 last:mb-0 text-sm leading-relaxed">{children}</p>,
-                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                          em: ({ children }) => <em className="italic">{children}</em>,
-                          h1: ({ children }) => <h1 className="text-lg font-bold mb-1 mt-2 first:mt-0">{children}</h1>,
-                          h2: ({ children }) => <h2 className="text-base font-bold mb-1 mt-1.5 first:mt-0">{children}</h2>,
-                          h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-1 first:mt-0">{children}</h3>,
-                          ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-sm">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-sm">{children}</ol>,
-                          li: ({ children }) => <li className="ml-1 text-sm">{children}</li>,
-                          code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
-                          pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
-                          a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
-                          table: ({ children }) => (
-                            <div className="my-4 overflow-x-auto">
-                              <table className="w-full border-collapse border border-green-200/30 dark:border-green-900/20 rounded-lg overflow-hidden shadow-sm">
-                                {children}
-                              </table>
-                            </div>
-                          ),
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => <p className="mb-1 last:mb-0 text-sm leading-relaxed">{children}</p>,
+                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                            h1: ({ children }) => <h1 className="text-lg font-bold mb-1 mt-2 first:mt-0">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-base font-bold mb-1 mt-1.5 first:mt-0">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-1 first:mt-0">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-sm">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-sm">{children}</ol>,
+                            li: ({ children }) => <li className="ml-1 text-sm">{children}</li>,
+                            code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                            pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
+                            blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
+                            a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                            table: ({ children }) => (
+                              <div className="my-4 overflow-x-auto -mx-2 px-2 not-prose">
+                                <table className="w-full border-collapse border border-green-200/30 dark:border-green-900/20 rounded-lg overflow-hidden shadow-sm table-auto">
+                                  {children}
+                                </table>
+                              </div>
+                            ),
                           thead: ({ children }) => (
                             <thead className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b-2 border-blue-200 dark:border-blue-800">
                               {children}
@@ -924,6 +924,7 @@ export function ChatInterfaceMultiAgent() {
                       >
                         {message.content}
                       </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
 
