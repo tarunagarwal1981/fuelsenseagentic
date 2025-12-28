@@ -62,7 +62,7 @@ import {
 } from './tools';
 
 // Import port lookup utility
-import { extractPortsFromQuery as lookupPorts } from '@/lib/utils/port-lookup';
+import { extractPortsFromQuery as lookupPorts } from '@/lib/utils/port-lookup'; // Now async
 
 // ============================================================================
 // Circuit Breaker Helper
@@ -1155,11 +1155,11 @@ function extractRouteDataFromMessages(messages: any[]): { route_data?: any; vess
 // ============================================================================
 
 /**
- * Extract ports from query using database lookup
- * Fast, free, and accurate - searches port database instead of using LLM
+ * Extract ports from query using database lookup with LLM fallback for complex queries
+ * Fast, free, and accurate - searches port database, uses LLM for complex queries
  */
 async function extractPortsFromQuery(query: string): Promise<{ origin: string; destination: string }> {
-  const { origin, destination } = lookupPorts(query);
+  const { origin, destination } = await lookupPorts(query);
   
   // Use defaults if not found
   const finalOrigin = origin || 'SGSIN';

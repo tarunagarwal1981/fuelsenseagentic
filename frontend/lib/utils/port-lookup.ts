@@ -384,10 +384,104 @@ function selectBestMatch(query: string, candidates: Port[]): Port | null {
 }
 
 /**
- * Extract origin and destination from query using fuzzy port lookup
+ * Detect if query is complex and needs LLM extraction
+ */
+function isComplexQuery(query: string): boolean {
+  const complexityIndicators = [
+    query.toLowerCase().includes('compare'),
+    query.toLowerCase().includes('versus'),
+    query.toLowerCase().includes(' or '),
+    query.toLowerCase().includes('evaluate'),
+    query.toLowerCase().includes('options'),
+    query.toLowerCase().includes('alternative'),
+    (query.match(/\bto\b/gi) || []).length > 1, // Multiple "to" patterns
+    (query.match(/\bat\b/gi) || []).length > 2, // Multiple "at" prepositions
+    (query.match(/\bin\b/gi) || []).length > 2, // Multiple "in" prepositions
+  ];
+  
+  const score = complexityIndicators.filter(Boolean).length;
+  return score >= 2; // 2+ indicators = complex query
+}
+
+/**
+ * Extract ports using LLM for complex queries
+ */
+async function extractPortsWithLLM(query: string): Promise<{ origin: string | null; destination: string | null }> {
+  console.log('🤖 [PORT-LOOKUP] Using LLM for complex query analysis');
+  
+  // Check for API key
+  if (!process.env.OPENAI_API_KEY) {
+    console.warn('🤖 [PORT-LOOKUP] OPENAI_API_KEY not set, skipping LLM extraction');
+    return { origin: null, destination: null };
+  }
+  
+  try {
+    const { ChatOpenAI } = await import('@langchain/openai');
+    
+    const llm = new ChatOpenAI({ 
+      modelName: 'gpt-4o-mini',
+      temperature: 0,
+      maxTokens: 100,
+    });
+    
+    const prompt = `Extract ONLY the origin and destination ports for the MAIN VOYAGE from this maritime query.
+
+IMPORTANT: Ignore ports mentioned for comparison, evaluation, "versus", or "or" scenarios.
+Focus on the actual voyage route (look for "voyage", "sailing", "heading to", "from X to Y").
+
+Query: "${query}"
+
+Return format (one line each):
+Origin: [port name or code]
+Destination: [port name or code]
+
+If voyage route is unclear, return:
+Origin: UNCLEAR
+Destination: UNCLEAR`;
+
+    const response = await llm.invoke(prompt);
+    const content = typeof response.content === 'string' 
+      ? response.content 
+      : String(response.content || '');
+    
+    // Parse response
+    const originMatch = content.match(/Origin:\s*([A-Za-z\s]+)/i);
+    const destMatch = content.match(/Destination:\s*([A-Za-z\s]+)/i);
+    
+    if (originMatch && destMatch) {
+      const originText = originMatch[1].trim();
+      const destText = destMatch[1].trim();
+      
+      if (originText === 'UNCLEAR' || destText === 'UNCLEAR') {
+        console.warn('🤖 [PORT-LOOKUP] LLM could not determine clear route');
+        return { origin: null, destination: null };
+      }
+      
+      // Convert to port codes using existing findPortCode
+      const origin = findPortCode(originText);
+      const destination = findPortCode(destText);
+      
+      if (origin && destination) {
+        console.log(`🤖 [PORT-LOOKUP] LLM extracted: ${origin} → ${destination}`);
+        return { origin, destination };
+      } else {
+        console.warn(`🤖 [PORT-LOOKUP] LLM extracted text but couldn't convert to codes: "${originText}" → "${destText}"`);
+      }
+    }
+    
+    throw new Error('Failed to parse LLM response');
+  } catch (error) {
+    console.error('🤖 [PORT-LOOKUP] LLM extraction failed:', error);
+    PortLogger.logError('llm-extraction', error);
+    return { origin: null, destination: null };
+  }
+}
+
+/**
+ * Extract origin and destination from query using deterministic methods (sync)
  * Priority: coordinates > string match > defaults
  */
-export function extractPortsFromQuery(query: string): { origin: string | null; destination: string | null } {
+function extractPortsDeterministic(query: string): { origin: string | null; destination: string | null } {
   startLoggingSession();
   PortLogger.logQuery(query);
   
@@ -480,6 +574,39 @@ export function extractPortsFromQuery(query: string): { origin: string | null; d
   }
   
   console.warn('⚠️ [PORT-LOOKUP] No ports found in query');
+  return { origin: null, destination: null };
+}
+
+/**
+ * Extract origin and destination from query using fuzzy port lookup with LLM fallback
+ * Priority: LLM (if complex) > coordinates > string match > defaults
+ */
+export async function extractPortsFromQuery(query: string): Promise<{ origin: string | null; destination: string | null }> {
+  startLoggingSession();
+  PortLogger.logQuery(query);
+  
+  // STEP 1: Try deterministic extraction first (fast, free)
+  const deterministicResult = extractPortsDeterministic(query);
+  
+  // STEP 2: Check if complex query needs LLM
+  if (isComplexQuery(query)) {
+    console.log('🔍 [PORT-LOOKUP] Complex query detected, using LLM...');
+    const llmResult = await extractPortsWithLLM(query);
+    
+    if (llmResult.origin && llmResult.destination) {
+      PortLogger.logPortIdentification(llmResult.origin, llmResult.destination, 'llm');
+      return llmResult;
+    }
+    
+    console.warn('🔍 [PORT-LOOKUP] LLM failed, falling back to deterministic');
+  }
+  
+  // STEP 3: Use deterministic result (even if low confidence)
+  if (deterministicResult.origin && deterministicResult.destination) {
+    PortLogger.logPortIdentification(deterministicResult.origin, deterministicResult.destination, 'deterministic');
+    return deterministicResult;
+  }
+  
   return { origin: null, destination: null };
 }
 
