@@ -487,30 +487,32 @@ export async function calculateRoute(
       return lon;
     };
     
-    // Check for route continuity issues (suspicious longitude jumps)
-    const waypoints: Coordinates[] = apiResponse.geometry.map(([lon, lat], index) => {
+    // First pass: Convert and normalize all waypoints
+    const waypoints: Coordinates[] = apiResponse.geometry.map(([lon, lat]) => {
       const normalizedLon = normalizeLongitude(lon);
-      
-      // Check for suspicious jumps between consecutive waypoints
-      if (index > 0) {
-        const prevLon = waypoints[index - 1]?.lon;
-        if (prevLon !== undefined) {
-          const lonDiff = Math.abs(normalizedLon - prevLon);
-          // If longitude difference > 180°, flag as suspicious (but don't auto-correct)
-          if (lonDiff > 180 && lonDiff < 360) {
-            console.warn(
-              `[ROUTE-CALC] Suspicious longitude jump detected at waypoint ${index}: ` +
-              `${prevLon}° → ${normalizedLon}° (diff: ${lonDiff.toFixed(1)}°)`
-            );
-          }
-        }
-      }
-      
       return {
         lat,
         lon: normalizedLon,
       };
     });
+    
+    // Second pass: Check for route continuity issues (suspicious longitude jumps)
+    // This must be done after waypoints array is fully built
+    for (let index = 1; index < waypoints.length; index++) {
+      const prevLon = waypoints[index - 1]?.lon;
+      const currentLon = waypoints[index]?.lon;
+      
+      if (prevLon !== undefined && currentLon !== undefined) {
+        const lonDiff = Math.abs(currentLon - prevLon);
+        // If longitude difference > 180°, flag as suspicious (but don't auto-correct)
+        if (lonDiff > 180 && lonDiff < 360) {
+          console.warn(
+            `[ROUTE-CALC] Suspicious longitude jump detected at waypoint ${index}: ` +
+            `${prevLon}° → ${currentLon}° (diff: ${lonDiff.toFixed(1)}°)`
+          );
+        }
+      }
+    }
     
     // Determine route type
     const routeType = determineRouteType(waypoints, origin_port_code, destination_port_code);
@@ -533,6 +535,16 @@ export async function calculateRoute(
     
     return result;
   } catch (error) {
+    // Enhanced error logging for debugging
+    console.error('[ROUTE-CALC] Detailed error:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      context: 'route calculation',
+      origin: origin_port_code,
+      destination: destination_port_code,
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+    });
+    
     // Handle Zod validation errors (don't fallback for validation errors)
     if (error instanceof z.ZodError) {
       throw new RouteCalculationError(
@@ -562,7 +574,11 @@ export async function calculateRoute(
           console.warn(`⚠️ [ROUTE-CALCULATOR] No cached route found for ${origin_port_code} → ${destination_port_code}`);
         }
       } catch (fallbackError) {
-        console.error(`❌ [ROUTE-CALCULATOR] Fallback to cached routes failed:`, fallbackError);
+        console.error(`❌ [ROUTE-CALCULATOR] Fallback to cached routes failed:`, {
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          stack: fallbackError instanceof Error ? fallbackError.stack : undefined,
+          context: 'cached route fallback',
+        });
       }
     }
     
