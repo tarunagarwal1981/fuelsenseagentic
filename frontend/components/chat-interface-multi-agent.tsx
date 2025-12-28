@@ -25,6 +25,7 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { ResultsTable } from "./results-table";
 import { RouteSelector } from "./route-selector";
@@ -109,7 +110,8 @@ export function ChatInterfaceMultiAgent() {
   const [showMenu, setShowMenu] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
-  const [routesExpanded, setRoutesExpanded] = useState(true);
+  const [routesExpanded, setRoutesExpanded] = useState(false);
+  const [exampleQueriesExpanded, setExampleQueriesExpanded] = useState(false);
   const [agentLogExpanded, setAgentLogExpanded] = useState(true);
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
@@ -595,6 +597,38 @@ export function ChatInterfaceMultiAgent() {
 
         {!leftSidebarCollapsed && (
           <div className="flex-1 overflow-y-auto">
+            {/* Example Queries Section - Collapsible */}
+            <div className="border-b border-green-200/30 dark:border-green-900/15">
+              <button
+                onClick={() => setExampleQueriesExpanded(!exampleQueriesExpanded)}
+                className="w-full px-4 py-3 flex items-center justify-between hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium dark:text-white">Example Queries</span>
+                </div>
+                {exampleQueriesExpanded ? (
+                  <ChevronUp className="h-4 w-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                )}
+              </button>
+              
+              {exampleQueriesExpanded && (
+                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
+                  <ExampleQueriesMultiAgent 
+                    onSelect={(query) => {
+                      setInput(query);
+                      // Focus the input field
+                      setTimeout(() => {
+                        inputRef.current?.focus();
+                      }, 100);
+                    }} 
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Cached Routes Section - Collapsible */}
             <div className="border-b border-green-200/30 dark:border-green-900/15">
               <button
@@ -785,12 +819,6 @@ export function ChatInterfaceMultiAgent() {
         {/* Messages Area - Tight spacing, modern design */}
         <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white via-green-50/5 to-orange-50/5 dark:from-gray-900 dark:via-green-950/5 dark:to-orange-950/5">
           <div className="max-w-4xl mx-auto px-4 py-2">
-            {/* Example Queries - Show when chat is empty */}
-            {messages.length === 1 && !isLoading && (
-              <ExampleQueriesMultiAgent 
-                onSelect={(query) => setInput(query)} 
-              />
-            )}
 
             {/* Messages - Very tight spacing */}
             <div className="space-y-0.5">
