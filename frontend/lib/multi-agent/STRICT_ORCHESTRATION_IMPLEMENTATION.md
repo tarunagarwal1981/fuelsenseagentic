@@ -158,3 +158,4 @@ All functionality preserved:
 - ✅ Clearer architecture
 - ✅ More debuggable
 
+
