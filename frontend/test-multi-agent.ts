@@ -53,6 +53,8 @@ async function testMultiAgent() {
         agent_context: null,
         selected_route_id: null,
         weather_agent_partial: false,
+        compliance_data: null,
+        vessel_consumption: null,
         agent_call_counts: {
           route_agent: 0,
           weather_agent: 0,

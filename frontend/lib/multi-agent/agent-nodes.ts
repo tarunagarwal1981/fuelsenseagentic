@@ -42,6 +42,7 @@ import { executePortWeatherTool } from '@/lib/tools/port-weather';
 import { executePortFinderTool } from '@/lib/tools/port-finder';
 import { executePriceFetcherTool } from '@/lib/tools/price-fetcher';
 import { executeBunkerAnalyzerTool } from '@/lib/tools/bunker-analyzer';
+import { complianceAgentNode } from './compliance-agent-node';
 
 // Import tool schemas
 import { routeCalculatorInputSchema } from '@/lib/tools/route-calculator';
@@ -863,6 +864,7 @@ export async function supervisorAgentNode(
       
       // Check if agent's work is already done
       const routeAgentDone = agentName === 'route_agent' && routeCompleteForQuery;
+      const complianceAgentDone = agentName === 'compliance_agent' && state.compliance_data;
       const weatherAgentDone = agentName === 'weather_agent' && 
         state.weather_forecast && 
         (!needsBunker || state.weather_consumption);
@@ -875,7 +877,7 @@ export async function supervisorAgentNode(
         state.bunker_analysis.recommendations.length > 0 &&
         state.bunker_analysis.best_option;
       
-      const agentDone = routeAgentDone || weatherAgentDone || bunkerAgentDone;
+      const agentDone = routeAgentDone || complianceAgentDone || weatherAgentDone || bunkerAgentDone;
       
       // Debug logging for bunker_agent to diagnose issues
       if (agentName === 'bunker_agent') {
@@ -953,6 +955,29 @@ export async function supervisorAgentNode(
   
   // 2. If route is complete (for this query type), check what else is needed based on query intent
   if (routeCompleteForQuery) {
+    // Check if compliance check is needed
+    const needsCompliance = 
+      state.route_data?.waypoints && 
+      state.route_data.waypoints.length > 0 && 
+      !state.compliance_data &&
+      state.agent_status?.route_agent === 'success';
+
+    if (needsCompliance) {
+      console.log('🎯 [SUPERVISOR] Decision: Route complete → compliance_agent for ECA zone validation');
+      return {
+        next_agent: 'compliance_agent' as const,
+        agent_context: {
+          ...agentContext,
+          compliance_agent: {
+            required_tools: [],
+            task_description: 'Validate ECA zone crossings and calculate MGO requirements',
+            priority: 'critical' as const
+          }
+        },
+        messages: [],
+      };
+    }
+
     // Priority 1: Weather is needed and not done
     // For simple route weather queries, we only need weather_forecast (not consumption)
     // Consumption is only needed for bunker planning
@@ -1917,6 +1942,22 @@ export async function bunkerAgentNode(
     const fuelRequirements = extractFuelRequirements(userQuery);
     console.log('📊 [BUNKER-WORKFLOW] Fuel requirements:', fuelRequirements);
     
+    // ========================================================================
+    // Check for ECA compliance requirements
+    // ========================================================================
+    
+    const ecaData = state.compliance_data?.eca_zones;
+    const requiresMGO = ecaData?.has_eca_zones || false;
+    const mgoRequired = ecaData?.fuel_requirements.mgo_with_safety_margin_mt || 0;
+
+    if (requiresMGO && mgoRequired > 0 && ecaData) {
+      console.log(`🌍 [BUNKER-WORKFLOW] ECA zones detected - requires ${mgoRequired.toFixed(1)} MT MGO`);
+      console.log(`   Zones crossed: ${ecaData.eca_zones_crossed.length}`);
+      for (const zone of ecaData.eca_zones_crossed) {
+        console.log(`   - ${zone.zone_name}: ${zone.distance_in_zone_nm.toFixed(1)} nm`);
+      }
+    }
+    
     // Check if user wants weather safety analysis
     const needsWeatherSafety = 
       agentContext?.needs_port_weather || 
@@ -1934,12 +1975,20 @@ export async function bunkerAgentNode(
       console.log('🔍 [BUNKER-WORKFLOW] Finding bunker ports along route...');
       
       try {
+        // Include MGO in fuel types if ECA compliance requires it
+        const fuelTypesForPorts = fuelRequirements.fuel_types.length > 0 
+          ? [...fuelRequirements.fuel_types]
+          : ['VLSFO'];
+        
+        if (requiresMGO && mgoRequired > 0 && !fuelTypesForPorts.includes('MGO')) {
+          fuelTypesForPorts.push('MGO');
+          console.log(`🔍 [BUNKER-WORKFLOW] Adding MGO to port finder fuel types for ECA compliance`);
+        }
+        
         const portFinderInput = {
           route_waypoints: state.route_data.waypoints,
           max_deviation_nm: 150, // Standard deviation limit
-          fuel_types: fuelRequirements.fuel_types.length > 0 
-            ? fuelRequirements.fuel_types 
-            : ['VLSFO'], // Default to VLSFO if not specified
+          fuel_types: fuelTypesForPorts,
         };
         
         bunkerPorts = await withTimeout(
@@ -2036,11 +2085,19 @@ export async function bunkerAgentNode(
       console.log('💰 [BUNKER-WORKFLOW] Fetching fuel prices for candidate ports...');
       
       try {
+        // Include MGO in fuel types if ECA compliance requires it
+        const fuelTypes = fuelRequirements.fuel_types.length > 0 
+          ? [...fuelRequirements.fuel_types]
+          : ['VLSFO'];
+        
+        if (requiresMGO && mgoRequired > 0 && !fuelTypes.includes('MGO')) {
+          fuelTypes.push('MGO');
+          console.log(`💰 [BUNKER-WORKFLOW] Adding MGO to fuel types for ECA compliance`);
+        }
+        
         const priceFetcherInput = {
           port_codes: bunkerPorts.ports.map((p: any) => p.port.port_code),
-          fuel_types: fuelRequirements.fuel_types.length > 0 
-            ? fuelRequirements.fuel_types 
-            : ['VLSFO'],
+          fuel_types: fuelTypes,
         };
         
         portPrices = await withTimeout(
@@ -2075,13 +2132,27 @@ export async function bunkerAgentNode(
       try {
         // Extract fuel parameters from fuelRequirements
         const primaryFuelType = fuelRequirements.fuel_types[0] || 'VLSFO';
-        const fuelQuantity = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
+        let totalFuelNeeded = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
+        
+        // Adjust fuel requirements based on ECA compliance
+        let vlsfoRequired = totalFuelNeeded;
+        let mgoRequiredForECA = 0;
+
+        if (requiresMGO && mgoRequired > 0) {
+          // Reduce VLSFO by MGO amount (since MGO replaces VLSFO in ECA zones)
+          vlsfoRequired = Math.max(0, totalFuelNeeded - mgoRequired);
+          mgoRequiredForECA = mgoRequired;
+          
+          console.log(`   Adjusted fuel requirements:`);
+          console.log(`   - VLSFO: ${vlsfoRequired.toFixed(0)} MT (for non-ECA portions)`);
+          console.log(`   - MGO: ${mgoRequiredForECA.toFixed(0)} MT (for ECA zones)`);
+        }
         
         // Match manual implementation parameter structure exactly
         const analyzerInput = {
           bunker_ports: bunkerPorts.ports,
           port_prices: portPrices,
-          fuel_quantity_mt: fuelQuantity,
+          fuel_quantity_mt: vlsfoRequired,  // Use adjusted VLSFO quantity
           fuel_type: primaryFuelType,
           vessel_speed_knots: 14,                  // Default speed (route_data doesn't store speed)
           vessel_consumption_mt_per_day: 35,       // Default consumption rate
@@ -2091,8 +2162,9 @@ export async function bunkerAgentNode(
         console.log('📊 [BUNKER-WORKFLOW] Analyzer input:', {
           ports_count: bunkerPorts.ports.length,
           prices_count: Array.isArray(portPrices) ? portPrices.length : 0,
-          fuel_quantity_mt: fuelQuantity,
+          fuel_quantity_mt: vlsfoRequired,
           fuel_type: primaryFuelType,
+          mgo_required_mt: mgoRequiredForECA,
           has_weather_data: !!portWeather
         });
         
@@ -2509,6 +2581,51 @@ Provide a clear summary of the route information.`;
   }
 
   try {
+    // ========================================================================
+    // Build compliance summary if available
+    // ========================================================================
+    
+    let complianceSummary = '';
+
+    if (state.compliance_data?.eca_zones) {
+      const ecaData = state.compliance_data.eca_zones;
+      
+      if (ecaData.has_eca_zones) {
+        complianceSummary = '\n\n⚖️ **REGULATORY COMPLIANCE:**\n';
+        complianceSummary += `ECA Zones Crossed: ${ecaData.eca_zones_crossed.length}\n`;
+        complianceSummary += `Total ECA Distance: ${ecaData.total_eca_distance_nm.toFixed(1)} nm\n`;
+        complianceSummary += `MGO Required: ${ecaData.fuel_requirements.mgo_with_safety_margin_mt} MT\n\n`;
+        
+        // List each zone
+        complianceSummary += 'Zones:\n';
+        for (const zone of ecaData.eca_zones_crossed) {
+          complianceSummary += `• ${zone.zone_name}: ${zone.distance_in_zone_nm.toFixed(1)} nm, ${zone.estimated_mgo_consumption_mt.toFixed(1)} MT MGO\n`;
+        }
+        
+        // Show fuel switching points
+        if (ecaData.fuel_requirements.switching_points.length > 0) {
+          complianceSummary += '\n🔄 **Fuel Switching Points:**\n';
+          for (const point of ecaData.fuel_requirements.switching_points) {
+            const hours = Math.floor(point.time_from_start_hours);
+            const minutes = Math.round((point.time_from_start_hours % 1) * 60);
+            const emoji = point.action === 'SWITCH_TO_MGO' ? '🔴' : '🟢';
+            complianceSummary += `${emoji} ${point.action} at ${hours}h ${minutes}m from departure\n`;
+            complianceSummary += `   Location: ${point.location.lat.toFixed(2)}°N, ${point.location.lon.toFixed(2)}°E\n`;
+          }
+        }
+        
+        // Add warnings if any
+        if (ecaData.compliance_warnings.length > 0) {
+          complianceSummary += '\n⚠️ **Warnings:**\n';
+          for (const warning of ecaData.compliance_warnings) {
+            complianceSummary += `• ${warning}\n`;
+          }
+        }
+      } else {
+        complianceSummary = '\n\n✅ No ECA zones crossed - VLSFO only required.\n';
+      }
+    }
+
     // Build comprehensive context for final synthesis
     // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
@@ -2554,10 +2671,15 @@ Provide a clear summary of the route information.`;
     console.log('✅ [FINALIZE] Node: Final recommendation generated');
 
     // Extract recommendation text
-    const recommendation =
+    let recommendation =
       typeof response.content === 'string'
         ? response.content
         : JSON.stringify(response.content);
+
+    // Append compliance summary to recommendation if available
+    if (complianceSummary) {
+      recommendation += complianceSummary;
+    }
 
     return {
       final_recommendation: recommendation,
@@ -2615,6 +2737,40 @@ AgentRegistry.registerAgent({
   ],
   prerequisites: ['origin_port', 'destination_port'],
   outputs: ['route_data', 'vessel_timeline']
+});
+
+// Register Compliance Agent
+AgentRegistry.registerAgent({
+  agent_name: 'compliance_agent',
+  description: 'Validates regulatory compliance including ECA zones, EU ETS, FuelEU Maritime, and CII ratings (deterministic workflow)',
+  available_tools: [
+    {
+      tool_name: 'validate_eca_zones',
+      description: 'Check if route crosses Emission Control Areas and calculate MGO fuel requirements for compliance',
+      when_to_use: [
+        'route_data exists with waypoints',
+        'Need to determine ECA compliance requirements',
+        'Need to calculate MGO fuel quantities',
+        'Bunker planning requires compliance validation'
+      ],
+      when_not_to_use: [
+        'route_data is missing',
+        'Query does not involve maritime route planning'
+      ],
+      prerequisites: ['route_data'],
+      produces: ['compliance_data.eca_zones']
+    }
+  ],
+  prerequisites: ['route_data'],
+  outputs: ['compliance_data'],
+  is_deterministic: true,
+  workflow_steps: [
+    'Check route_data prerequisite',
+    'Extract vessel speed and consumption',
+    'Execute ECA zone validator',
+    'Store compliance_data in state',
+    'Generate compliance summary'
+  ]
 });
 
 // Register Weather Agent
@@ -2755,4 +2911,7 @@ AgentRegistry.registerAgent({
   prerequisites: ['route_data'],
   outputs: ['bunker_ports', 'port_weather_status', 'port_prices', 'bunker_analysis']
 });
+
+// Export compliance agent node
+export { complianceAgentNode };
 

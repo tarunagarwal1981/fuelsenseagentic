@@ -18,6 +18,7 @@ import './agent-nodes';
 import {
   supervisorAgentNode,
   routeAgentNode,
+  complianceAgentNode,
   weatherAgentNode,
   bunkerAgentNode,
   finalizeNode,
@@ -67,7 +68,7 @@ function supervisorRouter(state: MultiAgentState): string | typeof END {
   }
 
   // Validate next agent value
-  const validAgents = ['route_agent', 'weather_agent', 'bunker_agent', 'finalize'];
+  const validAgents = ['route_agent', 'compliance_agent', 'weather_agent', 'bunker_agent', 'finalize'];
   if (validAgents.includes(nextAgent)) {
     console.log(`🔀 [SUPERVISOR-ROUTER] Routing to: ${nextAgent}`);
     return nextAgent;
@@ -264,6 +265,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // ========================================================================
   .addNode('supervisor', supervisorAgentNode)
   .addNode('route_agent', routeAgentNode)      // Now deterministic workflow
+  .addNode('compliance_agent', complianceAgentNode)  // Deterministic workflow
   .addNode('weather_agent', weatherAgentNode)  // Now deterministic workflow
   .addNode('bunker_agent', bunkerAgentNode)    // Now deterministic workflow
   .addNode('finalize', finalizeNode)           // Still LLM-based
@@ -283,6 +285,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // ========================================================================
   .addConditionalEdges('supervisor', supervisorRouter, {
     route_agent: 'route_agent',
+    compliance_agent: 'compliance_agent',
     weather_agent: 'weather_agent',
     bunker_agent: 'bunker_agent',
     finalize: 'finalize',
@@ -293,6 +296,11 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // Route Agent Workflow (deterministic - goes straight back to supervisor)
   // ========================================================================
   .addEdge('route_agent', 'supervisor')
+
+  // ========================================================================
+  // Compliance Agent Workflow (deterministic - goes straight back to supervisor)
+  // ========================================================================
+  .addEdge('compliance_agent', 'supervisor')
 
   // ========================================================================
   // Weather Agent Workflow (deterministic - goes straight back to supervisor)

@@ -10,6 +10,7 @@ import { Annotation } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { Coordinates, Port, FuelType } from '@/lib/types';
 import type { PriceFetcherOutput } from '@/lib/tools/price-fetcher';
+import type { ECAZoneValidatorOutput } from '../tools/eca-zone-validator';
 
 // ============================================================================
 // Type Definitions
@@ -49,6 +50,14 @@ export interface AgentContext {
     needs_weather_consumption: boolean;
     /** Whether port weather check is needed */
     needs_port_weather: boolean;
+    /** Tool names this agent should bind (from supervisor plan) */
+    required_tools: string[];
+    /** Task description from supervisor */
+    task_description: string;
+    /** Priority level for this agent's work */
+    priority: 'critical' | 'important' | 'optional';
+  };
+  compliance_agent?: {
     /** Tool names this agent should bind (from supervisor plan) */
     required_tools: string[];
     /** Task description from supervisor */
@@ -217,6 +226,23 @@ export interface PortPrice {
   last_updated: string;
   /** Whether price is considered stale (> 24 hours) */
   is_stale?: boolean;
+}
+
+/**
+ * Compliance data for ECA and regulatory requirements
+ */
+export interface ComplianceData {
+  eca_zones: ECAZoneValidatorOutput;
+  // Future: EU ETS, FuelEU, CII will be added here
+}
+
+/**
+ * Vessel consumption profile
+ */
+export interface VesselConsumptionProfile {
+  main_engine_mt_per_day: number;
+  auxiliary_mt_per_day: number;
+  boiler_mt_per_day?: number;
 }
 
 /**
@@ -504,6 +530,26 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   }),
 
   // ========================================================================
+  // Compliance Agent State
+  // ========================================================================
+
+  /**
+   * Compliance data including ECA zone validation
+   */
+  compliance_data: Annotation<ComplianceData | null>({
+    reducer: (_, value) => value ?? null,
+    default: () => null,
+  }),
+
+  /**
+   * Vessel consumption profile for fuel calculations
+   */
+  vessel_consumption: Annotation<VesselConsumptionProfile | null>({
+    reducer: (_, value) => value ?? null,
+    default: () => null,
+  }),
+
+  // ========================================================================
   // Final State
   // ========================================================================
 
@@ -539,6 +585,7 @@ export const MultiAgentStateAnnotation = Annotation.Root({
 
   /**
    * Success status for each agent
+   * compliance_agent can be 'success' | 'failed'
    */
   agent_status: Annotation<Record<string, 'success' | 'failed' | 'skipped' | 'pending'>>({
     reducer: (x, y) => {

@@ -69,6 +69,14 @@ export async function testQuery(
     agent_status: {},
     agent_context: null,
     selected_route_id: null,
+    weather_agent_partial: false,
+    compliance_data: null,
+    vessel_consumption: null,
+    agent_call_counts: {
+      route_agent: 0,
+      weather_agent: 0,
+      bunker_agent: 0,
+    },
   };
   
   console.log('\n🚀 [QUERY-TEST] Starting graph execution...\n');
