@@ -32,105 +32,94 @@ export function VoyageTimeline({ data }: { data: TimelineData | null }) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          <Clock className="h-5 w-5 text-blue-600" />
-          <CardTitle className="text-lg">Voyage Timeline</CardTitle>
-          <Badge variant="secondary">{data.events.length} Event{data.events.length !== 1 ? 's' : ''}</Badge>
+          <Clock className="h-4 w-4 text-blue-600" />
+          <CardTitle className="text-base">Voyage Timeline</CardTitle>
+          <Badge variant="secondary" className="text-xs">{data.events.length} Event{data.events.length !== 1 ? 's' : ''}</Badge>
         </div>
       </CardHeader>
       
-      <CardContent>
-        {/* Desktop: Vertical Timeline */}
-        <div className="hidden md:block relative">
-          {/* Timeline Line */}
-          <div className="absolute left-[19px] top-0 bottom-0 w-0.5 bg-gray-200" />
-
-          {/* Events */}
-          <div className="space-y-6">
+      <CardContent className="pt-0">
+        {/* Desktop: Compact Horizontal Timeline */}
+        <div className="hidden md:block">
+          <div className="flex gap-2 overflow-x-auto pb-2">
             {data.events.map((event, idx) => {
               const isExpanded = expandedEvents.has(idx);
-              const isLast = idx === data.events.length - 1;
 
               return (
-                <div key={idx} className="relative flex gap-4">
-                  {/* Event Icon */}
-                  <div className="relative z-10 flex-shrink-0">
-                    <div className={`
-                      w-10 h-10 rounded-full flex items-center justify-center text-lg
-                      ${event.actionRequired 
-                        ? 'bg-orange-100 border-2 border-orange-400' 
-                        : 'bg-blue-100 border-2 border-blue-400'
-                      }
-                    `}>
-                      {event.icon}
-                    </div>
-                  </div>
-
-                  {/* Event Content */}
-                  <div className="flex-1 pb-6">
-                    <div className="bg-white rounded-lg border p-4 space-y-2">
-                      {/* Header */}
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h4 className="font-semibold">{event.title}</h4>
-                          <p className="text-sm text-muted-foreground">{event.description}</p>
-                        </div>
+                <div key={idx} className="flex-shrink-0 w-[200px]">
+                  <div className="bg-white rounded-lg border p-2.5 space-y-1.5">
+                    {/* Event Icon + Title */}
+                    <div className="flex items-center gap-2">
+                      <div className={`
+                        w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0
+                        ${event.actionRequired 
+                          ? 'bg-orange-100 border border-orange-400' 
+                          : 'bg-blue-100 border border-blue-400'
+                        }
+                      `}>
+                        {event.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-sm truncate">{event.title}</h4>
                         {event.actionRequired && (
-                          <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Action Required
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-700 text-[10px] px-1 py-0 mt-0.5">
+                            Action
                           </Badge>
                         )}
                       </div>
+                    </div>
 
-                      {/* Time Badge */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="text-xs">
-                          <Clock className="h-3 w-3 mr-1" />
-                          {event.hourFormatted}
+                    {/* Description */}
+                    <p className="text-xs text-muted-foreground line-clamp-2">{event.description}</p>
+
+                    {/* Time Badge */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                        <Clock className="h-2.5 w-2.5 mr-0.5" />
+                        {event.hourFormatted}
+                      </Badge>
+                      {event.locationFormatted && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                          <MapPin className="h-2.5 w-2.5 mr-0.5" />
+                          <span className="truncate max-w-[80px]">{event.locationFormatted}</span>
                         </Badge>
-                        {event.locationFormatted && (
-                          <Badge variant="outline" className="text-xs">
-                            <MapPin className="h-3 w-3 mr-1" />
-                            {event.locationFormatted}
-                          </Badge>
-                        )}
-                      </div>
-
-                      {/* Expand Button (if has location details) */}
-                      {event.location && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleEvent(idx)}
-                          className="w-full justify-between px-2"
-                        >
-                          <span className="text-xs text-muted-foreground">
-                            {isExpanded ? 'Show less' : 'Show details'}
-                          </span>
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
-                        </Button>
-                      )}
-
-                      {/* Expanded Details */}
-                      {isExpanded && event.location && (
-                        <div className="bg-muted/50 rounded p-3 space-y-1 text-xs">
-                          <div>
-                            <span className="text-muted-foreground">Coordinates:</span>{' '}
-                            {event.location.lat.toFixed(4)}°N, {Math.abs(event.location.lon).toFixed(4)}°{event.location.lon >= 0 ? 'E' : 'W'}
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Time from start:</span>{' '}
-                            {event.hourFromStart.toFixed(1)} hours
-                          </div>
-                        </div>
                       )}
                     </div>
+
+                    {/* Expand Button (if has location details) */}
+                    {event.location && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleEvent(idx)}
+                        className="w-full justify-between px-1.5 h-6 text-[10px]"
+                      >
+                        <span className="text-[10px] text-muted-foreground">
+                          {isExpanded ? 'Less' : 'Details'}
+                        </span>
+                        {isExpanded ? (
+                          <ChevronUp className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )}
+                      </Button>
+                    )}
+
+                    {/* Expanded Details */}
+                    {isExpanded && event.location && (
+                      <div className="bg-muted/50 rounded p-2 space-y-0.5 text-[10px]">
+                        <div>
+                          <span className="text-muted-foreground">Coords:</span>{' '}
+                          {event.location.lat.toFixed(2)}°N, {Math.abs(event.location.lon).toFixed(2)}°{event.location.lon >= 0 ? 'E' : 'W'}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Time:</span>{' '}
+                          {event.hourFromStart.toFixed(1)}h
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -138,7 +127,7 @@ export function VoyageTimeline({ data }: { data: TimelineData | null }) {
           </div>
         </div>
 
-        {/* Mobile: Horizontal Scrollable Timeline */}
+        {/* Mobile: Horizontal Scrollable Timeline (same compact style) */}
         <div className="md:hidden">
           <div className="overflow-x-auto pb-4">
             <div className="flex gap-4 min-w-max">
@@ -146,46 +135,45 @@ export function VoyageTimeline({ data }: { data: TimelineData | null }) {
                 const isExpanded = expandedEvents.has(idx);
 
                 return (
-                  <div key={idx} className="flex-shrink-0 w-[280px]">
-                    <div className="bg-white rounded-lg border p-4 space-y-2">
-                      {/* Event Icon */}
-                      <div className={`
-                        w-10 h-10 rounded-full flex items-center justify-center text-lg mx-auto mb-2
-                        ${event.actionRequired 
-                          ? 'bg-orange-100 border-2 border-orange-400' 
-                          : 'bg-blue-100 border-2 border-blue-400'
-                        }
-                      `}>
-                        {event.icon}
+                  <div key={idx} className="flex-shrink-0 w-[200px]">
+                    <div className="bg-white rounded-lg border p-2.5 space-y-1.5">
+                      {/* Event Icon + Title */}
+                      <div className="flex items-center gap-2">
+                        <div className={`
+                          w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0
+                          ${event.actionRequired 
+                            ? 'bg-orange-100 border border-orange-400' 
+                            : 'bg-blue-100 border border-blue-400'
+                          }
+                        `}>
+                          {event.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm truncate">{event.title}</h4>
+                          {event.actionRequired && (
+                            <Badge variant="secondary" className="bg-orange-100 text-orange-700 text-[10px] px-1 py-0 mt-0.5">
+                              Action
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Header */}
-                      <div className="text-center space-y-1">
-                        <h4 className="font-semibold text-sm">{event.title}</h4>
-                        <p className="text-xs text-muted-foreground">{event.description}</p>
-                      </div>
+                      {/* Description */}
+                      <p className="text-xs text-muted-foreground line-clamp-2">{event.description}</p>
 
                       {/* Time Badge */}
-                      <div className="flex items-center justify-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="text-xs">
-                          <Clock className="h-3 w-3 mr-1" />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                          <Clock className="h-2.5 w-2.5 mr-0.5" />
                           {event.hourFormatted}
                         </Badge>
-                        {event.actionRequired && (
-                          <Badge variant="secondary" className="bg-orange-100 text-orange-700 text-xs">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Action
+                        {event.locationFormatted && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                            <MapPin className="h-2.5 w-2.5 mr-0.5" />
+                            <span className="truncate max-w-[80px]">{event.locationFormatted}</span>
                           </Badge>
                         )}
                       </div>
-
-                      {/* Location */}
-                      {event.locationFormatted && (
-                        <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3" />
-                          {event.locationFormatted}
-                        </div>
-                      )}
 
                       {/* Expand Button (if has location details) */}
                       {event.location && (
@@ -193,29 +181,29 @@ export function VoyageTimeline({ data }: { data: TimelineData | null }) {
                           variant="ghost"
                           size="sm"
                           onClick={() => toggleEvent(idx)}
-                          className="w-full justify-between px-2"
+                          className="w-full justify-between px-1.5 h-6 text-[10px]"
                         >
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-[10px] text-muted-foreground">
                             {isExpanded ? 'Less' : 'Details'}
                           </span>
                           {isExpanded ? (
-                            <ChevronUp className="h-4 w-4" />
+                            <ChevronUp className="h-3 w-3" />
                           ) : (
-                            <ChevronDown className="h-4 w-4" />
+                            <ChevronDown className="h-3 w-3" />
                           )}
                         </Button>
                       )}
 
                       {/* Expanded Details */}
                       {isExpanded && event.location && (
-                        <div className="bg-muted/50 rounded p-3 space-y-1 text-xs">
+                        <div className="bg-muted/50 rounded p-2 space-y-0.5 text-[10px]">
                           <div>
-                            <span className="text-muted-foreground">Coordinates:</span>{' '}
-                            {event.location.lat.toFixed(4)}°N, {Math.abs(event.location.lon).toFixed(4)}°{event.location.lon >= 0 ? 'E' : 'W'}
+                            <span className="text-muted-foreground">Coords:</span>{' '}
+                            {event.location.lat.toFixed(2)}°N, {Math.abs(event.location.lon).toFixed(2)}°{event.location.lon >= 0 ? 'E' : 'W'}
                           </div>
                           <div>
-                            <span className="text-muted-foreground">Time from start:</span>{' '}
-                            {event.hourFromStart.toFixed(1)} hours
+                            <span className="text-muted-foreground">Time:</span>{' '}
+                            {event.hourFromStart.toFixed(1)}h
                           </div>
                         </div>
                       )}

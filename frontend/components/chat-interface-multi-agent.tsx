@@ -999,32 +999,27 @@ export function ChatInterfaceMultiAgent() {
                 {/* NEW: Enhanced Components Section (Feature Flag Controlled) */}
                 {isFeatureEnabled('USE_RESPONSE_FORMATTER') && structuredData ? (
                   <div className="space-y-4 mt-4">
-                    {/* Desktop Layout: Grid with Map + Cards */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                      {/* Left Column: Map (60% width on desktop) */}
-                      <div className="lg:col-span-2">
-                        {analysisData.route && (
-                          <MultiAgentAnalysisDisplay 
-                            data={{ 
-                              route: analysisData.route, 
-                              ports: analysisData.ports, 
-                              prices: analysisData.prices,
-                              analysis: analysisData.analysis  // ADDED: Include analysis for bunker ports
-                            }} 
-                            mapOverlays={structuredData.mapOverlays}
-                          />
-                        )}
-                      </div>
-                      
-                      {/* Right Column: Compliance + Weather (40% width on desktop) */}
-                      <div className="lg:col-span-1 space-y-4">
-                        <ComplianceCard data={structuredData.structured.compliance} />
-                        <WeatherCard data={structuredData.structured.weather} />
-                      </div>
+                    {/* Full Width Map */}
+                    {analysisData.route && (
+                      <MultiAgentAnalysisDisplay 
+                        data={{ 
+                          route: analysisData.route, 
+                          ports: analysisData.ports, 
+                          prices: analysisData.prices,
+                          analysis: analysisData.analysis
+                        }} 
+                        mapOverlays={structuredData.mapOverlays}
+                      />
+                    )}
+
+                    {/* Full Width Cards: Compliance + Weather */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <ComplianceCard data={structuredData.structured.compliance} />
+                      <WeatherCard data={structuredData.structured.weather} />
                     </div>
 
-                    {/* Below Grid: Timeline + Enhanced Table (full width) */}
-                    <div className="space-y-4 mt-4">
+                    {/* Compact Timeline + Enhanced Table */}
+                    <div className="space-y-4">
                       <VoyageTimeline data={structuredData.structured.timeline} />
                       {structuredData.structured.bunker ? (
                         <EnhancedBunkerTable data={structuredData.structured.bunker} />
