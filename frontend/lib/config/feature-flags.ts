@@ -6,8 +6,8 @@
  */
 
 export const FEATURE_FLAGS: Record<string, boolean> = {
-  // Response Formatter - START WITH FALSE
-  USE_RESPONSE_FORMATTER: false,
+  // Response Formatter - ENABLED
+  USE_RESPONSE_FORMATTER: true,
   
   // Individual component flags (all start FALSE)
   SHOW_COMPLIANCE_CARD: false,

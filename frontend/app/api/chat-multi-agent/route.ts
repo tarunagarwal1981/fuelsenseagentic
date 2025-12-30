@@ -245,6 +245,7 @@ export async function POST(req: Request) {
             if (event.port_prices) accumulatedState.port_prices = event.port_prices;
             if (event.bunker_analysis) accumulatedState.bunker_analysis = event.bunker_analysis;
             if (event.final_recommendation) accumulatedState.final_recommendation = event.final_recommendation;
+            if (event.formatted_response) accumulatedState.formatted_response = event.formatted_response;
             if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
             if (event.agent_status) accumulatedState.agent_status = { ...accumulatedState.agent_status, ...event.agent_status };
 
@@ -402,6 +403,7 @@ export async function POST(req: Request) {
                   `data: ${JSON.stringify({
                     type: 'final_complete',
                     recommendation: accumulatedState.final_recommendation,
+                    formatted_response: accumulatedState.formatted_response || null,
                     errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                       agent_errors: accumulatedState.agent_errors,
                       agent_status: accumulatedState.agent_status,
@@ -429,6 +431,7 @@ export async function POST(req: Request) {
                 `data: ${JSON.stringify({
                   type: 'final_complete',
                   recommendation: accumulatedState.final_recommendation,
+                  formatted_response: accumulatedState.formatted_response || null,
                   errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                     agent_errors: accumulatedState.agent_errors,
                     agent_status: accumulatedState.agent_status,
