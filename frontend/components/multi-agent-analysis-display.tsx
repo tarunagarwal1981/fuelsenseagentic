@@ -29,6 +29,8 @@ const MapViewerDynamic = dynamic(
   }
 );
 
+import type { MapOverlaysData } from '@/lib/formatters/response-formatter';
+
 interface AnalysisDisplayProps {
   data: {
     route?: any;
@@ -37,6 +39,7 @@ interface AnalysisDisplayProps {
     analysis?: any;
     weather?: any;
   };
+  mapOverlays?: MapOverlaysData | null;
 }
 
 // Helper function to get port details
@@ -44,7 +47,7 @@ const getPortDetails = (portCode: string) => {
   return (portsData as any[]).find((p: any) => p.port_code === portCode);
 };
 
-export function MultiAgentAnalysisDisplay({ data }: AnalysisDisplayProps) {
+export function MultiAgentAnalysisDisplay({ data, mapOverlays }: AnalysisDisplayProps) {
   const { route, ports, prices, analysis, weather } = data;
 
   if (!route && !ports && !analysis) {
@@ -102,6 +105,7 @@ export function MultiAgentAnalysisDisplay({ data }: AnalysisDisplayProps) {
                         const portDetails = getPortDetails(rec.port_code);
                         return portDetails ? { ...portDetails, ...rec } : null;
                       }).filter((p: any) => p !== null) || []}
+                      mapOverlays={mapOverlays}
                     />
                   </div>
                 );

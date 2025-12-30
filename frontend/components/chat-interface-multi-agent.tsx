@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +33,18 @@ import { RouteSelector } from "./route-selector";
 import { PerformanceMetricsPane } from "./performance-metrics-pane";
 import { ExampleQueriesMultiAgent } from "./example-queries-multi-agent";
 import { MultiAgentAnalysisDisplay } from "./multi-agent-analysis-display";
+import { ComplianceCard } from './compliance-card';
+import { WeatherCard } from './weather-card';
+import { EnhancedBunkerTable } from './enhanced-bunker-table';
+import { VoyageTimeline } from './voyage-timeline';
+import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import dynamic from "next/dynamic";
 import portsData from "@/lib/data/ports.json";
 import cachedRoutesData from "@/lib/data/cached-routes.json";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { FormattedResponse } from "@/lib/formatters/response-formatter";
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
@@ -106,7 +113,16 @@ export function ChatInterfaceMultiAgent() {
   const [performanceMetrics, setPerformanceMetrics] =
     useState<PerformanceMetrics | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+  const [structuredData, setStructuredData] = useState<FormattedResponse | null>(null);
   const [useMultiAgent, setUseMultiAgent] = useState(true);
+
+  // Debug logging for feature flags
+  useEffect(() => {
+    console.log('🎨 [FRONTEND] Feature flags:', {
+      formatter: isFeatureEnabled('USE_RESPONSE_FORMATTER'),
+      hasFormattedResponse: !!structuredData,
+    });
+  }, [structuredData]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -233,6 +249,9 @@ export function ChatInterfaceMultiAgent() {
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
+
+    // Reset structured data for new query
+    setStructuredData(null);
 
     console.log("🚀 [MULTI-AGENT-FRONTEND] Starting chat submission");
     const userMessage: Message = {
@@ -467,6 +486,13 @@ export function ChatInterfaceMultiAgent() {
                     console.log('📝 [MULTI-AGENT-FRONTEND] Recommendation length:', data.recommendation?.length || 0);
                     assistantMessage = data.recommendation || "Analysis completed.";
                     console.log('📝 [MULTI-AGENT-FRONTEND] Set assistantMessage:', assistantMessage.substring(0, 100));
+                    
+                    // Store structured data if available
+                    if (data.formatted_response) {
+                      console.log('🎨 [MULTI-AGENT-FRONTEND] Received formatted response');
+                      setStructuredData(data.formatted_response);
+                    }
+                    
                     setCurrentAgent(null);
                     setThinkingState(null);
                     addAgentLog("supervisor", "Final recommendation ready", "complete");
@@ -969,7 +995,50 @@ export function ChatInterfaceMultiAgent() {
 
             {/* Analysis Data Visualization - Inline */}
             {analysisData && (
-              <MultiAgentAnalysisDisplay data={analysisData} />
+              <>
+                {/* NEW: Enhanced Components Section (Feature Flag Controlled) */}
+                {isFeatureEnabled('USE_RESPONSE_FORMATTER') && structuredData ? (
+                  <div className="space-y-4 mt-4">
+                    {/* Desktop Layout: Grid with Map + Cards */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      {/* Left Column: Map (60% width on desktop) */}
+                      <div className="lg:col-span-2">
+                        {analysisData.route && (
+                          <MultiAgentAnalysisDisplay 
+                            data={{ route: analysisData.route, ports: analysisData.ports, prices: analysisData.prices }} 
+                            mapOverlays={structuredData.mapOverlays}
+                          />
+                        )}
+                      </div>
+                      
+                      {/* Right Column: Compliance + Weather (40% width on desktop) */}
+                      <div className="lg:col-span-1 space-y-4">
+                        <ComplianceCard data={structuredData.structured.compliance} />
+                        <WeatherCard data={structuredData.structured.weather} />
+                      </div>
+                    </div>
+
+                    {/* Below Grid: Timeline + Enhanced Table (full width) */}
+                    <div className="space-y-4 mt-4">
+                      <VoyageTimeline data={structuredData.structured.timeline} />
+                      {structuredData.structured.bunker ? (
+                        <EnhancedBunkerTable data={structuredData.structured.bunker} />
+                      ) : (
+                        // Fallback to existing table if no formatted bunker data
+                        analysisData.analysis && (
+                          <div className="mt-4">
+                            <MultiAgentAnalysisDisplay data={{ analysis: analysisData.analysis }} />
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Fallback: Show existing display if formatter not enabled or no structured data */
+                  <MultiAgentAnalysisDisplay data={analysisData} />
+                )}
+
+              </>
             )}
           </div>
         </div>
