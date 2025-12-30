@@ -121,19 +121,19 @@ export default function HomePage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="text-blue-600">✓</span>
-                  <span>Route, Weather, Bunker agents</span>
+                  <span>Route, Compliance, Weather, Bunker agents</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-blue-600">✓</span>
-                  <span>Weather forecasting</span>
+                  <span>ECA zone compliance validation</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-blue-600">✓</span>
-                  <span>Performance monitoring</span>
+                  <span>Weather forecasting & safety</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-blue-600">✓</span>
-                  <span>A/B testing ready</span>
+                  <span>Intelligent cost optimization</span>
                 </div>
               </div>
 
@@ -184,8 +184,8 @@ export default function HomePage() {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4 text-center">
           <Card className="p-4">
-            <div className="text-2xl font-bold text-blue-600">8</div>
-            <div className="text-sm text-muted-foreground">Tools Available</div>
+            <div className="text-2xl font-bold text-blue-600">6+</div>
+            <div className="text-sm text-muted-foreground">Specialized Tools</div>
           </Card>
           <Card className="p-4">
             <div className="text-2xl font-bold text-green-600">3</div>
