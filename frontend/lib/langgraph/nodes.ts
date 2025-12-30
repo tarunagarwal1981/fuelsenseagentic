@@ -24,19 +24,24 @@ import { tools } from "./tools";
 // Switch models by setting LLM_MODEL env var or changing the default below:
 const MODEL = process.env.LLM_MODEL || "claude-haiku-4-5-20251001"; // Default to Haiku 4.5 (best value)
 
-// Validate API key is present
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+// Initialize LLM lazily (only validate at runtime, not during build)
+let llm: ChatAnthropic | null = null;
+let llmWithTools: ReturnType<typeof ChatAnthropic.prototype.bindTools> | null = null;
+
+function getLLMWithTools() {
+  if (!llm) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+    }
+    llm = new ChatAnthropic({
+      model: MODEL,
+      temperature: 0,
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+    llmWithTools = llm.bindTools(tools);
+  }
+  return llmWithTools!;
 }
-
-const llm = new ChatAnthropic({
-  model: MODEL,
-  temperature: 0,
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-// Bind tools to LLM
-const llmWithTools = llm.bindTools(tools);
 
 // Agent Node - LLM makes decisions here
 export async function agentNode(state: BunkerState) {
@@ -89,7 +94,7 @@ The waypoints are: ${JSON.stringify(state.route.waypoints.slice(0, 3))}... (show
     }
     
     // Messages are already BaseMessage[] types, pass them directly
-    const response = await llmWithTools.invoke(messagesToSend);
+    const response = await getLLMWithTools().invoke(messagesToSend);
     
     console.log("✅ [AGENT] Node: LLM responded");
     

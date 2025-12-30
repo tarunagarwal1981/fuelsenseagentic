@@ -8,25 +8,35 @@ import { bunkerAnalyzerToolSchema, executeBunkerAnalyzerTool } from '@/lib/tools
 // Edge runtime for fast responses
 export const runtime = 'edge';
 
-// Validate API key
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+// Initialize Anthropic client lazily (only validate at runtime, not during build)
+let anthropic: Anthropic | null = null;
+
+function getAnthropic(): Anthropic {
+  if (!anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.");
+    }
+    anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+    });
+  }
+  return anthropic;
 }
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
-
 export async function POST(req: Request) {
-  // Double-check API key at request time
-  if (!process.env.ANTHROPIC_API_KEY) {
+  // Validate API key at request time
+  try {
+    getAnthropic();
+  } catch (error) {
     return new Response(
       JSON.stringify({
-        error: "Server configuration error: ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.",
+        error: error instanceof Error ? error.message : "Server configuration error: ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
+  
+  const anthropic = getAnthropic();
 
   try {
     const { messages, options = {} } = await req.json();

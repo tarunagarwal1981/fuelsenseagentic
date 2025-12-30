@@ -210,8 +210,10 @@ async function loadCachedRoutes(): Promise<CachedRoutesData> {
 // LLM Configuration
 // ============================================================================
 
-// Validate API key is present (skip in test mode)
-if (!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test') {
+// Validate API key is present (skip in test mode and during build)
+// During build, NEXT_PHASE is set to 'phase-production-build'
+const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || process.env.NEXT_PHASE === 'phase-development-build';
+if (!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== 'test' && !isBuildTime) {
   throw new Error(
     'ANTHROPIC_API_KEY environment variable is not set. Please configure it in Netlify environment variables.'
   );
