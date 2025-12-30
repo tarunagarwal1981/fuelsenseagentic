@@ -1005,7 +1005,12 @@ export function ChatInterfaceMultiAgent() {
                       <div className="lg:col-span-2">
                         {analysisData.route && (
                           <MultiAgentAnalysisDisplay 
-                            data={{ route: analysisData.route, ports: analysisData.ports, prices: analysisData.prices }} 
+                            data={{ 
+                              route: analysisData.route, 
+                              ports: analysisData.ports, 
+                              prices: analysisData.prices,
+                              analysis: analysisData.analysis  // ADDED: Include analysis for bunker ports
+                            }} 
                             mapOverlays={structuredData.mapOverlays}
                           />
                         )}

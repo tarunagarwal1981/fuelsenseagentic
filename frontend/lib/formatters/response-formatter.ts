@@ -10,6 +10,7 @@
  */
 
 import type { MultiAgentState } from '../multi-agent/state';
+import { ECA_ZONES } from '../tools/eca-config';
 
 // ============================================================================
 // Type Definitions
@@ -580,16 +581,148 @@ function generateRecommendations(state: MultiAgentState): string[] {
  * Format map overlays data
  */
 function formatMapOverlays(state: MultiAgentState): MapOverlaysData | null {
-  if (!state.compliance_data?.eca_zones) {
+  if (!state.compliance_data?.eca_zones || !state.route_data) {
     return null;
   }
   
-  // This will be populated with actual ECA zone polygons
-  // For now, return basic structure
+  const eca = state.compliance_data.eca_zones;
+  const route = state.route_data;
+  
+  // Build ECA zones array from crossed zones
+  const ecaZones: MapOverlaysData['ecaZones'] = [];
+  
+  if (eca.has_eca_zones && eca.eca_zones_crossed.length > 0) {
+    for (const crossedZone of eca.eca_zones_crossed) {
+      // Find the zone definition in ECA_ZONES config
+      const zoneKey = Object.keys(ECA_ZONES).find(
+        key => ECA_ZONES[key as keyof typeof ECA_ZONES].code === crossedZone.zone_code ||
+               ECA_ZONES[key as keyof typeof ECA_ZONES].name === crossedZone.zone_name
+      );
+      
+      if (zoneKey) {
+        const zoneDef = ECA_ZONES[zoneKey as keyof typeof ECA_ZONES];
+        // Use first boundary polygon (most zones have one)
+        if (zoneDef.boundaries && zoneDef.boundaries.length > 0) {
+          const polygon = zoneDef.boundaries[0]; // [lon, lat] format
+          ecaZones.push({
+            name: zoneDef.name,
+            code: zoneDef.code,
+            polygon: polygon as [number, number][], // Cast to tuple array
+            style: {
+              fillColor: '#ef4444',
+              strokeColor: '#dc2626',
+              strokeWidth: 2,
+            },
+          });
+        }
+      }
+    }
+  }
+  
+  // Build switching points array
+  const switchingPoints: MapOverlaysData['switchingPoints'] = [];
+  
+  if (eca.has_eca_zones && eca.fuel_requirements.switching_points.length > 0) {
+    for (const point of eca.fuel_requirements.switching_points) {
+      const icon = point.action === 'SWITCH_TO_MGO' ? '🔴' : '🟢';
+      const hours = Math.floor(point.time_from_start_hours);
+      const minutes = Math.round((point.time_from_start_hours % 1) * 60);
+      
+      switchingPoints.push({
+        id: `switch-${switchingPoints.length + 1}`,
+        location: [point.location.lon, point.location.lat], // [lon, lat] format
+        action: point.action as 'SWITCH_TO_MGO' | 'SWITCH_TO_VLSFO',
+        icon: icon,
+        popup: {
+          title: point.action === 'SWITCH_TO_MGO' ? 'Switch to MGO' : 'Switch to VLSFO',
+          timeFromStart: `${hours}h ${minutes}m`,
+          coordinates: `${point.location.lat.toFixed(2)}°N, ${Math.abs(point.location.lon).toFixed(2)}°${point.location.lon >= 0 ? 'E' : 'W'}`,
+          instructions: [
+            point.action === 'SWITCH_TO_MGO' 
+              ? 'Begin using MGO fuel (0.1% sulfur)'
+              : 'Resume using VLSFO fuel (0.5% sulfur)',
+            `Time: ${hours}h ${minutes}m after departure`,
+            `Location: ${point.location.lat.toFixed(2)}°N, ${Math.abs(point.location.lon).toFixed(2)}°${point.location.lon >= 0 ? 'E' : 'W'}`,
+          ],
+        },
+      });
+    }
+  }
+  
+  // Build fuel type route segments (simplified - would need route waypoints)
+  const fuelTypeRoute: MapOverlaysData['fuelTypeRoute'] = [];
+  
+  // If we have switching points and route waypoints, we can segment the route
+  if (switchingPoints.length > 0 && route.waypoints && route.waypoints.length > 0) {
+    // For now, create a simple segment based on switching points
+    // This is a simplified implementation - a full version would segment the route properly
+    const waypoints = route.waypoints.map((wp: any) => {
+      const lat = wp.lat ?? wp[0];
+      const lon = wp.lon ?? wp[1];
+      return [lon, lat]; // [lon, lat] format
+    });
+    
+    if (waypoints.length > 0) {
+      // Find first switching point to MGO
+      const firstMGO = switchingPoints.find(sp => sp.icon === '🔴');
+      if (firstMGO) {
+        // Split route at switching point (simplified - use first half as VLSFO, second as MGO)
+        const splitIndex = Math.floor(waypoints.length / 2);
+        
+        // VLSFO segment (first part)
+        fuelTypeRoute.push({
+          fuelType: 'VLSFO',
+          segment: waypoints.slice(0, splitIndex) as [number, number][],
+          style: {
+            color: '#3b82f6',
+            weight: 3,
+          },
+        });
+        
+        // MGO segment (second part)
+        fuelTypeRoute.push({
+          fuelType: 'MGO',
+          segment: waypoints.slice(splitIndex) as [number, number][],
+          style: {
+            color: '#ef4444',
+            weight: 3,
+            dashArray: '5, 5',
+          },
+        });
+      } else {
+        // All VLSFO
+        fuelTypeRoute.push({
+          fuelType: 'VLSFO',
+          segment: waypoints as [number, number][],
+          style: {
+            color: '#3b82f6',
+            weight: 3,
+          },
+        });
+      }
+    }
+  } else if (route.waypoints && route.waypoints.length > 0) {
+    // No ECA zones - all VLSFO
+    const waypoints = route.waypoints.map((wp: any) => {
+      const lat = wp.lat ?? wp[0];
+      const lon = wp.lon ?? wp[1];
+      return [lon, lat]; // [lon, lat] format
+    });
+    
+    fuelTypeRoute.push({
+      fuelType: 'VLSFO',
+      segment: waypoints as [number, number][],
+      style: {
+        color: '#3b82f6',
+        weight: 3,
+      },
+    });
+  }
+  
   return {
-    ecaZones: [],  // TODO: Add ECA zone polygons
-    switchingPoints: [],  // TODO: Add switching point markers
-    fuelTypeRoute: [],  // TODO: Add colored route segments
+    ecaZones,
+    switchingPoints,
+    fuelTypeRoute,
   };
 }
 
