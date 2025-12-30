@@ -63,6 +63,7 @@ async function createTestState(): Promise<Partial<MultiAgentState>> {
     port_prices: null,
     bunker_analysis: null,
     final_recommendation: null,
+    formatted_response: null,
     agent_context: {
       weather_agent: {
         needs_consumption: true,

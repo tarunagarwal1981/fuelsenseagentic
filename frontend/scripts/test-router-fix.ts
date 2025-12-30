@@ -42,6 +42,7 @@ async function testInfiniteLoopFix() {
         port_prices: null,
         bunker_analysis: null,
         final_recommendation: null,
+        formatted_response: null,
         agent_context: null,
         selected_route_id: null,
         agent_errors: {},

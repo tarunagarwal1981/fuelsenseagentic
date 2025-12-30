@@ -11,6 +11,7 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { Coordinates, Port, FuelType } from '@/lib/types';
 import type { PriceFetcherOutput } from '@/lib/tools/price-fetcher';
 import type { ECAZoneValidatorOutput } from '../tools/eca-zone-validator';
+import type { FormattedResponse } from '../formatters/response-formatter';
 
 // ============================================================================
 // Type Definitions
@@ -565,6 +566,14 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       }
       return result;
     },
+    default: () => null,
+  }),
+
+  /**
+   * Formatted response with structured data (optional, for enhanced UI)
+   */
+  formatted_response: Annotation<FormattedResponse | null>({
+    reducer: (_, value) => value ?? null,
     default: () => null,
   }),
 

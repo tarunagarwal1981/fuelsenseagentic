@@ -43,6 +43,9 @@ import { executePortFinderTool } from '@/lib/tools/port-finder';
 import { executePriceFetcherTool } from '@/lib/tools/price-fetcher';
 import { executeBunkerAnalyzerTool } from '@/lib/tools/bunker-analyzer';
 import { complianceAgentNode } from './compliance-agent-node';
+import { formatResponse } from '../formatters/response-formatter';
+import { isFeatureEnabled } from '../config/feature-flags';
+import type { FormattedResponse } from '../formatters/response-formatter';
 
 // Import tool schemas
 import { routeCalculatorInputSchema } from '@/lib/tools/route-calculator';
@@ -2286,10 +2289,11 @@ export async function bunkerAgentNode(
  * Synthesizes final recommendation from all agent data.
  * No tools, just LLM synthesis.
  */
-export async function finalizeNode(state: MultiAgentState) {
-  console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
-  const agentStartTime = Date.now();
-
+/**
+ * Generate legacy text output using LLM synthesis
+ * This preserves the EXACT current format
+ */
+async function generateLegacyTextOutput(state: MultiAgentState): Promise<string> {
   // Determine what the user actually asked for
   const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
   const userQuery = userMessage 
@@ -2308,15 +2312,11 @@ export async function finalizeNode(state: MultiAgentState) {
     'best option', 'recommendation', 'compare', 'savings'
   ].some(keyword => userQueryLower.includes(keyword));
 
-  console.log(`📝 [FINALIZE] User query analysis: weather=${needsWeather}, bunker=${needsBunker}`);
-
-  // NEW: Get agent context from supervisor
+  // Get agent context from supervisor
   const context = state.agent_context?.finalize;
   const complexity = context?.complexity || 'medium';
-  
-  console.log(`📋 [FINALIZE] Context: complexity=${complexity}, needs_weather_analysis=${context?.needs_weather_analysis}, needs_bunker_analysis=${context?.needs_bunker_analysis}`);
 
-  // NEW: Use tiered LLM (Haiku 4.5 for synthesis)
+  // Use tiered LLM (Haiku 4.5 for synthesis)
   const finalizeLLM = LLMFactory.getLLMForAgent('finalize', state.agent_context || undefined);
 
   // Check for errors and build context
@@ -2666,12 +2666,6 @@ Provide a clear summary of the route information.`;
       'Finalize node timed out'
     );
 
-    const agentDuration = Date.now() - agentStartTime;
-    recordAgentTime('finalize', agentDuration);
-    recordAgentExecution('finalize', agentDuration, true);
-
-    console.log('✅ [FINALIZE] Node: Final recommendation generated');
-
     // Extract recommendation text
     let recommendation =
       typeof response.content === 'string'
@@ -2683,10 +2677,58 @@ Provide a clear summary of the route information.`;
       recommendation += complianceSummary;
     }
 
+    return recommendation;
+  } catch (error) {
+    console.error('❌ [FINALIZE] Error generating legacy text output:', error);
+    throw error;
+  }
+}
+
+export async function finalizeNode(state: MultiAgentState) {
+  console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
+  const agentStartTime = Date.now();
+
+  try {
+    // STEP 1: Generate current/legacy text output (ALWAYS)
+    // This ensures backwards compatibility
+    const legacyTextOutput = await generateLegacyTextOutput(state);
+    
+    // STEP 2: Generate new formatted response (OPTIONAL)
+    let formattedResponse: FormattedResponse | null = null;
+    
+    if (isFeatureEnabled('USE_RESPONSE_FORMATTER')) {
+      console.log('🎛️ [FINALIZE] Response formatter enabled, generating structured output...');
+      
+      try {
+        formattedResponse = formatResponse(state);
+        console.log('✅ [FINALIZE] Structured response generated successfully');
+      } catch (error: any) {
+        console.error('❌ [FINALIZE] Error generating structured response:', error.message);
+        console.error('   Falling back to legacy text output only');
+        // Continue with legacyTextOutput - no failure
+      }
+    } else {
+      console.log('ℹ️ [FINALIZE] Response formatter disabled, using legacy text only');
+    }
+    
+    // STEP 3: Return BOTH formats
+    // Frontend can choose which to use
+    const agentDuration = Date.now() - agentStartTime;
+    recordAgentTime('finalize', agentDuration);
+    recordAgentExecution('finalize', agentDuration, true);
+    
+    console.log('✅ [FINALIZE] Node: Final recommendation generated');
+    
     return {
-      final_recommendation: recommendation,
-      messages: [response],
+      final_recommendation: legacyTextOutput,  // ALWAYS present (backwards compatible)
+      formatted_response: formattedResponse,   // OPTIONAL (may be null)
+      messages: [
+        new AIMessage({
+          content: legacyTextOutput  // Use legacy for message
+        })
+      ],
     };
+    
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
