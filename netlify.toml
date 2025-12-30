@@ -20,6 +20,27 @@
   # Next.js specific
   NEXT_TELEMETRY_DISABLED = "1"
 
+# Branch Deploy Configuration
+# Configure different branches for dev and production
+# In Netlify Dashboard:
+# 1. Go to Site settings → Build & deploy → Continuous Deployment
+# 2. Enable "Deploy only the production branch" (uncheck this)
+# 3. Set Production branch: main
+# 4. Set Branch deploys: All branches (or specific: dev, main)
+#
+# For custom domains:
+# 1. Go to Site settings → Domain management
+# 2. Add custom domain for production (main branch)
+# 3. Add subdomain for dev branch (e.g., dev.yourdomain.com)
+# 4. In Branch deploys settings, assign dev subdomain to dev branch
+
+# Context-specific settings (optional - only if you need different configs per branch)
+# [context.production]
+#   command = "cd frontend && npm install && npm run build"
+#
+# [context.branch-deploy]
+#   command = "cd frontend && npm install && npm run build"
+
 # Environment variables to set in Netlify Dashboard:
 # Required:
 # - ANTHROPIC_API_KEY (your Anthropic API key - for Bunker/Finalize agents)
