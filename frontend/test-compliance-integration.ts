@@ -67,6 +67,7 @@ async function testComplianceIntegration() {
         port_prices: null,
         bunker_analysis: null,
         final_recommendation: null,
+        formatted_response: null,
         agent_errors: {},
         agent_status: {},
         agent_context: null,
