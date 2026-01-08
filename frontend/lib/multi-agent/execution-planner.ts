@@ -127,7 +127,7 @@ export class ExecutionPlanner {
           const parsed = JSON.parse(cleanedContent);
 
           // Add metadata
-          plan = {
+          const generatedPlan: ExecutionPlan = {
             ...parsed,
             plan_id: this.generatePlanId(),
             query_intent: userQuery,
@@ -135,7 +135,10 @@ export class ExecutionPlanner {
           };
 
           // Validate plan
-          this.validatePlan(plan, agents);
+          this.validatePlan(generatedPlan, agents);
+
+          // Assign to plan variable after validation
+          plan = generatedPlan;
 
           console.log('✅ [PLANNER] Plan generated successfully:', {
             stages: plan.execution_stages.length,
