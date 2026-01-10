@@ -368,6 +368,163 @@ function getWeatherForDatetime(
 }
 
 /**
+ * Validate and sanitize weather data
+ * Returns validated data with quality flags
+ */
+interface WeatherDataQuality {
+  data: WeatherData;
+  confidence: 'high' | 'medium' | 'low' | 'unavailable';
+  issues: string[];
+  warnings: string[];
+}
+
+function validateWeatherData(rawData: WeatherData): WeatherDataQuality {
+  const issues: string[] = [];
+  const warnings: string[] = [];
+  let confidence: 'high' | 'medium' | 'low' | 'unavailable' = 'high';
+  
+  const validatedData = { ...rawData };
+  
+  // Validate wind speed
+  if (
+    validatedData.wind_speed_knots === null || 
+    validatedData.wind_speed_knots === undefined || 
+    validatedData.wind_speed_knots === 0
+  ) {
+    issues.push('Wind speed data unavailable');
+    validatedData.wind_speed_knots = 0;
+    confidence = 'medium';
+  } else if (validatedData.wind_speed_knots < 0 || validatedData.wind_speed_knots > 100) {
+    issues.push(`Unrealistic wind speed: ${validatedData.wind_speed_knots} kts`);
+    validatedData.wind_speed_knots = 0;
+    confidence = 'low';
+  }
+  
+  // Validate wave height
+  if (
+    validatedData.wave_height_m === null || 
+    validatedData.wave_height_m === undefined || 
+    validatedData.wave_height_m < 0
+  ) {
+    issues.push('Wave height data unavailable');
+    validatedData.wave_height_m = 0;
+    confidence = 'medium';
+  } else if (validatedData.wave_height_m > 20) {
+    issues.push(`Unrealistic wave height: ${validatedData.wave_height_m}m`);
+    validatedData.wave_height_m = 0;
+    confidence = 'low';
+  }
+  
+  // Validate wind direction
+  if (validatedData.wind_direction_deg !== null && validatedData.wind_direction_deg !== undefined) {
+    if (validatedData.wind_direction_deg < 0 || validatedData.wind_direction_deg > 360) {
+      warnings.push(`Unusual wind direction: ${validatedData.wind_direction_deg}°`);
+      confidence = 'medium';
+    }
+  }
+  
+  // Overall confidence assessment
+  if (issues.length >= 2) {
+    confidence = 'low';
+  }
+  
+  if (issues.length >= 3 || (validatedData.wind_speed_knots === 0 && validatedData.wave_height_m === 0)) {
+    confidence = 'unavailable';
+  }
+  
+  return {
+    data: validatedData,
+    confidence,
+    issues,
+    warnings
+  };
+}
+
+/**
+ * Estimate typical weather conditions when actual data unavailable
+ * Based on season, location, and historical patterns
+ */
+function estimateWeatherConditions(
+  latitude: number,
+  longitude: number,
+  date: Date
+): WeatherData {
+  // Get month for seasonal patterns
+  const month = date.getMonth(); // 0-11
+  
+  // Determine region
+  const region = getRegion(latitude, longitude);
+  
+  // Seasonal patterns (simplified)
+  const seasonalPatterns: Record<string, any> = {
+    'indian_ocean': {
+      monsoon_months: [5, 6, 7, 8, 9], // June-October
+      typical_wind: 15,
+      typical_waves: 2.0,
+      monsoon_wind: 25,
+      monsoon_waves: 3.5
+    },
+    'north_atlantic': {
+      winter_months: [11, 0, 1, 2], // Dec-Mar
+      typical_wind: 18,
+      typical_waves: 2.5,
+      winter_wind: 30,
+      winter_waves: 4.0
+    },
+    'mediterranean': {
+      typical_wind: 12,
+      typical_waves: 1.5
+    },
+    'south_china_sea': {
+      typhoon_months: [6, 7, 8, 9], // July-October
+      typical_wind: 14,
+      typical_waves: 1.8,
+      typhoon_wind: 35,
+      typhoon_waves: 5.0
+    },
+    'default': {
+      typical_wind: 15,
+      typical_waves: 2.0
+    }
+  };
+  
+  const pattern = seasonalPatterns[region] || seasonalPatterns.default;
+  
+  // Check if in severe season
+  const isSevereSeason = 
+    (region === 'indian_ocean' && pattern.monsoon_months?.includes(month)) ||
+    (region === 'north_atlantic' && pattern.winter_months?.includes(month)) ||
+    (region === 'south_china_sea' && pattern.typhoon_months?.includes(month));
+  
+  const windSpeed = isSevereSeason 
+    ? (pattern.monsoon_wind || pattern.winter_wind || pattern.typhoon_wind || pattern.typical_wind)
+    : pattern.typical_wind;
+  
+  const waveHeight = isSevereSeason 
+    ? (pattern.monsoon_waves || pattern.winter_waves || pattern.typhoon_waves || pattern.typical_waves)
+    : pattern.typical_waves;
+  
+  return {
+    wind_speed_knots: windSpeed,
+    wave_height_m: waveHeight,
+    wind_direction_deg: Math.random() * 360,
+    sea_state: classifySeaState(waveHeight),
+  };
+}
+
+/**
+ * Determine region based on latitude and longitude
+ */
+function getRegion(lat: number, lon: number): string {
+  // Simplified region detection
+  if (lat >= 0 && lat <= 30 && lon >= 40 && lon <= 100) return 'indian_ocean';
+  if (lat >= 30 && lat <= 70 && lon >= -80 && lon <= 0) return 'north_atlantic';
+  if (lat >= 30 && lat <= 45 && lon >= -5 && lon <= 40) return 'mediterranean';
+  if (lat >= 0 && lat <= 30 && lon >= 100 && lon <= 140) return 'south_china_sea';
+  return 'default';
+}
+
+/**
  * Generates historical estimate for positions beyond 16 days
  * Uses monthly averages with safety margin
  * 
@@ -516,14 +673,14 @@ export async function fetchMarineWeather(
           );
           apiCache.set(cacheKey, apiResponse);
         } catch (error) {
-          // If API call fails, fall back to historical estimate
+          // If API call fails, fall back to estimated weather conditions
           console.warn(
             `⚠️ [WEATHER] API call failed for position ${position.lat.toFixed(2)}, ${position.lon.toFixed(2)}, using estimate`
           );
-          weatherData = generateHistoricalEstimate(
+          weatherData = estimateWeatherConditions(
             position.lat,
             position.lon,
-            position.datetime
+            new Date(position.datetime)
           );
           confidence = 'low';
           return {
@@ -539,22 +696,53 @@ export async function fetchMarineWeather(
       const hourlyData = getWeatherForDatetime(apiResponse, position.datetime);
 
       if (!hourlyData) {
-        // If exact time not found, use historical estimate
-        weatherData = generateHistoricalEstimate(
+        // If exact time not found, use estimated weather conditions
+        weatherData = estimateWeatherConditions(
           position.lat,
           position.lon,
-          position.datetime
+          new Date(position.datetime)
         );
         confidence = 'low';
       } else {
         // Convert and classify
-        weatherData = {
+        const rawWeatherData: WeatherData = {
           wave_height_m: hourlyData.wave_height,
           wind_speed_knots: convertToKnots(hourlyData.wind_speed),
           wind_direction_deg: hourlyData.wind_direction,
           sea_state: classifySeaState(hourlyData.wave_height),
         };
-        confidence = 'high';
+        
+        // Validate weather data
+        const validation = validateWeatherData(rawWeatherData);
+        
+        // Log quality issues
+        if (validation.issues.length > 0) {
+          console.warn('⚠️ [WEATHER] Data quality issues:', validation.issues);
+        }
+        
+        if (validation.warnings.length > 0) {
+          console.warn('⚠️ [WEATHER] Warnings:', validation.warnings);
+        }
+        
+        // If confidence is too low, use estimates
+        if (validation.confidence === 'unavailable' || validation.confidence === 'low') {
+          console.warn('⚠️ [WEATHER] Low confidence, using estimates');
+          
+          const estimated = estimateWeatherConditions(
+            position.lat,
+            position.lon,
+            new Date(position.datetime)
+          );
+          
+          weatherData = {
+            ...estimated,
+            ...validation.data,
+          };
+          confidence = 'low';
+        } else {
+          weatherData = validation.data;
+          confidence = validation.confidence === 'high' ? 'high' : 'medium';
+        }
         
         // Cache the weather data for future requests
         cacheWeather(position.lat, position.lon, position.datetime, weatherData);
