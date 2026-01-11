@@ -733,6 +733,149 @@ function formatMapOverlays(state: MultiAgentState): MapOverlaysData | null {
  * It should match the output structure exactly as it appears in the
  * current implementation.
  */
+/**
+ * Calculate total bunker cost including all components
+ */
+interface TotalCostBreakdown {
+  fuel_cost: number;
+  deviation_cost: number;
+  total_cost: number;
+  currency: string;
+  breakdown: {
+    [fuel_type: string]: {
+      quantity_mt: number;
+      price_per_mt: number;
+      subtotal: number;
+    };
+  };
+}
+
+function calculateTotalBunkerCost(bunkerAnalysis: any): TotalCostBreakdown {
+  let fuelCost = 0;
+  const breakdown: any = {};
+  
+  // Calculate fuel costs
+  if (bunkerAnalysis.best_option) {
+    const option = bunkerAnalysis.best_option;
+    
+    // VLSFO cost
+    if (option.fuel_cost_usd) {
+      fuelCost += option.fuel_cost_usd;
+    } else if (option.fuel_cost) {
+      fuelCost += option.fuel_cost;
+    }
+    
+    // Multi-fuel handling
+    if (bunkerAnalysis.fuel_breakdown) {
+      for (const [fuelType, data] of Object.entries(bunkerAnalysis.fuel_breakdown)) {
+        const fuelData = data as any;
+        breakdown[fuelType] = {
+          quantity_mt: fuelData.quantity_mt || 0,
+          price_per_mt: fuelData.price_per_mt || 0,
+          subtotal: (fuelData.quantity_mt || 0) * (fuelData.price_per_mt || 0)
+        };
+        fuelCost += breakdown[fuelType].subtotal;
+      }
+    } else if (option.fuel_price_per_mt && option.fuel_quantity_mt) {
+      // Single fuel type
+      breakdown['VLSFO'] = {
+        quantity_mt: option.fuel_quantity_mt,
+        price_per_mt: option.fuel_price_per_mt,
+        subtotal: option.fuel_quantity_mt * option.fuel_price_per_mt
+      };
+      fuelCost = breakdown['VLSFO'].subtotal;
+    }
+  }
+  
+  // Deviation cost
+  const deviationCost = bunkerAnalysis.best_option?.deviation_cost || 
+                        bunkerAnalysis.best_option?.deviation_fuel_cost || 
+                        bunkerAnalysis.best_option?.deviation_cost_usd ||
+                        0;
+  
+  return {
+    fuel_cost: fuelCost,
+    deviation_cost: deviationCost,
+    total_cost: fuelCost + deviationCost,
+    currency: 'USD',
+    breakdown
+  };
+}
+
+/**
+ * Format cost breakdown for display
+ */
+function formatCostBreakdown(costData: TotalCostBreakdown): string {
+  let output = '\n💰 **COST BREAKDOWN**\n\n';
+  
+  // Fuel costs by type
+  if (Object.keys(costData.breakdown).length > 0) {
+    output += '**Fuel Costs:**\n';
+    for (const [fuelType, data] of Object.entries(costData.breakdown)) {
+      output += `• ${fuelType}: ${data.quantity_mt.toFixed(2)} MT × $${data.price_per_mt.toFixed(2)}/MT = `;
+      output += `**$${data.subtotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}**\n`;
+    }
+  } else {
+    output += `**Fuel Cost:** $${costData.fuel_cost.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+  }
+  
+  // Deviation cost
+  if (costData.deviation_cost > 0) {
+    output += `**Deviation Cost:** $${costData.deviation_cost.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+  } else {
+    output += `**Deviation Cost:** $0 (bunkering on route)\n`;
+  }
+  
+  // Total with emphasis
+  output += '\n' + '━'.repeat(50) + '\n';
+  output += `**TOTAL ESTIMATED COST: $${costData.total_cost.toLocaleString('en-US', { maximumFractionDigits: 0 })}**\n`;
+  output += '━'.repeat(50) + '\n';
+  
+  return output;
+}
+
+/**
+ * Format cost comparison table
+ */
+function formatCostComparison(recommendations: any[]): string {
+  if (!recommendations || recommendations.length <= 1) return '';
+  
+  let output = '\n📊 **COST COMPARISON**\n\n';
+  output += '| Port | Fuel Cost | Deviation | Total Cost | Savings |\n';
+  output += '|------|-----------|-----------|------------|----------|\n';
+  
+  const bestCost = recommendations[0].total_cost_usd || recommendations[0].total_cost || 0;
+  
+  for (const rec of recommendations.slice(0, 5)) { // Top 5 only
+    const fuelCost = rec.fuel_cost_usd || rec.fuel_cost || 0;
+    const deviationCost = rec.deviation_cost_usd || rec.deviation_cost || rec.deviation_fuel_cost || 0;
+    const totalCost = rec.total_cost_usd || rec.total_cost || (fuelCost + deviationCost);
+    const savings = totalCost - bestCost;
+    const savingsStr = savings === 0 
+      ? '✅ Best' 
+      : `+$${savings.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    
+    output += `| ${rec.port_name || rec.port_code} `;
+    output += `| $${fuelCost.toLocaleString('en-US', { maximumFractionDigits: 0 })} `;
+    output += `| $${deviationCost.toLocaleString('en-US', { maximumFractionDigits: 0 })} `;
+    output += `| **$${totalCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}** `;
+    output += `| ${savingsStr} |\n`;
+  }
+  
+  return output;
+}
+
+/**
+ * Check if any prices are marked as stale
+ */
+function anyPricesStale(bunkerAnalysis: any): boolean {
+  if (!bunkerAnalysis.recommendations) return false;
+  
+  return bunkerAnalysis.recommendations.some(
+    (rec: any) => rec.price_stale === true || rec.data_quality === 'stale'
+  );
+}
+
 function formatTextOutput(state: MultiAgentState): string {
   let output = '';
   
@@ -815,12 +958,17 @@ function formatTextOutput(state: MultiAgentState): string {
     // Check if ECA compliance affects bunker
     const hasCompliance = state.compliance_data?.eca_zones?.has_eca_zones;
     
-    // For now, simple output - will be enhanced with fuel breakdown when available
-    const totalCost = best.total_cost_usd || best.fuel_cost_usd || 0;
-    output += `**Total Cost:** $${totalCost.toFixed(0)}\n`;
+    // ALWAYS include cost breakdown
+    const costData = calculateTotalBunkerCost(state.bunker_analysis);
+    output += formatCostBreakdown(costData);
+    
+    // Add context about pricing
+    if (anyPricesStale(state.bunker_analysis)) {
+      output += '\n⚠️ *Note: Some prices may not be current. Contact suppliers for live quotes.*\n';
+    }
     
     if (best.distance_from_route_nm !== undefined && best.distance_from_route_nm > 0) {
-      output += `Distance Deviation: ${best.distance_from_route_nm.toFixed(1)} nm\n`;
+      output += `\nDistance Deviation: ${best.distance_from_route_nm.toFixed(1)} nm\n`;
     }
     
     if (state.port_weather_status && state.port_weather_status.length > 0) {
@@ -829,6 +977,11 @@ function formatTextOutput(state: MultiAgentState): string {
         const safetyEmoji = portWeather.bunkering_feasible ? '✅' : '⚠️';
         output += `Weather Safety: ${safetyEmoji} ${portWeather.bunkering_feasible ? 'Safe' : 'Unsafe'}\n`;
       }
+    }
+    
+    // Add cost comparison if multiple recommendations
+    if (state.bunker_analysis.recommendations && state.bunker_analysis.recommendations.length > 1) {
+      output += formatCostComparison(state.bunker_analysis.recommendations);
     }
   }
   

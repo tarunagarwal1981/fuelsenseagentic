@@ -229,6 +229,70 @@ async function loadPortsData(): Promise<Array<{ port_code: string; coordinates: 
 }
 
 /**
+ * Validate port code format and existence
+ * @param portCode - Port code to validate (e.g., "SGSIN")
+ * @param portDatabase - Database of valid ports
+ * @throws RouteCalculationError with helpful message if invalid
+ */
+function validatePortCode(
+  portCode: string, 
+  portDatabase: Array<{ port_code: string }>
+): void {
+  // Check format: must be 5 characters, alphanumeric
+  if (!portCode || typeof portCode !== 'string') {
+    throw new RouteCalculationError(
+      `Invalid port code format. Port code is required and must be a string.`,
+      'INVALID_INPUT'
+    );
+  }
+
+  const cleaned = portCode.toUpperCase().trim();
+  
+  // Check length
+  if (cleaned.length !== 5) {
+    throw new RouteCalculationError(
+      `Invalid port code: "${portCode}". ` +
+      `Port codes must be exactly 5 characters (UN/LOCODE format).\n\n` +
+      `Examples of valid codes:\n` +
+      `• SGSIN - Singapore\n` +
+      `• NLRTM - Rotterdam\n` +
+      `• USNYC - New York\n` +
+      `• AEJEA - Jebel Ali\n` +
+      `• CNSHA - Shanghai`,
+      'INVALID_INPUT'
+    );
+  }
+
+  // Check if only letters and numbers
+  if (!/^[A-Z0-9]{5}$/.test(cleaned)) {
+    throw new RouteCalculationError(
+      `Invalid port code: "${portCode}". ` +
+      `Port codes must contain only letters and numbers (no spaces or special characters).\n\n` +
+      `Format: [2-letter country code][3-letter port code]\n` +
+      `Example: SGSIN = SG (Singapore) + SIN (Singapore port)`,
+      'INVALID_INPUT'
+    );
+  }
+
+  // Check if port exists in database
+  const portExists = portDatabase.some(p => p.port_code === cleaned);
+
+  if (!portExists) {
+    throw new RouteCalculationError(
+      `Unknown port code: "${portCode}". ` +
+      `This port is not in our database.\n\n` +
+      `Common ports:\n` +
+      `• Asia: SGSIN (Singapore), CNSHA (Shanghai), HKHKG (Hong Kong)\n` +
+      `• Middle East: AEJEA (Jebel Ali), AEFUJ (Fujairah)\n` +
+      `• Europe: NLRTM (Rotterdam), DEHAM (Hamburg), GIGIB (Gibraltar)\n` +
+      `• Americas: USNYC (New York), USHOU (Houston)\n\n` +
+      `Please verify the port code at: https://www.unece.org/cefact/locode/service/location`,
+      'PORT_NOT_FOUND'
+    );
+  }
+}
+
+/**
  * Fetches port coordinates from the ports database
  * Uses port-resolver to validate against static data and API
  */
@@ -464,6 +528,18 @@ export async function calculateRoute(
   }
   
   try {
+    // Load port database for validation
+    const portDatabase = await loadPortsData();
+    
+    // Validate both ports BEFORE making API calls
+    console.log('✓ [ROUTE-CALCULATOR] Validating origin port...');
+    validatePortCode(origin_port_code, portDatabase);
+    
+    console.log('✓ [ROUTE-CALCULATOR] Validating destination port...');
+    validatePortCode(destination_port_code, portDatabase);
+    
+    console.log('✓ [ROUTE-CALCULATOR] Both ports valid, calculating route...');
+    
     // Fetch port coordinates
     const [originCoords, destinationCoords] = await Promise.all([
       getPortCoordinates(origin_port_code),
@@ -603,17 +679,29 @@ export const routeCalculatorToolSchema = {
   name: 'calculate_route',
   description: `Calculate optimal maritime route between two ports using Maritime Route API.
     Returns distance, estimated travel time, waypoints, and route type (e.g., via Suez Canal).
-    Accounts for navigable waterways, canal passages, and restricted areas.`,
+    Accounts for navigable waterways, canal passages, and restricted areas.
+    
+    Port codes must be valid UN/LOCODE format (5 characters):
+    - Format: [2-letter country][3-letter port]
+    - Examples: SGSIN (Singapore), NLRTM (Rotterdam), USNYC (New York)
+    
+    Common ports:
+    - Asia: SGSIN, CNSHA, HKHKG, JPYOK, KRPUS
+    - Middle East: AEJEA, AEFUJ, INMUN
+    - Europe: NLRTM, DEHAM, GIGIB, GRPIR
+    - Americas: USNYC, USHOU, PAMIT
+    
+    The tool will return a helpful error if port codes are invalid.`,
   input_schema: {
     type: 'object',
     properties: {
       origin_port_code: {
         type: 'string',
-        description: 'Origin port code in UNLOCODE format (e.g., SGSIN for Singapore)',
+        description: 'Origin port code in UNLOCODE format (5 characters, e.g., SGSIN for Singapore). Must be exactly 5 alphanumeric characters.',
       },
       destination_port_code: {
         type: 'string',
-        description: 'Destination port code in UNLOCODE format (e.g., NLRTM for Rotterdam)',
+        description: 'Destination port code in UNLOCODE format (5 characters, e.g., NLRTM for Rotterdam). Must be exactly 5 alphanumeric characters.',
       },
       vessel_speed_knots: {
         type: 'number',
