@@ -1,0 +1,8 @@
+name: test-agent
+description: A test agent configuration
+tools:
+  - tool1
+  - tool2
+# Missing required fields or invalid structure
+invalidField: this should cause validation error
+

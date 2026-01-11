@@ -1,7 +1,7 @@
 // app/api/chat-langgraph/route.ts
 export const runtime = "edge";
 
-import { app } from "@/lib/langgraph/graph";
+import { app } from "@/lib/workflow/graph";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 
 // Helper function to clean markdown formatting

@@ -1,7 +1,7 @@
 // app/api/test-langgraph/route.ts
 export const runtime = "edge";
 
-import { app } from "@/lib/langgraph/graph";
+import { app } from "@/lib/workflow/graph";
 import { HumanMessage } from "@langchain/core/messages";
 
 export async function GET() {

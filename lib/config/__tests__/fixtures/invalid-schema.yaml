@@ -1,0 +1,5 @@
+name: ""  # Empty name should fail validation
+description: ""  # Empty description should fail validation
+tools: "not-an-array"  # Should be an array
+temperature: 3.0  # Should be between 0 and 2
+
