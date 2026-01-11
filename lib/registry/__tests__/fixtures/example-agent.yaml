@@ -1,0 +1,28 @@
+id: bunker_planner
+name: Bunker Planner Agent
+type: llm
+description: Plans optimal bunker fuel strategies for maritime routes
+produces:
+  - bunker_recommendations
+  - cost_analysis
+  - route_optimization
+consumes:
+  required:
+    - route_data
+    - port_data
+  optional:
+    - weather_data
+    - price_data
+available_tools:
+  - find_bunker_ports
+  - get_fuel_prices
+  - analyze_bunker_options
+config_file: config/agents/bunker-agent.yaml
+prompt_file: config/prompts/bunker-agent-prompt.txt
+implementation: "@/lib/agents/bunker-agent"
+model:
+  provider: anthropic
+  name: claude-haiku-4-5-20251001
+  temperature: 0.7
+  max_tokens: 4096
+

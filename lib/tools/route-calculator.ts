@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { Coordinates, Route } from '@/lib/types';
+import { Coordinates, Route } from '../types';
 
 /**
  * Input parameters for route calculation

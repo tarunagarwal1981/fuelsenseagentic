@@ -1,0 +1,46 @@
+# Example Tool Configuration
+# This file demonstrates the structure of a tool configuration
+
+name: calculate_route
+description: Calculate optimal maritime route between two ports
+implementation: "@/lib/tools/route-calculator"
+
+inputSchema:
+  type: object
+  properties:
+    origin_port_code:
+      type: string
+      description: Origin port code (UNLOCODE format)
+    destination_port_code:
+      type: string
+      description: Destination port code (UNLOCODE format)
+    vessel_speed_knots:
+      type: number
+      default: 14
+      description: Vessel speed in knots
+  required:
+    - origin_port_code
+    - destination_port_code
+
+outputSchema:
+  type: object
+  properties:
+    distance_nm:
+      type: number
+      description: Distance in nautical miles
+    estimated_hours:
+      type: number
+      description: Estimated travel time in hours
+    waypoints:
+      type: array
+      items:
+        type: object
+        properties:
+          lat:
+            type: number
+          lon:
+            type: number
+
+timeout: 30000
+retries: 2
+

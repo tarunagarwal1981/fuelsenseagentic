@@ -11,7 +11,7 @@
  */
 
 import { z } from 'zod';
-import { Coordinates, Port } from '@/lib/types';
+import { Coordinates, Port } from '../types';
 
 /**
  * Input parameters for port finder

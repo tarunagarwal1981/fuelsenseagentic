@@ -1,0 +1,16 @@
+# Example Agent Configuration
+# This file demonstrates the structure of an agent configuration
+
+name: route-agent
+description: Calculates optimal maritime routes between ports
+tools:
+  - calculate_route
+  - calculate_weather_timeline
+capabilities:
+  - route-calculation
+  - waypoint-generation
+  - distance-estimation
+model: claude-haiku-4-5-20251001
+temperature: 0.7
+maxIterations: 15
+

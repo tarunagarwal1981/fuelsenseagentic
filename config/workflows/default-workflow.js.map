@@ -1,0 +1,1 @@
+{"version":3,"file":"default-workflow.js","sourceRoot":"","sources":["default-workflow.ts"],"names":[],"mappings":";AAAA;;;;GAIG;;;AAqBU,QAAA,qBAAqB,GAAmB;IACnD,IAAI,EAAE,kBAAkB;IACxB,WAAW,EAAE,0CAA0C;IACvD,KAAK,EAAE;QACL,EAAE,KAAK,EAAE,aAAa,EAAE;QACxB,EAAE,KAAK,EAAE,cAAc,EAAE;KAC1B;IACD,aAAa,EAAE;QACb,aAAa,EAAE,CAAC;QAChB,OAAO,EAAE,KAAK;KACf;CACF,CAAC"}

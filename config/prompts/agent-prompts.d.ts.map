@@ -1,0 +1,1 @@
+{"version":3,"file":"agent-prompts.d.ts","sourceRoot":"","sources":["agent-prompts.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,MAAM,WAAW,iBAAiB;IAChC,SAAS,EAAE,MAAM,CAAC;IAClB,YAAY,EAAE,MAAM,CAAC;IACrB,kBAAkB,CAAC,EAAE,MAAM,CAAC;IAC5B,QAAQ,CAAC,EAAE,MAAM,EAAE,CAAC;CACrB;AAED,eAAO,MAAM,YAAY,EAAE,MAAM,CAAC,MAAM,EAAE,iBAAiB,CAa1D,CAAC"}

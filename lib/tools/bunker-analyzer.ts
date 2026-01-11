@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import { FoundPort } from '@/lib/tools/port-finder';
 import { PriceFetcherOutput, PriceData } from '@/lib/tools/price-fetcher';
-import { FuelType } from '@/lib/types';
+import { FuelType } from '../types';
 
 /**
  * Input parameters for bunker analyzer

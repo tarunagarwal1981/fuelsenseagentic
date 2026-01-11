@@ -14,7 +14,7 @@
  */
 
 import { z } from 'zod';
-import { FuelPrice, FuelType } from '@/lib/types';
+import { FuelPrice, FuelType } from '../types';
 
 /**
  * Input parameters for price fetcher

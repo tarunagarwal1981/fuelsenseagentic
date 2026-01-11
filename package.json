@@ -7,7 +7,9 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "test:compare": "tsx tests/compare-implementations.test.ts"
   },
   "keywords": [
@@ -25,11 +27,17 @@
     "@langchain/langgraph": "^1.0.7",
     "@turf/turf": "^7.3.1",
     "dotenv": "^16.3.1",
+    "js-yaml": "^4.1.0",
     "langsmith": "^0.4.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.6",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
