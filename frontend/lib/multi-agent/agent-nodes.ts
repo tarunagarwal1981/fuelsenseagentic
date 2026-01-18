@@ -60,6 +60,7 @@ import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
 import { formatResponse } from '../formatters/response-formatter';
 import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
+import { generateSynthesis } from './synthesis/synthesis-engine';
 import type { FormattedResponse } from '../formatters/response-formatter';
 import type { Port } from '@/lib/types';
 
@@ -3019,7 +3020,7 @@ Provide a clear summary of the route information.`;
 }
 
 export async function finalizeNode(state: MultiAgentState) {
-  console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
+  console.log('📝 [FINALIZE] Node: Starting finalization...');
   
   // === DEBUG: State inspection ===
   console.log('🔍 [FINALIZE-DEBUG] State inspection:');
@@ -3030,6 +3031,7 @@ export async function finalizeNode(state: MultiAgentState) {
   console.log(`  - eca_summary: ${state.eca_summary ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
   console.log(`  - vessel_profile: ${state.vessel_profile ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
   console.log(`  - bunker_analysis: ${state.bunker_analysis ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - agent_status: ${state.agent_status ? `✅ EXISTS (${Object.keys(state.agent_status).length} agents)` : '❌ NULL/UNDEFINED'}`);
   
   if (state.rob_tracking) {
     console.log('📊 [FINALIZE-DEBUG] ROB Tracking Details:');
@@ -3049,11 +3051,47 @@ export async function finalizeNode(state: MultiAgentState) {
   const agentStartTime = Date.now();
 
   try {
-    // STEP 1: Generate current/legacy text output (ALWAYS)
-    // This ensures backwards compatibility
-    const legacyTextOutput = await generateLegacyTextOutput(state);
+    // ========================================================================
+    // PHASE 1: CROSS-AGENT SYNTHESIS
+    // ========================================================================
     
-    // STEP 2: Generate new formatted response (OPTIONAL)
+    console.log('🧠 [FINALIZE] Phase 1: Cross-agent synthesis');
+    
+    // Create mutable state copy for adding synthesis insights
+    let updatedState = { ...state };
+    
+    // Try to generate synthesis
+    try {
+      const synthesisResult = await generateSynthesis(state);
+      
+      if (synthesisResult.success && synthesisResult.synthesized_insights) {
+        console.log('✅ [FINALIZE] Synthesis successful');
+        console.log(`   Cost: $${synthesisResult.cost_usd?.toFixed(4) || '0.0000'}`);
+        console.log(`   Duration: ${synthesisResult.duration_ms}ms`);
+        
+        // Add synthesis to state
+        updatedState.synthesized_insights = synthesisResult.synthesized_insights;
+        
+      } else {
+        console.log(`⏭️ [FINALIZE] Synthesis skipped: ${synthesisResult.error || 'Unknown reason'}`);
+      }
+      
+    } catch (synthesisError: unknown) {
+      const message = synthesisError instanceof Error ? synthesisError.message : String(synthesisError);
+      console.error('❌ [FINALIZE] Synthesis error (non-fatal):', message);
+      // Continue without synthesis - graceful degradation
+    }
+    
+    // ========================================================================
+    // PHASE 2: TEMPLATE FORMATTING
+    // ========================================================================
+    
+    console.log('🎨 [FINALIZE] Phase 2: Template formatting');
+    
+    // Generate legacy text output (backwards compatible)
+    const legacyTextOutput = await generateLegacyTextOutput(updatedState);
+    
+    // Generate new formatted response (OPTIONAL)
     let formattedResponse: TemplateFormattedResponse | null = null;
     
     if (isFeatureEnabled('USE_RESPONSE_FORMATTER')) {
@@ -3061,7 +3099,8 @@ export async function finalizeNode(state: MultiAgentState) {
       
       try {
         // Use template-aware formatter with YAML templates and business rules
-        formattedResponse = formatResponseWithTemplate(state);
+        // Pass updatedState so formatter has access to synthesis data
+        formattedResponse = formatResponseWithTemplate(updatedState);
         console.log('✅ [FINALIZE] Template response generated successfully');
         
         // Log template metadata
@@ -3070,8 +3109,15 @@ export async function finalizeNode(state: MultiAgentState) {
           console.log(`   Sections: ${formattedResponse.template_metadata.sections_count}`);
           console.log(`   Rules Applied: ${formattedResponse.template_metadata.rules_applied}`);
         }
-      } catch (error: any) {
-        console.error('❌ [FINALIZE] Template formatter error:', error.message);
+        
+        // Check if synthesis data was used
+        if (updatedState.synthesized_insights) {
+          console.log('   ✅ Synthesis insights included in response');
+        }
+        
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('❌ [FINALIZE] Template formatter error:', message);
         console.error('   Falling back to legacy text output only');
         // Continue with legacyTextOutput - no failure
       }
@@ -3079,8 +3125,10 @@ export async function finalizeNode(state: MultiAgentState) {
       console.log('ℹ️ [FINALIZE] Response formatter disabled, using legacy text only');
     }
     
-    // STEP 3: Return BOTH formats
-    // Frontend can choose which to use
+    // ========================================================================
+    // PHASE 3: RETURN RESULTS
+    // ========================================================================
+    
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
     recordAgentExecution('finalize', agentDuration, true);
@@ -3090,6 +3138,7 @@ export async function finalizeNode(state: MultiAgentState) {
     return {
       final_recommendation: legacyTextOutput,  // ALWAYS present (backwards compatible)
       formatted_response: formattedResponse,   // OPTIONAL (may be null)
+      synthesized_insights: updatedState.synthesized_insights, // Include synthesis in output
       messages: [
         new AIMessage({
           content: legacyTextOutput  // Use legacy for message
