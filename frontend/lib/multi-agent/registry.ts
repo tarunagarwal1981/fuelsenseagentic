@@ -5,6 +5,157 @@
  * Enables LLM-based supervisor planning and intelligent tool selection.
  */
 
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { z } from 'zod';
+
+// ============================================================================
+// Zod to JSON Schema Converter
+// ============================================================================
+
+/**
+ * Convert a Zod schema to JSON Schema format for LLM tool binding
+ * This is a simplified converter that handles common Zod types
+ * 
+ * @param zodSchema - The Zod schema to convert
+ * @returns JSON Schema object
+ */
+export function zodSchemaToJsonSchema(zodSchema: z.ZodTypeAny): ToolParameterSchema {
+  try {
+    // Use LangChain's internal method if available, otherwise manual conversion
+    const def = (zodSchema as any)._def;
+    
+    if (!def) {
+      return { type: 'object', properties: {}, required: [] };
+    }
+    
+    return convertZodDef(def);
+  } catch (error) {
+    console.warn('⚠️ [REGISTRY] Failed to convert Zod schema:', error);
+    return { type: 'object', properties: {}, required: [] };
+  }
+}
+
+/**
+ * Recursively convert Zod definition to JSON Schema
+ */
+function convertZodDef(def: any): ToolParameterSchema {
+  const typeName = def.typeName;
+  
+  if (typeName === 'ZodObject') {
+    const shape = def.shape?.();
+    const properties: Record<string, any> = {};
+    const required: string[] = [];
+    
+    if (shape) {
+      for (const [key, value] of Object.entries(shape)) {
+        const fieldDef = (value as any)._def;
+        properties[key] = convertZodFieldToProperty(value as any);
+        
+        // Check if field is required (not optional, not nullable, not with default)
+        if (!isOptionalField(value as any)) {
+          required.push(key);
+        }
+      }
+    }
+    
+    return { type: 'object', properties, required };
+  }
+  
+  return { type: 'object', properties: {}, required: [] };
+}
+
+/**
+ * Convert a single Zod field to JSON Schema property
+ */
+function convertZodFieldToProperty(zodField: any): any {
+  const def = zodField._def;
+  const typeName = def?.typeName;
+  const description = def?.description || '';
+  
+  // Handle optional wrapper
+  if (typeName === 'ZodOptional') {
+    const innerResult = convertZodFieldToProperty(def.innerType);
+    return { ...innerResult, description: innerResult.description || description };
+  }
+  
+  // Handle default wrapper
+  if (typeName === 'ZodDefault') {
+    const innerResult = convertZodFieldToProperty(def.innerType);
+    return { ...innerResult, description: innerResult.description || description };
+  }
+  
+  // Handle nullable wrapper
+  if (typeName === 'ZodNullable') {
+    const innerResult = convertZodFieldToProperty(def.innerType);
+    return { ...innerResult, description: innerResult.description || description };
+  }
+  
+  // Handle primitive types
+  switch (typeName) {
+    case 'ZodString':
+      return { type: 'string', description };
+    case 'ZodNumber':
+      return { type: 'number', description };
+    case 'ZodBoolean':
+      return { type: 'boolean', description };
+    case 'ZodArray':
+      const itemType = def.type ? convertZodFieldToProperty(def.type) : { type: 'string' };
+      return { type: 'array', items: itemType, description };
+    case 'ZodObject':
+      const objectSchema = convertZodDef(def);
+      return { type: 'object', properties: objectSchema.properties, description };
+    case 'ZodEnum':
+      return { type: 'string', enum: def.values, description };
+    default:
+      return { type: 'string', description };
+  }
+}
+
+/**
+ * Check if a Zod field is optional
+ */
+function isOptionalField(zodField: any): boolean {
+  const def = zodField._def;
+  const typeName = def?.typeName;
+  
+  if (typeName === 'ZodOptional' || typeName === 'ZodDefault' || typeName === 'ZodNullable') {
+    return true;
+  }
+  
+  return false;
+}
+
+// ============================================================================
+// Tool Schema Types
+// ============================================================================
+
+/**
+ * JSON Schema for tool parameters (OpenAI function calling format)
+ */
+export interface ToolParameterSchema {
+  type: 'object';
+  properties: Record<string, {
+    type: string;
+    description?: string;
+    items?: { type: string; properties?: Record<string, unknown> };
+    properties?: Record<string, unknown>;
+    required?: string[];
+  }>;
+  required?: string[];
+}
+
+/**
+ * OpenAI function calling format for LLM binding
+ */
+export interface LLMToolBinding {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: ToolParameterSchema;
+  };
+}
+
 // ============================================================================
 // Tool Metadata
 // ============================================================================
@@ -25,6 +176,8 @@ export interface ToolMetadata {
   prerequisites: string[];
   /** State fields this tool produces/updates */
   produces: string[];
+  /** JSON Schema for tool parameters (for LLM binding) */
+  schema?: ToolParameterSchema;
 }
 
 // ============================================================================
@@ -118,6 +271,129 @@ export class AgentRegistry {
    */
   static clear(): void {
     this.registry.clear();
+  }
+
+  /**
+   * Check if an agent is deterministic (no LLM tool-calling)
+   * Deterministic agents execute a fixed workflow and don't need tool binding
+   * 
+   * @param agentName - The agent name to check
+   * @returns true if the agent is deterministic
+   */
+  static isDeterministicAgent(agentName: string): boolean {
+    const agent = this.registry.get(agentName);
+    return agent?.is_deterministic === true;
+  }
+
+  /**
+   * Get tool names for a specific agent
+   * 
+   * @param agentName - The agent name
+   * @returns Array of tool names available to the agent
+   */
+  static getToolNamesForAgent(agentName: string): string[] {
+    const agent = this.registry.get(agentName);
+    if (!agent) {
+      return [];
+    }
+    return agent.available_tools.map(t => t.tool_name);
+  }
+
+  /**
+   * Get all unique tools from all agents for LLM binding
+   * Returns tools in OpenAI function calling format
+   * 
+   * @returns Array of tools in LLM binding format
+   */
+  static getToolsForLLMBinding(): LLMToolBinding[] {
+    const allTools: LLMToolBinding[] = [];
+    const seenToolNames = new Set<string>();
+
+    for (const agent of this.getAllAgents()) {
+      // Skip deterministic agents - they don't use LLM tool calling
+      if (agent.is_deterministic) {
+        continue;
+      }
+
+      for (const tool of agent.available_tools) {
+        // Deduplicate by tool name
+        if (seenToolNames.has(tool.tool_name)) {
+          continue;
+        }
+        seenToolNames.add(tool.tool_name);
+
+        // Convert to LLM binding format
+        const binding: LLMToolBinding = {
+          type: 'function',
+          function: {
+            name: tool.tool_name,
+            description: tool.description,
+            parameters: tool.schema || {
+              type: 'object',
+              properties: {},
+              required: [],
+            },
+          },
+        };
+
+        allTools.push(binding);
+      }
+    }
+
+    console.log(`🔧 [REGISTRY] Generated ${allTools.length} tools for LLM binding`);
+    return allTools;
+  }
+
+  /**
+   * Bind tools to an LLM for supervisor planning
+   * Uses the LLM's bindTools method with tools in OpenAI function format
+   * 
+   * @param llm - The base LLM to bind tools to
+   * @returns LLM with tools bound (or original LLM if binding fails)
+   */
+  static bindToolsToSupervisor(llm: BaseChatModel): BaseChatModel {
+    const tools = this.getToolsForLLMBinding();
+    
+    if (tools.length === 0) {
+      console.warn('⚠️ [REGISTRY] No tools available for LLM binding');
+      return llm;
+    }
+
+    try {
+      // LangChain's bindTools accepts OpenAI function format
+      const llmWithTools = llm.bindTools(tools);
+      console.log(`✅ [REGISTRY] Bound ${tools.length} tools to supervisor LLM`);
+      console.log(`   Tools: ${tools.map(t => t.function.name).join(', ')}`);
+      return llmWithTools;
+    } catch (error) {
+      console.error('❌ [REGISTRY] Failed to bind tools to LLM:', error);
+      // Return original LLM as fallback
+      return llm;
+    }
+  }
+
+  /**
+   * Validate that a tool exists for an agent
+   * 
+   * @param toolName - The tool name to validate
+   * @param agentName - The agent name to check against
+   * @returns true if the tool is available for the agent
+   */
+  static validateToolForAgent(toolName: string, agentName: string): boolean {
+    const agent = this.registry.get(agentName);
+    if (!agent) {
+      return false;
+    }
+    return agent.available_tools.some(t => t.tool_name === toolName);
+  }
+
+  /**
+   * Get total tool count across all non-deterministic agents
+   * 
+   * @returns Total number of unique tools
+   */
+  static getTotalToolCount(): number {
+    return this.getToolsForLLMBinding().length;
   }
 }
 

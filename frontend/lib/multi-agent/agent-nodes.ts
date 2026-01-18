@@ -30,7 +30,7 @@ import {
 } from './monitoring';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
-import { AgentRegistry } from './registry';
+import { AgentRegistry, zodSchemaToJsonSchema } from './registry';
 import { generateExecutionPlan, type SupervisorPlan } from './supervisor-planner';
 
 // Import tool execute functions
@@ -73,6 +73,7 @@ import { portWeatherInputSchema } from '@/lib/tools/port-weather';
 import { portFinderInputSchema } from '@/lib/tools/port-finder';
 import { priceFetcherInputSchema } from '@/lib/tools/price-fetcher';
 import { bunkerAnalyzerInputSchema } from '@/lib/tools/bunker-analyzer';
+import { ecaZoneValidatorInputSchema } from '@/lib/tools/eca-zone-validator';
 
 // Import weather agent tools from tools.ts
 import {
@@ -460,6 +461,22 @@ export async function supervisorAgentNode(
   if (USE_REGISTRY_PLANNING) {
     try {
       const availableAgents = AgentRegistry.getAllAgents();
+      
+      // Log tool binding info for LLM planning
+      const toolsForBinding = AgentRegistry.getToolsForLLMBinding();
+      console.log(`🔧 [SUPERVISOR] Registry has ${toolsForBinding.length} tools for LLM binding`);
+      if (toolsForBinding.length > 0) {
+        console.log(`   Tools: ${toolsForBinding.map(t => t.function.name).join(', ')}`);
+      }
+      
+      // Log deterministic agents (they won't have tool bindings)
+      const deterministicAgents = availableAgents
+        .filter(a => AgentRegistry.isDeterministicAgent(a.agent_name))
+        .map(a => a.agent_name);
+      if (deterministicAgents.length > 0) {
+        console.log(`   Deterministic agents (no tool binding): ${deterministicAgents.join(', ')}`);
+      }
+      
       executionPlan = await generateExecutionPlan(userQuery, state, availableAgents);
       planningSource = 'registry_llm';
       console.log('✅ [SUPERVISOR] Generated execution plan:', {
@@ -3177,7 +3194,8 @@ AgentRegistry.registerAgent({
         'No origin or destination specified'
       ],
       prerequisites: ['origin_port', 'destination_port'],
-      produces: ['route_data']
+      produces: ['route_data'],
+      schema: zodSchemaToJsonSchema(routeCalculatorInputSchema)
     },
     {
       tool_name: 'calculate_weather_timeline',
@@ -3193,7 +3211,8 @@ AgentRegistry.registerAgent({
         'Query does not need weather analysis'
       ],
       prerequisites: ['route_data', 'vessel_speed'],
-      produces: ['vessel_timeline']
+      produces: ['vessel_timeline'],
+      schema: zodSchemaToJsonSchema(weatherTimelineInputSchema)
     }
   ],
   prerequisites: ['origin_port', 'destination_port'],
@@ -3219,7 +3238,8 @@ AgentRegistry.registerAgent({
         'Query does not involve maritime route planning'
       ],
       prerequisites: ['route_data'],
-      produces: ['compliance_data.eca_zones']
+      produces: ['compliance_data.eca_zones'],
+      schema: zodSchemaToJsonSchema(ecaZoneValidatorInputSchema)
     }
   ],
   prerequisites: ['route_data'],
@@ -3253,7 +3273,8 @@ AgentRegistry.registerAgent({
         'Query does not require weather analysis'
       ],
       prerequisites: ['vessel_timeline'],
-      produces: ['weather_forecast']
+      produces: ['weather_forecast'],
+      schema: zodSchemaToJsonSchema(marineWeatherInputSchema)
     },
     {
       tool_name: 'calculate_weather_consumption',
@@ -3269,7 +3290,8 @@ AgentRegistry.registerAgent({
         'Query is only about route or basic weather'
       ],
       prerequisites: ['weather_forecast', 'vessel_consumption'],
-      produces: ['weather_consumption']
+      produces: ['weather_consumption'],
+      schema: zodSchemaToJsonSchema(weatherConsumptionInputSchema)
     },
     {
       tool_name: 'check_bunker_port_weather',
@@ -3283,7 +3305,8 @@ AgentRegistry.registerAgent({
         'Query does not involve bunker operations'
       ],
       prerequisites: ['bunker_ports'],
-      produces: ['port_weather_status']
+      produces: ['port_weather_status'],
+      schema: zodSchemaToJsonSchema(portWeatherInputSchema)
     }
   ],
   prerequisites: ['vessel_timeline'],

@@ -110,6 +110,15 @@ export async function testPlanning(): Promise<void> {
         continue;
       }
       
+      // Deterministic agents should have empty tool arrays
+      if (AgentRegistry.isDeterministicAgent(agentName)) {
+        if (toolNames.length !== 0) {
+          console.error(`❌ Test 6 FAILED: Deterministic agent ${agentName} should have 0 tools, got ${toolNames.length}`);
+          allToolsValid = false;
+        }
+        continue;
+      }
+      
       const availableToolNames = agent.available_tools.map(t => t.tool_name);
       for (const toolName of toolNames) {
         if (!availableToolNames.includes(toolName)) {
@@ -124,10 +133,27 @@ export async function testPlanning(): Promise<void> {
     }
     console.log(`✅ Test 6: All assigned tools are valid`);
     
+    // Test 7: Deterministic agents have no tool assignments
+    console.log(`✅ Test 7: Deterministic agent validation`);
+    const deterministicAgents = plan.execution_order.filter(
+      agentName => AgentRegistry.isDeterministicAgent(agentName)
+    );
+    
+    for (const agentName of deterministicAgents) {
+      const tools = plan.agent_tool_assignments[agentName] || [];
+      if (tools.length > 0) {
+        console.error(`❌ Test 7 FAILED: Deterministic agent ${agentName} should have 0 tools after validation`);
+        return;
+      }
+      console.log(`   - ${agentName}: 0 tools (deterministic - correct)`);
+    }
+    console.log(`✅ Test 7: Deterministic agents have no tool assignments`);
+    
     // Summary
     console.log('\n✅ [PLANNING-TEST] All tests passed!');
     console.log(`\n📊 Plan Summary:`);
     console.log(`   - Agents in plan: ${plan.execution_order.length}`);
+    console.log(`   - Deterministic agents: ${deterministicAgents.length}`);
     console.log(`   - Total tools assigned: ${Object.values(plan.agent_tool_assignments)
       .reduce((sum, tools) => sum + tools.length, 0)}`);
     console.log(`   - Execution order: ${plan.execution_order.join(' → ')}`);
