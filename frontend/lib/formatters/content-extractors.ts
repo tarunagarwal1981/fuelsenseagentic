@@ -6,6 +6,13 @@
  */
 
 import type { MultiAgentState } from '../multi-agent/state';
+import {
+  renderStrategicPrioritiesFromData,
+  renderCrossAgentConnectionsFromData,
+  renderHiddenOpportunitiesFromData,
+  renderRiskAlertsFromData,
+  renderSynthesisMetadata,
+} from './synthesis-renderers';
 
 // ============================================================================
 // Main Extractor
@@ -131,6 +138,19 @@ function applyFormat(value: any, format: string, path: string): string {
     case 'rob_table':
       return formatROBTable(value);
     
+    // Synthesis format types
+    case 'priority_list':
+      return renderStrategicPrioritiesFromData(value);
+    
+    case 'connection_list':
+      return renderCrossAgentConnectionsFromData(value);
+    
+    case 'opportunity_list':
+      return renderHiddenOpportunitiesFromData(value);
+    
+    case 'risk_list':
+      return renderRiskAlertsFromData(value);
+    
     default:
       console.warn(`⚠️ [EXTRACTOR] Unknown format: ${format}`);
       return formatGenericValue(value);
@@ -184,6 +204,31 @@ function formatValueByPath(value: any, path: string, state: MultiAgentState): st
   // ROB waypoints formatting
   if (path === 'rob_waypoints') {
     return formatROBTable(value);
+  }
+  
+  // Synthesized insights formatting
+  if (path === 'synthesized_insights.executive_insight') {
+    return typeof value === 'string' ? value : '';
+  }
+  
+  if (path === 'synthesized_insights.strategic_priorities') {
+    return renderStrategicPrioritiesFromData(value);
+  }
+  
+  if (path === 'synthesized_insights.cross_agent_connections') {
+    return renderCrossAgentConnectionsFromData(value);
+  }
+  
+  if (path === 'synthesized_insights.hidden_opportunities') {
+    return renderHiddenOpportunitiesFromData(value);
+  }
+  
+  if (path === 'synthesized_insights.risk_alerts') {
+    return renderRiskAlertsFromData(value);
+  }
+  
+  if (path === 'synthesized_insights.synthesis_metadata') {
+    return renderSynthesisMetadata({ synthesized_insights: { ...value, executive_insight: '', strategic_priorities: [], cross_agent_connections: [], synthesis_metadata: value } } as any);
   }
   
   // Generic fallback

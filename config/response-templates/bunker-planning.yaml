@@ -1,18 +1,46 @@
 template:
   query_type: "bunker-planning"
   name: "Bunker Planning Response"
-  version: "1.0.0"
-  description: "Optimized response for bunker planning queries with ROB tracking"
+  version: "2.0.0"
+  description: "Comprehensive bunker planning with strategic synthesis"
   
   # ===========================================================================
   # TIER 1: EXECUTIVE SUMMARY (Always Visible - ~300 words)
   # ===========================================================================
   
   sections:
+    # NEW: Strategic insight from synthesis (shows first if available)
+    - id: "executive_insight"
+      title: "🎯 Key Strategic Insight"
+      tier: 1
+      priority: 0
+      visibility: "conditional"
+      condition: "synthesized_insights && synthesized_insights.executive_insight"
+      max_words: 75
+      
+      content_source:
+        state_path: "synthesized_insights.executive_insight"
+        fallback: ""
+    
+    # NEW: Strategic priorities from synthesis
+    - id: "strategic_priorities"
+      title: "📋 Recommended Actions"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "synthesized_insights && synthesized_insights.strategic_priorities && synthesized_insights.strategic_priorities.length > 0"
+      max_words: 250
+      
+      content_source:
+        state_path: "synthesized_insights.strategic_priorities"
+        format: "priority_list"
+        fallback: ""
+    
+    # EXISTING: Primary recommendation (priority adjusted)
     - id: "primary_recommendation"
       title: "🎯 Bunker Recommendation"
       tier: 1
-      priority: 1
+      priority: 2
       visibility: "always"
       max_words: 150
       
@@ -28,10 +56,11 @@ template:
           - {reason_2}
           - {reason_3}
     
+    # EXISTING: Critical safety alert (priority adjusted)
     - id: "critical_safety_alert"
       title: "⚠️ CRITICAL SAFETY ALERT"
       tier: 1
-      priority: 0              # Highest priority - shows first if present
+      priority: 3
       visibility: "conditional"
       condition: "rob_safety_status && !rob_safety_status.overall_safe"
       
@@ -44,10 +73,11 @@ template:
           
           **Action Required:** {action_required}
     
+    # EXISTING: Cost summary (priority adjusted)
     - id: "cost_summary"
       title: "💰 Cost Summary"
       tier: 1
-      priority: 2
+      priority: 4
       visibility: "always"
       max_words: 80
       
@@ -60,10 +90,11 @@ template:
           
           *Savings vs next best: ${savings:,.0f}*
     
+    # EXISTING: Alternative port (priority adjusted)
     - id: "alternative_port"
       title: "🔄 Alternative Option"
       tier: 1
-      priority: 3
+      priority: 5
       visibility: "conditional"
       condition: "bunker_analysis && bunker_analysis.alternatives && bunker_analysis.alternatives.length > 0"
       max_words: 80
@@ -78,10 +109,53 @@ template:
   # TIER 2: KEY INSIGHTS (Expandable - ~500 words total)
   # ===========================================================================
   
+    # NEW: Cross-agent connections from synthesis
+    - id: "cross_agent_connections"
+      title: "🔗 How Everything Connects"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.cross_agent_connections && synthesized_insights.cross_agent_connections.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.cross_agent_connections"
+        format: "connection_list"
+        fallback: ""
+    
+    # NEW: Hidden opportunities from synthesis
+    - id: "hidden_opportunities"
+      title: "💡 Opportunities You Might Miss"
+      tier: 2
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.hidden_opportunities && synthesized_insights.hidden_opportunities.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.hidden_opportunities"
+        format: "opportunity_list"
+        fallback: ""
+    
+    # NEW: Risk alerts from synthesis
+    - id: "risk_alerts"
+      title: "⚠️ Risk Alerts"
+      tier: 2
+      priority: 3
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.risk_alerts"
+        format: "risk_list"
+        fallback: ""
+    
+    # EXISTING: Why this recommendation (priority adjusted)
     - id: "why_this_recommendation"
       title: "📊 Why This Recommendation?"
       tier: 2
-      priority: 1
+      priority: 4
       visibility: "expandable"
       collapsed: true
       max_words: 300
@@ -104,10 +178,11 @@ template:
           ✅ With recommended bunker: Safe arrival with {final_safety_margin} days reserve
           ❌ Without bunker: Fuel depleted at {depletion_point}
     
+    # EXISTING: ROB tracking summary (priority adjusted)
     - id: "rob_tracking_summary"
       title: "⛽ ROB Tracking Summary"
       tier: 2
-      priority: 2
+      priority: 5
       visibility: "expandable"
       collapsed: true
       condition: "rob_tracking"
@@ -125,10 +200,11 @@ template:
           - After Bunkering: {after_bunker_rob_vlsfo:.0f} MT VLSFO
           - At Destination: {destination_rob_vlsfo:.0f} MT VLSFO ({final_margin:.1f} days)
     
+    # EXISTING: ECA compliance summary (priority adjusted)
     - id: "eca_compliance_summary"
       title: "⚖️ ECA Compliance"
       tier: 2
-      priority: 3
+      priority: 6
       visibility: "expandable"
       collapsed: true
       condition: "compliance_data && compliance_data.eca_zones && compliance_data.eca_zones.has_eca_zones"
@@ -196,32 +272,69 @@ template:
       content_source:
         state_path: "weather_forecast"
         format: "detailed_weather"
+    
+    # NEW: Synthesis metadata (for debugging/transparency)
+    - id: "synthesis_metadata"
+      title: "🧠 Synthesis Details"
+      tier: 3
+      priority: 5
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.synthesis_metadata"
+      
+      content_source:
+        state_path: "synthesized_insights.synthesis_metadata"
   
   # ===========================================================================
   # BUSINESS RULES (Dynamic Behavior)
   # ===========================================================================
   
   business_rules:
+    # EXISTING: Surface critical safety warnings
     - name: "surface_critical_safety_warnings"
       description: "Move safety warnings to top if voyage is unsafe"
       condition: "rob_safety_status && !rob_safety_status.overall_safe"
       action: "move_to_tier_1"
       target: "critical_safety_alert"
     
+    # EXISTING: Hide empty alternatives
     - name: "hide_empty_alternatives"
       description: "Don't show alternative section if no alternatives exist"
       condition: "!bunker_analysis || !bunker_analysis.alternatives || bunker_analysis.alternatives.length === 0"
       action: "hide"
       target: "alternative_port"
     
+    # EXISTING: Auto-expand safety details if warning
     - name: "auto_expand_safety_details_if_warning"
       description: "Auto-expand ROB tracking if there are safety warnings"
       condition: "rob_safety_status && !rob_safety_status.overall_safe"
       action: "expand"
       target: "rob_tracking_summary"
     
+    # EXISTING: Show ECA only if zones exist
     - name: "show_eca_only_if_zones_exist"
       description: "Only show ECA section if route crosses ECA zones"
       condition: "!compliance_data || !compliance_data.eca_zones || !compliance_data.eca_zones.has_eca_zones"
       action: "hide"
       target: "eca_compliance_summary"
+    
+    # NEW: Prioritize synthesis insights
+    - name: "prioritize_synthesis_insights"
+      description: "If synthesis ran, show strategic insight first"
+      condition: "synthesized_insights && synthesized_insights.executive_insight"
+      action: "move_to_tier_1"
+      target: "executive_insight"
+    
+    # NEW: Surface critical risks
+    - name: "surface_critical_risks"
+      description: "Show critical risk alerts prominently"
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+      action: "expand"
+      target: "risk_alerts"
+    
+    # NEW: Expand connections if critical risks
+    - name: "expand_connections_on_critical"
+      description: "Expand cross-agent connections if critical risks detected"
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+      action: "expand"
+      target: "cross_agent_connections"
