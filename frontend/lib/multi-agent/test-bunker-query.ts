@@ -51,19 +51,20 @@ async function testBunkerQuery() {
     console.log('\n✅ Execution completed!\n');
     console.log('📊 Results:');
     
-    if (result.bunker_ports) {
-      console.log(`\n⚓ Found ${result.bunker_ports.total_ports_found || 0} bunker ports:`);
+    if (result.bunker_ports && Array.isArray(result.bunker_ports)) {
+      console.log(`\n⚓ Found ${result.bunker_ports.length} bunker ports:`);
       
-      if (result.bunker_ports.ports && result.bunker_ports.ports.length > 0) {
-        result.bunker_ports.ports.slice(0, 10).forEach((port: any, index: number) => {
-          console.log(`\n${index + 1}. ${port.port?.name || 'Unknown'} (${port.port?.port_code || 'N/A'})`);
-          console.log(`   Distance: ${port.distance_from_route_nm?.toFixed(1)} nm`);
-          console.log(`   Country: ${port.port?.country || 'N/A'}`);
-          console.log(`   Fuel types: ${port.port?.fuel_capabilities?.join(', ') || 'N/A'}`);
+      if (result.bunker_ports.length > 0) {
+        result.bunker_ports.slice(0, 10).forEach((portWithDist: any, index: number) => {
+          const p = portWithDist.port ?? portWithDist;
+          console.log(`\n${index + 1}. ${p?.name || 'Unknown'} (${p?.port_code || 'N/A'})`);
+          console.log(`   Distance: ${portWithDist.distance_from_route_nm?.toFixed(1)} nm`);
+          console.log(`   Country: ${p?.country || 'N/A'}`);
+          console.log(`   Fuel types: ${p?.fuel_capabilities?.join(', ') || 'N/A'}`);
         });
         
-        if (result.bunker_ports.ports.length > 10) {
-          console.log(`\n... and ${result.bunker_ports.ports.length - 10} more ports`);
+        if (result.bunker_ports.length > 10) {
+          console.log(`\n... and ${result.bunker_ports.length - 10} more ports`);
         }
       }
     }
