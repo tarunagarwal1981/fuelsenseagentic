@@ -22,6 +22,10 @@ import {
   formatCostSummary as extractCostSummary,
   formatAlternativePort as extractAlternativePort
 } from './content-extractors';
+import { 
+  getInsightExtractor, 
+  type ExtractedInsight 
+} from './insight-extractor';
 
 // ============================================================================
 // Extended Response Interface
@@ -43,6 +47,9 @@ export interface TemplateFormattedResponse extends FormattedResponse {
     tier_2_expandable: RenderedSection[];
     tier_3_technical: RenderedSection[];
   };
+  
+  // Extracted insights (auto-identified from state)
+  insights?: ExtractedInsight[];
 }
 
 export interface RenderedSection {
@@ -111,12 +118,23 @@ export function formatResponseWithTemplate(
   // Step 6: Build text output from sections
   const textOutput = buildTextFromSections(sectionsByTier);
   
-  // Step 7: Get structured data from existing formatter
+  // Step 7: Extract insights from state
+  const extractor = getInsightExtractor();
+  const insights = extractor.extractInsights(state);
+  console.log(`💡 [TEMPLATE-FORMATTER] Extracted ${insights.length} insights`);
+  
+  // Step 8: Get structured data from existing formatter
   const existingResponse = existingFormatter(state);
+  
+  // Step 9: Build final text with insights prepended if critical
+  const criticalInsights = insights.filter(i => i.priority === 'critical');
+  const finalText = criticalInsights.length > 0
+    ? buildTextWithInsights(criticalInsights, textOutput)
+    : textOutput;
   
   return {
     ...existingResponse,
-    text: textOutput,
+    text: finalText,
     template_metadata: {
       query_type: detectedQueryType,
       template_name: template.template.name,
@@ -128,12 +146,32 @@ export function formatResponseWithTemplate(
       rules_applied: rulesApplied,
     },
     sections_by_tier: sectionsByTier,
+    insights: insights,
   };
 }
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/**
+ * Build text output with critical insights prepended
+ */
+function buildTextWithInsights(criticalInsights: ExtractedInsight[], baseText: string): string {
+  if (criticalInsights.length === 0) {
+    return baseText;
+  }
+  
+  let insightsSection = '## ⚠️ Critical Alerts\n\n';
+  
+  for (const insight of criticalInsights) {
+    insightsSection += `${insight.message}\n\n`;
+  }
+  
+  insightsSection += '---\n\n';
+  
+  return insightsSection + baseText;
+}
 
 /**
  * Deep clone template to avoid mutating cached version

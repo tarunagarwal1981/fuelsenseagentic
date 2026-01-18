@@ -351,6 +351,112 @@ test('should render route_summary for route-only template', () => {
 });
 
 // ============================================================================
+// Insight Extraction Tests
+// ============================================================================
+
+console.log('\n--- Insight Extraction Tests ---');
+
+test('should include insights array in response', () => {
+  const state = createMockState();
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  return response.insights !== undefined && Array.isArray(response.insights);
+});
+
+test('should extract cost savings insight when max_savings > 5000', () => {
+  const state = createMockState({
+    bunker_analysis: {
+      ...createMockState().bunker_analysis!,
+      max_savings_usd: 10000,
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  const savingsInsight = response.insights?.find(i => i.id === 'significant_cost_savings');
+  return savingsInsight !== undefined;
+});
+
+test('should extract critical insight for very low safety margin', () => {
+  const state = createMockState({
+    rob_safety_status: {
+      overall_safe: false,
+      minimum_rob_days: 1.5,
+      violations: ['Margin below minimum'],
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  const criticalInsight = response.insights?.find(i => 
+    i.id === 'very_low_safety_margin' && i.priority === 'critical'
+  );
+  return criticalInsight !== undefined;
+});
+
+test('should extract low safety margin insight (3-5 days)', () => {
+  const state = createMockState({
+    rob_safety_status: {
+      overall_safe: true,
+      minimum_rob_days: 4.0,
+      violations: [],
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  const lowMarginInsight = response.insights?.find(i => i.id === 'low_safety_margin');
+  return lowMarginInsight !== undefined;
+});
+
+test('should extract departure port optimal insight', () => {
+  const state = createMockState({
+    bunker_analysis: {
+      ...createMockState().bunker_analysis!,
+      best_option: {
+        ...createMockState().bunker_analysis!.best_option,
+        distance_from_route_nm: 2,
+      },
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  const optimalInsight = response.insights?.find(i => i.id === 'departure_port_optimal');
+  return optimalInsight !== undefined;
+});
+
+test('should sort insights by priority (critical first)', () => {
+  const state = createMockState({
+    rob_safety_status: {
+      overall_safe: false,
+      minimum_rob_days: 1.0,
+      violations: ['Critical violation'],
+    },
+    bunker_analysis: {
+      ...createMockState().bunker_analysis!,
+      max_savings_usd: 10000,
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  if (!response.insights || response.insights.length < 2) return false;
+  
+  // First insight should be critical
+  return response.insights[0].priority === 'critical';
+});
+
+test('should prepend critical insights to text output', () => {
+  const state = createMockState({
+    rob_safety_status: {
+      overall_safe: false,
+      minimum_rob_days: 1.0,
+      violations: ['Critical violation'],
+    },
+  });
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  // Text should start with critical alerts section
+  return response.text?.includes('Critical Alerts') || response.text?.includes('CRITICAL');
+});
+
+// ============================================================================
 // Summary
 // ============================================================================
 
@@ -388,6 +494,12 @@ sampleResponse.sections_by_tier?.tier_2_expandable?.forEach(s => {
 console.log(`  Tier 3 (Technical): ${sampleResponse.sections_by_tier?.tier_3_technical?.length || 0} sections`);
 sampleResponse.sections_by_tier?.tier_3_technical?.forEach(s => {
   console.log(`    - ${s.title} (${s.word_count} words, ${s.collapsed ? 'collapsed' : 'expanded'})`);
+});
+
+console.log('\nInsights Extracted:');
+console.log(`  Total: ${sampleResponse.insights?.length || 0} insights`);
+sampleResponse.insights?.forEach(insight => {
+  console.log(`    - [${insight.priority.toUpperCase()}] ${insight.id}: ${insight.message.substring(0, 60)}...`);
 });
 
 console.log('\nText Output Preview (first 500 chars):');
