@@ -10,6 +10,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { MultiAgentState } from '../state';
 import { getSynthesisConfig, type SynthesisConfig } from '../../config/synthesis-config-loader';
 import { buildSynthesisPrompt, serializeAgentOutputs } from './synthesis-prompts';
+import { isFeatureEnabled } from '../../config/feature-flags';
+import { getSynthesisMetrics } from './synthesis-metrics';
 
 // ============================================================================
 // Types
@@ -46,6 +48,9 @@ interface LLMResult {
 export async function generateSynthesis(
   state: MultiAgentState
 ): Promise<SynthesisResult> {
+  const metrics = getSynthesisMetrics();
+  metrics.recordAttempt();
+  
   const startTime = Date.now();
   
   try {
@@ -55,6 +60,7 @@ export async function generateSynthesis(
     const shouldRun = shouldRunSynthesis(state);
     if (!shouldRun.run) {
       console.log(`⏭️ [SYNTHESIS] Skipping: ${shouldRun.reason}`);
+      metrics.recordSkipped();
       return {
         success: false,
         error: `Synthesis skipped: ${shouldRun.reason}`,
@@ -68,13 +74,18 @@ export async function generateSynthesis(
     const agentData = serializeAgentOutputs(state, shouldRun.agentList!);
     const fullPrompt = `${prompt}\n\n---\n\n**AGENT OUTPUTS:**\n${agentData}\n\n---\n\nNow analyze the above agent outputs and return your synthesis as JSON.`;
     
-    console.log(`📝 [SYNTHESIS] Prompt length: ${fullPrompt.length} chars`);
+    if (isFeatureEnabled('SYNTHESIS_DEBUG')) {
+      console.log(`📝 [SYNTHESIS-DEBUG] Full prompt:\n${fullPrompt.substring(0, 1000)}...`);
+    } else {
+      console.log(`📝 [SYNTHESIS] Prompt length: ${fullPrompt.length} chars`);
+    }
     
     // Step 3: Call LLM
     const config = getSynthesisConfig();
     const llmResult = await callSynthesisLLM(fullPrompt, config);
     
     if (!llmResult.success) {
+      metrics.recordFailure();
       return {
         success: false,
         error: llmResult.error,
@@ -86,6 +97,7 @@ export async function generateSynthesis(
     const parsedInsights = parseAndValidateSynthesis(llmResult.response!, shouldRun.agentList!);
     
     if (!parsedInsights) {
+      metrics.recordFailure();
       return {
         success: false,
         error: 'Failed to parse synthesis response',
@@ -105,6 +117,11 @@ export async function generateSynthesis(
     };
     
     const duration = Date.now() - startTime;
+    const cost = llmResult.cost_usd || 0;
+    
+    // Record success metrics
+    metrics.recordSuccess(cost, duration);
+    
     console.log(`✅ [SYNTHESIS] Completed in ${duration}ms`);
     console.log(`   Executive Insight: ${finalInsights.executive_insight?.substring(0, 80)}...`);
     console.log(`   Strategic Priorities: ${finalInsights.strategic_priorities?.length || 0}`);
@@ -113,13 +130,14 @@ export async function generateSynthesis(
     return {
       success: true,
       synthesized_insights: finalInsights,
-      cost_usd: llmResult.cost_usd || 0,
+      cost_usd: cost,
       duration_ms: duration,
     };
     
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('❌ [SYNTHESIS] Error:', message);
+    metrics.recordFailure();
     return {
       success: false,
       error: message,
@@ -136,9 +154,14 @@ export async function generateSynthesis(
  * Determine if synthesis should run based on config and state
  */
 export function shouldRunSynthesis(state: MultiAgentState): ShouldRunResult {
+  // Check: Feature flag first
+  if (!isFeatureEnabled('USE_SYNTHESIS')) {
+    return { run: false, reason: 'Synthesis disabled via feature flag' };
+  }
+  
   const config = getSynthesisConfig();
   
-  // Check: Is synthesis enabled?
+  // Check: Is synthesis enabled in config?
   if (!config.enabled) {
     return { run: false, reason: 'Synthesis disabled in config' };
   }
