@@ -1,0 +1,227 @@
+template:
+  query_type: "bunker-planning"
+  name: "Bunker Planning Response"
+  version: "1.0.0"
+  description: "Optimized response for bunker planning queries with ROB tracking"
+  
+  # ===========================================================================
+  # TIER 1: EXECUTIVE SUMMARY (Always Visible - ~300 words)
+  # ===========================================================================
+  
+  sections:
+    - id: "primary_recommendation"
+      title: "🎯 Bunker Recommendation"
+      tier: 1
+      priority: 1
+      visibility: "always"
+      max_words: 150
+      
+      content_source:
+        state_path: "bunker_analysis"
+        template: |
+          **Recommended Port:** {port_name} ({port_code})
+          **Total Quantity:** {total_quantity} MT ({vlsfo_qty} MT VLSFO + {mgo_qty} MT MGO)
+          **Estimated Cost:** ${total_cost:,.0f}
+          
+          **Why this port:**
+          - {reason_1}
+          - {reason_2}
+          - {reason_3}
+    
+    - id: "critical_safety_alert"
+      title: "⚠️ CRITICAL SAFETY ALERT"
+      tier: 1
+      priority: 0              # Highest priority - shows first if present
+      visibility: "conditional"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      
+      content_source:
+        state_path: "rob_safety_status"
+        template: |
+          **WARNING:** Safety concerns detected for this voyage.
+          
+          {violations_list}
+          
+          **Action Required:** {action_required}
+    
+    - id: "cost_summary"
+      title: "💰 Cost Summary"
+      tier: 1
+      priority: 2
+      visibility: "always"
+      max_words: 80
+      
+      content_source:
+        state_path: "bunker_analysis"
+        template: |
+          **Fuel Cost:** ${fuel_cost:,.0f}
+          **Deviation Cost:** ${deviation_cost:,.0f}
+          **Total:** ${total_cost:,.0f}
+          
+          *Savings vs next best: ${savings:,.0f}*
+    
+    - id: "alternative_port"
+      title: "🔄 Alternative Option"
+      tier: 1
+      priority: 3
+      visibility: "conditional"
+      condition: "bunker_analysis && bunker_analysis.alternatives && bunker_analysis.alternatives.length > 0"
+      max_words: 80
+      
+      content_source:
+        state_path: "bunker_analysis.alternatives[0]"
+        template: |
+          **{port_name}** - ${total_cost:,.0f}
+          Trade-off: {tradeoff}
+  
+  # ===========================================================================
+  # TIER 2: KEY INSIGHTS (Expandable - ~500 words total)
+  # ===========================================================================
+  
+    - id: "why_this_recommendation"
+      title: "📊 Why This Recommendation?"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      max_words: 300
+      
+      content_source:
+        state_path: ["vessel_profile", "route_data", "eca_consumption"]
+        template: |
+          **Your Vessel:**
+          - Current ROB: {current_rob_vlsfo} MT VLSFO, {current_rob_lsmgo} MT LSMGO
+          - Tank Capacity: {capacity_vlsfo} MT VLSFO, {capacity_lsmgo} MT LSMGO
+          - Consumption: {consumption_vlsfo} MT/day VLSFO, {consumption_lsmgo} MT/day LSMGO
+          
+          **Voyage Requirements:**
+          - Distance: {distance:,.0f} nm (~{duration} days)
+          - Base Consumption: {total_consumption:,.0f} MT
+          - ECA Requirement: {eca_mgo_required:,.0f} MT MGO
+          - Safety Margin: {safety_margin} days = {safety_margin_mt:,.0f} MT
+          
+          **ROB Analysis:**
+          ✅ With recommended bunker: Safe arrival with {final_safety_margin} days reserve
+          ❌ Without bunker: Fuel depleted at {depletion_point}
+    
+    - id: "rob_tracking_summary"
+      title: "⛽ ROB Tracking Summary"
+      tier: 2
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      condition: "rob_tracking"
+      max_words: 200
+      
+      content_source:
+        state_path: "rob_tracking"
+        template: |
+          **Voyage Safety:** {overall_safe ? '✅ Safe' : '⚠️ Warning'}
+          **Minimum Safety Margin:** {minimum_rob_days:.1f} days
+          
+          **Key Points:**
+          - Departure: {departure_rob_vlsfo:.0f} MT VLSFO
+          - At Bunker Port: {bunker_port_rob_vlsfo:.0f} MT VLSFO ({safety_margin:.1f} days)
+          - After Bunkering: {after_bunker_rob_vlsfo:.0f} MT VLSFO
+          - At Destination: {destination_rob_vlsfo:.0f} MT VLSFO ({final_margin:.1f} days)
+    
+    - id: "eca_compliance_summary"
+      title: "⚖️ ECA Compliance"
+      tier: 2
+      priority: 3
+      visibility: "expandable"
+      collapsed: true
+      condition: "compliance_data && compliance_data.eca_zones && compliance_data.eca_zones.has_eca_zones"
+      max_words: 200
+      
+      content_source:
+        state_path: "compliance_data.eca_zones"
+        template: |
+          **ECA Zones Crossed:** {zones_count}
+          **Total MGO Required:** {total_mgo_mt:.0f} MT
+          
+          **Zones:**
+          {zones_list}
+          
+          *Fuel switching managed by crew as per standard procedures*
+  
+  # ===========================================================================
+  # TIER 3: TECHNICAL DETAILS (Expandable - full detail)
+  # ===========================================================================
+  
+    - id: "complete_rob_tracking"
+      title: "⛽ Complete ROB Tracking (All Waypoints)"
+      tier: 3
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      condition: "rob_waypoints && rob_waypoints.length > 0"
+      
+      content_source:
+        state_path: "rob_waypoints"
+        format: "table"
+    
+    - id: "all_port_options"
+      title: "📍 All Port Options ({count} ports)"
+      tier: 3
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      condition: "bunker_ports && bunker_ports.length > 2"
+      
+      content_source:
+        state_path: "bunker_ports"
+        format: "comparison_table"
+    
+    - id: "eca_fuel_switching_timeline"
+      title: "🔄 Detailed Fuel Switching Timeline"
+      tier: 3
+      priority: 3
+      visibility: "expandable"
+      collapsed: true
+      condition: "compliance_data && compliance_data.eca_zones && compliance_data.eca_zones.switching_points"
+      
+      content_source:
+        state_path: "compliance_data.eca_zones.switching_points"
+        format: "timeline"
+    
+    - id: "weather_impact_details"
+      title: "🌊 Weather Impact Details"
+      tier: 3
+      priority: 4
+      visibility: "expandable"
+      collapsed: true
+      condition: "weather_forecast"
+      
+      content_source:
+        state_path: "weather_forecast"
+        format: "detailed_weather"
+  
+  # ===========================================================================
+  # BUSINESS RULES (Dynamic Behavior)
+  # ===========================================================================
+  
+  business_rules:
+    - name: "surface_critical_safety_warnings"
+      description: "Move safety warnings to top if voyage is unsafe"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      action: "move_to_tier_1"
+      target: "critical_safety_alert"
+    
+    - name: "hide_empty_alternatives"
+      description: "Don't show alternative section if no alternatives exist"
+      condition: "!bunker_analysis || !bunker_analysis.alternatives || bunker_analysis.alternatives.length === 0"
+      action: "hide"
+      target: "alternative_port"
+    
+    - name: "auto_expand_safety_details_if_warning"
+      description: "Auto-expand ROB tracking if there are safety warnings"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      action: "expand"
+      target: "rob_tracking_summary"
+    
+    - name: "show_eca_only_if_zones_exist"
+      description: "Only show ECA section if route crosses ECA zones"
+      condition: "!compliance_data || !compliance_data.eca_zones || !compliance_data.eca_zones.has_eca_zones"
+      action: "hide"
+      target: "eca_compliance_summary"
