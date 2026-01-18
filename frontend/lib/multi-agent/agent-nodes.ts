@@ -52,6 +52,7 @@ import {
   getVesselProfile,
   getDefaultVesselProfile,
   listAllVessels,
+  type VesselProfile,
 } from '@/lib/services/vessel-service';
 import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/lib/engines/eca-consumption-engine';
 import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
@@ -2089,28 +2090,24 @@ export async function bunkerAgentNode(
     const resolvedVesselName = state.vessel_name || extractVesselNameFromQuery(userQuery);
     const vpFromDb = resolvedVesselName ? getVesselProfile(resolvedVesselName) : null;
 
+    let vp: VesselProfile;
+    let vesselNotFoundWarning: string | null = null;
+
     if (resolvedVesselName && !vpFromDb) {
       console.warn(`⚠️ [BUNKER-WORKFLOW] Vessel "${resolvedVesselName}" not found in database`);
       console.log('   Available vessels:', listAllVessels().join(', '));
-      return {
-        messages: [
-          ...state.messages,
-          new AIMessage({
-            content: `⚠️ Vessel **"${resolvedVesselName}"** not found in our database.
-
-**Available vessels:**
-${listAllVessels().map((v) => `- ${v}`).join('\n')}
-
-Please use one of the vessels above for accurate ROB and consumption data. You can also retry without a vessel name to use default assumptions.`,
-          }),
-        ],
-        agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' },
-        vessel_name: resolvedVesselName,
-        vessel_profile: null,
-      };
+      console.log('   📝 [BUNKER-WORKFLOW] Using default vessel profile to continue workflow');
+      
+      vp = getDefaultVesselProfile();
+      vesselNotFoundWarning = `⚠️ **Note:** Vessel "${resolvedVesselName}" not found in database. Using default vessel assumptions. Available vessels: ${listAllVessels().join(', ')}`;
+    } else {
+      vp = vpFromDb ?? getDefaultVesselProfile();
+      if (vpFromDb) {
+        console.log(`✅ [BUNKER-WORKFLOW] Vessel profile loaded: ${vp.vessel_name}`);
+      } else {
+        console.log('   📝 [BUNKER-WORKFLOW] No vessel specified, using default profile');
+      }
     }
-
-    const vp = vpFromDb ?? getDefaultVesselProfile();
     const fouling = vp.fouling_factor ?? 1;
     const consumptionVlsfo = vp.consumption_vlsfo_per_day * fouling;
     const consumptionLsmgo = vp.consumption_lsmgo_per_day * fouling;
@@ -2224,6 +2221,13 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
         
         if (bunkerPorts.total_ports_found === 0) {
           console.warn('⚠️ [BUNKER-WORKFLOW] No bunker ports found along route');
+          const noPortsMessage: any = {
+            type: 'bunker_workflow_complete',
+            message: 'No suitable bunker ports found within 150 nautical miles of the route. Consider increasing deviation limit or choosing an alternative route.',
+          };
+          if (vesselNotFoundWarning) {
+            noPortsMessage.warning = vesselNotFoundWarning;
+          }
           return {
             bunker_ports: bunkerPorts,
             rob_tracking: robTrackingResult ?? null,
@@ -2231,7 +2235,7 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
             rob_safety_status: robSafetyStatus ?? null,
             eca_consumption: ecaConsumptionResult ?? null,
             eca_summary: ecaSummaryResult ?? null,
-            vessel_name: vp.vessel_name,
+            vessel_name: resolvedVesselName || vp.vessel_name,
             vessel_profile: vp,
             agent_status: { 
               ...(state.agent_status || {}), 
@@ -2240,7 +2244,7 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
             messages: [
               ...state.messages,
               new AIMessage({
-                content: 'No suitable bunker ports found within 150 nautical miles of the route. Consider increasing deviation limit or choosing an alternative route.',
+                content: JSON.stringify(noPortsMessage),
               }),
             ],
           };
@@ -2467,6 +2471,24 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
     console.log(`   - Prices: ${pricesCount} ports`);
     console.log(`   - Analysis: ${recommendationsCount} recommendations`);
     
+    const messageContent: any = {
+      type: 'bunker_workflow_complete',
+      ports_found: portsCount,
+      weather_checked: portWeather?.length || 0,
+      prices_fetched: pricesCount,
+      recommendations: recommendationsCount,
+      recommended_port: analysisData?.recommendations?.[0]?.port_name || 'Unknown',
+      rob_overall_safe: robSafetyStatus?.overall_safe,
+      rob_minimum_days: robSafetyStatus?.minimum_rob_days,
+      eca_percentage: ecaSummaryResult?.eca_percentage,
+      vessel_name: vp.vessel_name,
+    };
+
+    // Add warning if vessel not found
+    if (vesselNotFoundWarning) {
+      messageContent.warning = vesselNotFoundWarning;
+    }
+    
     return {
       bunker_ports: portsArray,              // ✅ FIXED: Array of ports, not full object
       port_weather_status: portWeather,       // ✅ Already correct (array)
@@ -2477,7 +2499,7 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
       rob_safety_status: robSafetyStatus ?? null,
       eca_consumption: ecaConsumptionResult ?? null,
       eca_summary: ecaSummaryResult ?? null,
-      vessel_name: vp.vessel_name,
+      vessel_name: resolvedVesselName || vp.vessel_name,
       vessel_profile: vp,
       agent_status: {
         ...(state.agent_status || {}),
@@ -2486,18 +2508,7 @@ Please use one of the vessels above for accurate ROB and consumption data. You c
       messages: [
         ...state.messages,
         new AIMessage({
-          content: JSON.stringify({
-            type: 'bunker_workflow_complete',
-            ports_found: portsCount,
-            weather_checked: portWeather?.length || 0,
-            prices_fetched: pricesCount,
-            recommendations: recommendationsCount,
-            recommended_port: analysisData?.recommendations?.[0]?.port_name || 'Unknown',
-            rob_overall_safe: robSafetyStatus?.overall_safe,
-            rob_minimum_days: robSafetyStatus?.minimum_rob_days,
-            eca_percentage: ecaSummaryResult?.eca_percentage,
-            vessel_name: vp.vessel_name,
-          })
+          content: JSON.stringify(messageContent)
         })
       ]
     };

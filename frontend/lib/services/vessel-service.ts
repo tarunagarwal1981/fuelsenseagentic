@@ -66,10 +66,28 @@ export interface VesselProfile {
 const db = vesselsDatabase as Record<string, VesselData>;
 
 /**
- * Get vessel data by vessel name
+ * Get vessel data by vessel name (CASE-INSENSITIVE)
  */
 export function getVesselData(vesselName: string): VesselData | null {
-  return db[vesselName] ?? null;
+  // Try exact match first (fast path)
+  if (db[vesselName as keyof typeof db]) {
+    return db[vesselName as keyof typeof db];
+  }
+  
+  // Try case-insensitive match
+  const lowerName = vesselName.toLowerCase().trim();
+  const matchingKey = Object.keys(db).find(
+    key => key.toLowerCase().trim() === lowerName
+  );
+  
+  if (matchingKey) {
+    console.log(`✅ [VESSEL-SERVICE] Found vessel with case-insensitive match: "${vesselName}" → "${matchingKey}"`);
+    return db[matchingKey as keyof typeof db];
+  }
+  
+  console.warn(`❌ [VESSEL-SERVICE] Vessel "${vesselName}" not found in database`);
+  console.log('   Available vessels:', Object.keys(db).join(', '));
+  return null;
 }
 
 /**
@@ -86,6 +104,18 @@ export function getVesselProfile(
     return null;
   }
 
+  // Find the actual database key (for case-insensitive matches)
+  let matchedKey = vesselName;
+  if (!(vesselName in db)) {
+    const lowerName = vesselName.toLowerCase().trim();
+    const foundKey = Object.keys(db).find(
+      key => key.toLowerCase().trim() === lowerName
+    );
+    if (foundKey) {
+      matchedKey = foundKey;
+    }
+  }
+
   const operationalSpeed = speed ?? vesselData.operational_speed_knots;
   const speedKey = `speed_${operationalSpeed}_knots`;
   const consumption =
@@ -93,7 +123,7 @@ export function getVesselProfile(
     vesselData.consumption_profile['speed_14_knots'];
 
   return {
-    vessel_name: vesselName,
+    vessel_name: matchedKey,
     vessel_data: vesselData,
     initial_rob: {
       VLSFO: vesselData.current_rob.VLSFO,
@@ -134,10 +164,19 @@ export function listAllVessels(): string[] {
 }
 
 /**
- * Check if vessel exists in database
+ * Check if vessel exists in database (CASE-INSENSITIVE)
  */
 export function vesselExists(vesselName: string): boolean {
-  return vesselName in db;
+  // Try exact match first
+  if (vesselName in db) {
+    return true;
+  }
+  
+  // Try case-insensitive match
+  const lowerName = vesselName.toLowerCase().trim();
+  return Object.keys(db).some(
+    key => key.toLowerCase().trim() === lowerName
+  );
 }
 
 /**
