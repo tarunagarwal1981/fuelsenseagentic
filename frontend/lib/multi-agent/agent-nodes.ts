@@ -2925,8 +2925,14 @@ Provide a clear summary of the route information.`;
     }
 
     // Append ROB tracking summary if available
+    console.log(`🔍 [LEGACY-OUTPUT] Checking ROB data...`);
+    console.log(`  - rob_tracking exists: ${!!state.rob_tracking}`);
+    console.log(`  - rob_waypoints exists: ${!!state.rob_waypoints}`);
+    console.log(`  - rob_waypoints length: ${state.rob_waypoints?.length || 0}`);
+    
     let robSummary = '';
     if (state.rob_tracking && state.rob_waypoints && state.rob_waypoints.length > 0) {
+      console.log('✅ [LEGACY-OUTPUT] Building ROB summary section...');
       robSummary = '\n\n### ⛽ Fuel Remaining On Board (ROB) Tracking\n\n';
       if (state.rob_safety_status) {
         if (state.rob_safety_status.overall_safe) {
@@ -2951,9 +2957,29 @@ Provide a clear summary of the route information.`;
         }
         robSummary += '\n';
       });
+      console.log(`✅ [LEGACY-OUTPUT] ROB summary built: ${robSummary.length} characters`);
+    } else if (state.rob_tracking) {
+      // Fallback: minimal ROB info when rob_tracking exists but waypoints are missing/empty
+      console.log('⚠️ [LEGACY-OUTPUT] ROB waypoints missing/empty, using minimal ROB summary');
+      robSummary = '\n\n### ⛽ Fuel Remaining On Board (ROB) Tracking\n\n';
+      robSummary += `Final ROB: ${state.rob_tracking.final_rob.VLSFO.toFixed(1)} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO.toFixed(1)} MT LSMGO\n`;
+      robSummary += `Overall Safe: ${state.rob_tracking.overall_safe ? '✅ Yes' : '❌ No'}\n`;
+      if (state.rob_safety_status) {
+        robSummary += `Minimum Safety Margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
+        if (!state.rob_safety_status.overall_safe && state.rob_safety_status.violations.length > 0) {
+          robSummary += '\n⚠️ **Warnings:**\n';
+          state.rob_safety_status.violations.forEach((v) => {
+            robSummary += `- ${v}\n`;
+          });
+        }
+      }
+      console.log(`✅ [LEGACY-OUTPUT] Minimal ROB summary built: ${robSummary.length} characters`);
+    } else {
+      console.warn('⚠️ [LEGACY-OUTPUT] ROB section SKIPPED - rob_tracking is null/undefined');
     }
     if (robSummary) {
       recommendation += robSummary;
+      console.log('✅ [LEGACY-OUTPUT] ROB summary APPENDED to recommendation');
     }
 
     // Append ECA zone fuel consumption summary if available
@@ -2982,6 +3008,32 @@ Provide a clear summary of the route information.`;
 
 export async function finalizeNode(state: MultiAgentState) {
   console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
+  
+  // === DEBUG: State inspection ===
+  console.log('🔍 [FINALIZE-DEBUG] State inspection:');
+  console.log(`  - rob_tracking: ${state.rob_tracking ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - rob_waypoints: ${state.rob_waypoints ? `✅ EXISTS (${state.rob_waypoints.length} waypoints)` : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - rob_safety_status: ${state.rob_safety_status ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - eca_consumption: ${state.eca_consumption ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - eca_summary: ${state.eca_summary ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - vessel_profile: ${state.vessel_profile ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - bunker_analysis: ${state.bunker_analysis ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  
+  if (state.rob_tracking) {
+    console.log('📊 [FINALIZE-DEBUG] ROB Tracking Details:');
+    console.log(`  - Final ROB: ${state.rob_tracking.final_rob.VLSFO} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO} MT LSMGO`);
+    console.log(`  - Overall Safe: ${state.rob_tracking.overall_safe}`);
+    console.log(`  - Waypoints: ${state.rob_tracking.waypoints.length}`);
+  }
+  
+  if (state.rob_waypoints) {
+    console.log('📍 [FINALIZE-DEBUG] ROB Waypoints:');
+    state.rob_waypoints.forEach((wp, idx) => {
+      console.log(`  ${idx + 1}. ${wp.location}: ${wp.rob_after_action.VLSFO.toFixed(1)} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
+    });
+  }
+  // === END DEBUG ===
+  
   const agentStartTime = Date.now();
 
   try {
