@@ -29,6 +29,13 @@ export const SECTION_ICONS: Record<string, string> = {
   // Route Only
   'route_summary': '📍',
   'route_waypoints': '🗺️',
+  
+  // CII Rating
+  'cii_rating_card': '📊',
+  'top_recommendations': '🎯',
+  'rating_breakdown': '📈',
+  'optimization_strategies': '🎯',
+  'calculation_methodology': '🔢',
 };
 
 /**
