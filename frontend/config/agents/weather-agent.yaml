@@ -1,0 +1,61 @@
+# Weather Agent Configuration
+# Fetches marine weather forecasts and calculates weather impact factors
+
+agent_id: weather_agent
+agent_name: "Weather Analyzer Agent"
+agent_type: deterministic
+description: "Fetches marine weather forecast for route and calculates weather adjustment factors for fuel consumption"
+
+capabilities:
+  - weather_forecast
+  - weather_factor_calculation
+  - bunker_port_weather_check
+  - weather_risk_assessment
+
+dependencies:
+  - route_agent  # Needs route data to fetch weather along route
+
+tools:
+  - fetch_marine_weather
+  - calculate_weather_consumption
+  - check_bunker_port_weather
+
+status: available
+
+execution:
+  type: workflow
+  average_duration_ms: 3000
+  max_duration_ms: 8000
+  cost_per_call: 0.00
+  retry_strategy:
+    max_retries: 3
+    backoff: exponential
+
+produces:
+  - weather_data
+  - weather_factors
+  - bunker_port_weather_status
+  - weather_risk_level
+
+consumes:
+  required:
+    - route_data  # From route_agent
+  optional:
+    - bunker_ports  # If available from bunker_agent
+
+validation:
+  pre_execution:
+    - route_data_exists
+  post_execution:
+    - weather_factors_valid_range  # Must be 1.0 to 1.5
+    - all_segments_have_weather
+
+human_approval:
+  required: false
+  threshold: null
+
+metadata:
+  version: "1.0.0"
+  last_updated: "2025-01-15"
+  maintainer: "FuelSense Team"
+  documentation: "docs/agents/weather-agent.md"

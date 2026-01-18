@@ -1,0 +1,74 @@
+# Route Agent Configuration
+# Calculates optimal maritime routes between ports
+
+agent_id: route_agent
+agent_name: "Route Calculator Agent"
+agent_type: deterministic
+description: "Calculates optimal maritime route between origin and destination ports with ECA zone identification"
+
+# Capabilities this agent provides
+capabilities:
+  - route_calculation
+  - distance_calculation
+  - eca_zone_identification
+  - waypoint_generation
+  - voyage_duration_estimation
+
+# What this agent depends on (other agents that must run first)
+dependencies: []
+
+# Tools this agent uses (from tool registry)
+tools:
+  - calculate_route
+  - calculate_weather_timeline
+
+# Current implementation status
+status: available
+
+# Execution characteristics
+execution:
+  type: workflow  # Runs as deterministic workflow, not LLM-based
+  average_duration_ms: 2000
+  max_duration_ms: 5000
+  cost_per_call: 0.00  # No LLM cost
+  retry_strategy:
+    max_retries: 3
+    backoff: exponential
+  
+# What this agent produces (state fields)
+produces:
+  - route_data
+  - total_distance
+  - eca_zones
+  - waypoints
+  - estimated_duration
+
+# What this agent requires as input (state fields)
+consumes:
+  required:
+    - origin_port
+    - destination_port
+  optional:
+    - route_preferences
+
+# Validation rules to check before/after execution
+validation:
+  pre_execution:
+    - port_names_valid
+    - origin_destination_different
+  post_execution:
+    - route_calculated_successfully
+    - distance_positive
+    - waypoints_generated
+
+# Human approval requirements
+human_approval:
+  required: false
+  threshold: null
+
+# Metadata
+metadata:
+  version: "1.0.0"
+  last_updated: "2025-01-15"
+  maintainer: "FuelSense Team"
+  documentation: "docs/agents/route-agent.md"

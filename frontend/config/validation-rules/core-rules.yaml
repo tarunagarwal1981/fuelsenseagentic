@@ -1,0 +1,6 @@
+# Core Validation Rules
+# TODO: Implement in Prompt 7
+rules:
+  - vessel_name_required
+  - port_names_valid
+  - rob_must_be_positive
