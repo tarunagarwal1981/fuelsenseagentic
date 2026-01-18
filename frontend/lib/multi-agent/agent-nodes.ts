@@ -58,6 +58,7 @@ import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/li
 import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
 import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
 import { formatResponse } from '../formatters/response-formatter';
+import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
 import type { FormattedResponse } from '../formatters/response-formatter';
 import type { Port } from '@/lib/types';
@@ -3053,16 +3054,24 @@ export async function finalizeNode(state: MultiAgentState) {
     const legacyTextOutput = await generateLegacyTextOutput(state);
     
     // STEP 2: Generate new formatted response (OPTIONAL)
-    let formattedResponse: FormattedResponse | null = null;
+    let formattedResponse: TemplateFormattedResponse | null = null;
     
     if (isFeatureEnabled('USE_RESPONSE_FORMATTER')) {
-      console.log('🎛️ [FINALIZE] Response formatter enabled, generating structured output...');
+      console.log('🎛️ [FINALIZE] Template-aware formatter enabled, generating structured output...');
       
       try {
-        formattedResponse = formatResponse(state);
-        console.log('✅ [FINALIZE] Structured response generated successfully');
+        // Use template-aware formatter with YAML templates and business rules
+        formattedResponse = formatResponseWithTemplate(state);
+        console.log('✅ [FINALIZE] Template response generated successfully');
+        
+        // Log template metadata
+        if (formattedResponse.template_metadata) {
+          console.log(`   Template: ${formattedResponse.template_metadata.template_name} v${formattedResponse.template_metadata.version}`);
+          console.log(`   Sections: ${formattedResponse.template_metadata.sections_count}`);
+          console.log(`   Rules Applied: ${formattedResponse.template_metadata.rules_applied}`);
+        }
       } catch (error: any) {
-        console.error('❌ [FINALIZE] Error generating structured response:', error.message);
+        console.error('❌ [FINALIZE] Template formatter error:', error.message);
         console.error('   Falling back to legacy text output only');
         // Continue with legacyTextOutput - no failure
       }
