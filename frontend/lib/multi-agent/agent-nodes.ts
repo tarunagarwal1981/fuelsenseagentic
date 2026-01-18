@@ -43,9 +43,23 @@ import { executePortFinderTool } from '@/lib/tools/port-finder';
 import { executePriceFetcherTool } from '@/lib/tools/price-fetcher';
 import { executeBunkerAnalyzerTool } from '@/lib/tools/bunker-analyzer';
 import { complianceAgentNode } from './compliance-agent-node';
+import {
+  calculateROBForVoyage,
+  formatROBSafetyStatus,
+  type VesselROBProfile,
+} from './helpers/rob-calculator';
+import {
+  getVesselProfile,
+  getDefaultVesselProfile,
+  listAllVessels,
+} from '@/lib/services/vessel-service';
+import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/lib/engines/eca-consumption-engine';
+import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
+import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
 import { formatResponse } from '../formatters/response-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
 import type { FormattedResponse } from '../formatters/response-formatter';
+import type { Port } from '@/lib/types';
 
 // Import tool schemas
 import { routeCalculatorInputSchema } from '@/lib/tools/route-calculator';
@@ -1292,6 +1306,20 @@ function extractFuelRequirements(message: string): {
 }
 
 /**
+ * Extract vessel name from user message for ROB lookup.
+ * Tries known vessel names first, then "MV X" / "MV X Y" pattern.
+ */
+function extractVesselNameFromQuery(query: string): string | null {
+  const known = listAllVessels();
+  for (const name of known) {
+    if (query.includes(name)) return name;
+  }
+  const mvMatch = query.match(/\b(MV\s+[A-Za-z]+(?:\s+[A-Za-z]+)?)\b/i);
+  if (mvMatch) return mvMatch[1];
+  return null;
+}
+
+/**
  * Route Agent Node - DETERMINISTIC WORKFLOW (No LLM)
  * 
  * Executes route calculation workflow without LLM decision-making.
@@ -1880,6 +1908,80 @@ function extractBunkerDataFromMessages(messages: any[]): {
 }
 
 /**
+ * Build ECA-aware route segments from compliance_data for the ECA Consumption Engine.
+ * Uses switching_points when available; otherwise splits route into non-ECA + ECA by distance.
+ */
+function buildECASegmentsFromCompliance(
+  route: { origin_port_code: string; destination_port_code: string; distance_nm: number },
+  ecaZones: ECAZoneValidatorOutput | null,
+  _speedKnots: number
+): ECARouteSegment[] {
+  if (!ecaZones?.has_eca_zones || (ecaZones.total_eca_distance_nm ?? 0) <= 0) {
+    return [
+      {
+        segment_id: 'seg_0',
+        from: route.origin_port_code,
+        to: route.destination_port_code,
+        distance_nm: route.distance_nm,
+        is_eca: false,
+      },
+    ];
+  }
+
+  const sp = ecaZones.fuel_requirements?.switching_points ?? [];
+  if (sp.length > 0) {
+    const sorted = [...sp].sort(
+      (a, b) => (a.distance_from_origin_nm ?? a.time_from_start_hours * 14) - (b.distance_from_origin_nm ?? b.time_from_start_hours * 14)
+    );
+    const segs: ECARouteSegment[] = [];
+    let prevDist = 0;
+    let inEca = false;
+    for (let i = 0; i < sorted.length; i++) {
+      const d = sorted[i].distance_from_origin_nm ?? sorted[i].time_from_start_hours * 14;
+      const dist = Math.max(0, Math.min(d - prevDist, route.distance_nm - prevDist));
+      if (dist > 0) {
+        segs.push({
+          segment_id: `seg_${i}`,
+          from: i === 0 ? route.origin_port_code : `Boundary ${i}`,
+          to: i === sorted.length - 1 ? route.destination_port_code : `Boundary ${i + 1}`,
+          distance_nm: dist,
+          is_eca: inEca,
+          eca_zone_name: inEca ? ecaZones.eca_zones_crossed?.[0]?.zone_name : undefined,
+        });
+      }
+      inEca = sorted[i].action === 'SWITCH_TO_MGO';
+      prevDist = d;
+    }
+    const lastDist = Math.max(0, route.distance_nm - prevDist);
+    if (lastDist > 0) {
+      segs.push({
+        segment_id: `seg_${sorted.length}`,
+        from: `Boundary ${sorted.length}`,
+        to: route.destination_port_code,
+        distance_nm: lastDist,
+        is_eca: inEca,
+        eca_zone_name: inEca ? ecaZones.eca_zones_crossed?.[0]?.zone_name : undefined,
+      });
+    }
+    return segs.length > 0 ? segs : [{
+      segment_id: 'seg_0',
+      from: route.origin_port_code,
+      to: route.destination_port_code,
+      distance_nm: route.distance_nm,
+      is_eca: false,
+    }];
+  }
+
+  const nonEca = Math.max(0, route.distance_nm - ecaZones.total_eca_distance_nm);
+  const eca = ecaZones.total_eca_distance_nm;
+  const zoneName = ecaZones.eca_zones_crossed?.[0]?.zone_name;
+  return [
+    { segment_id: 'seg_0', from: route.origin_port_code, to: 'ECA entry', distance_nm: nonEca, is_eca: false },
+    { segment_id: 'seg_1', from: 'ECA entry', to: route.destination_port_code, distance_nm: eca, is_eca: true, eca_zone_name: zoneName },
+  ];
+}
+
+/**
  * Bunker Agent Node - DETERMINISTIC WORKFLOW (No LLM)
  * 
  * Executes bunker analysis workflow without LLM decision-making.
@@ -1969,7 +2071,123 @@ export async function bunkerAgentNode(
       userQuery.toLowerCase().includes('safe') ||
       userQuery.toLowerCase().includes('weather');
     console.log(`🌊 [BUNKER-WORKFLOW] Weather safety check: ${needsWeatherSafety ? 'YES' : 'NO'}`);
-    
+
+    // Adjusted fuel requirements (for analyzer and ROB-with-bunker)
+    const primaryFuelType = fuelRequirements.fuel_types[0] || 'VLSFO';
+    const totalFuelNeeded = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
+    let vlsfoRequired = totalFuelNeeded;
+    let mgoRequiredForECA = 0;
+    if (requiresMGO && mgoRequired > 0) {
+      vlsfoRequired = Math.max(0, totalFuelNeeded - mgoRequired);
+      mgoRequiredForECA = mgoRequired;
+      if (ecaData) {
+        console.log(`   [BUNKER-WORKFLOW] Adjusted fuel requirements: VLSFO ${vlsfoRequired.toFixed(0)} MT, MGO ${mgoRequired.toFixed(0)} MT (ECA)`);
+      }
+    }
+
+    // === Load vessel data from database ===
+    const resolvedVesselName = state.vessel_name || extractVesselNameFromQuery(userQuery);
+    const vpFromDb = resolvedVesselName ? getVesselProfile(resolvedVesselName) : null;
+
+    if (resolvedVesselName && !vpFromDb) {
+      console.warn(`⚠️ [BUNKER-WORKFLOW] Vessel "${resolvedVesselName}" not found in database`);
+      console.log('   Available vessels:', listAllVessels().join(', '));
+      return {
+        messages: [
+          ...state.messages,
+          new AIMessage({
+            content: `⚠️ Vessel **"${resolvedVesselName}"** not found in our database.
+
+**Available vessels:**
+${listAllVessels().map((v) => `- ${v}`).join('\n')}
+
+Please use one of the vessels above for accurate ROB and consumption data. You can also retry without a vessel name to use default assumptions.`,
+          }),
+        ],
+        agent_status: { ...(state.agent_status || {}), bunker_agent: 'success' },
+        vessel_name: resolvedVesselName,
+        vessel_profile: null,
+      };
+    }
+
+    const vp = vpFromDb ?? getDefaultVesselProfile();
+    const fouling = vp.fouling_factor ?? 1;
+    const consumptionVlsfo = vp.consumption_vlsfo_per_day * fouling;
+    const consumptionLsmgo = vp.consumption_lsmgo_per_day * fouling;
+
+    const vesselProfile: VesselROBProfile = {
+      initial_rob: vp.initial_rob,
+      capacity: vp.capacity,
+      consumption_vlsfo_per_day: consumptionVlsfo,
+      consumption_lsmgo_per_day: consumptionLsmgo,
+    };
+
+    console.log(`🔍 [BUNKER-WORKFLOW] Vessel: ${vp.vessel_name}`);
+    if (vp.vessel_data) {
+      console.log(`   Type: ${vp.vessel_data.vessel_type}, IMO: ${vp.vessel_data.imo}`);
+      console.log(`   ROB: ${vp.initial_rob.VLSFO} MT VLSFO, ${vp.initial_rob.LSMGO} MT LSMGO`);
+      console.log(`   Capacity: ${vp.capacity.VLSFO} MT VLSFO, ${vp.capacity.LSMGO} MT LSMGO`);
+      console.log(`   Consumption: ${consumptionVlsfo.toFixed(1)} / ${consumptionLsmgo.toFixed(1)} MT/day (fouling ${fouling}x)`);
+    } else {
+      console.log('   Using default profile (vessel not specified or not in database)');
+    }
+    if (vp.initial_rob.VLSFO < 500) {
+      console.warn('⚠️ [BUNKER-WORKFLOW] LOW ROB DETECTED - Urgent bunkering recommended');
+    }
+
+    const ecaSegments = buildECASegmentsFromCompliance(
+      state.route_data!,
+      ecaData ?? null,
+      vp.operational_speed ?? 14
+    );
+
+    // ========================================================================
+    // STEP 0: ROB Tracking and ECA Consumption (voyage WITHOUT bunker)
+    // ========================================================================
+
+    let robTrackingResult: ROBTrackingOutput | null = null;
+    let robSafetyStatus: { overall_safe: boolean; minimum_rob_days: number; violations: string[] } | null = null;
+    let ecaConsumptionResult: ECAConsumptionOutput | null = null;
+    let ecaSummaryResult: {
+      eca_distance_nm: number;
+      eca_percentage: number;
+      total_vlsfo_mt: number;
+      total_lsmgo_mt: number;
+      segments_in_eca: number;
+    } | null = null;
+
+    try {
+      const { rob, ecaConsumption } = calculateROBForVoyage(
+        state.route_data!,
+        state.weather_consumption ?? null,
+        vesselProfile,
+        undefined,
+        undefined,
+        ecaSegments
+      );
+      robTrackingResult = rob;
+      robSafetyStatus = formatROBSafetyStatus(rob, consumptionVlsfo, consumptionLsmgo);
+      if (ecaConsumption) {
+        ecaConsumptionResult = ecaConsumption;
+        ecaSummaryResult = {
+          eca_distance_nm: ecaConsumption.eca_distance_nm,
+          eca_percentage: ecaConsumption.eca_percentage,
+          total_vlsfo_mt: ecaConsumption.total_consumption_mt.VLSFO,
+          total_lsmgo_mt: ecaConsumption.total_consumption_mt.LSMGO,
+          segments_in_eca: ecaConsumption.segments.filter((s) => s.is_eca).length,
+        };
+      }
+      console.log('🔧 [BUNKER-WORKFLOW] ROB tracking (voyage without bunker):');
+      console.log(`  - Final ROB: ${rob.final_rob.VLSFO} MT VLSFO, ${rob.final_rob.LSMGO} MT LSMGO`);
+      console.log(`  - Minimum ROB: ${rob.minimum_rob_reached.VLSFO} MT VLSFO at ${rob.minimum_rob_location}`);
+      console.log(`  - Safety: ${rob.overall_safe ? '✅ Safe' : '❌ Unsafe'}`);
+      if (!rob.overall_safe) {
+        console.log('⚠️ [BUNKER-WORKFLOW] Bunkering MAY be required for safe voyage');
+      }
+    } catch (roErr: any) {
+      console.warn(`⚠️ [BUNKER-WORKFLOW] ROB tracking skipped: ${roErr?.message || roErr}`);
+    }
+
     // ========================================================================
     // STEP 1: Find Bunker Ports
     // ========================================================================
@@ -2008,6 +2226,13 @@ export async function bunkerAgentNode(
           console.warn('⚠️ [BUNKER-WORKFLOW] No bunker ports found along route');
           return {
             bunker_ports: bunkerPorts,
+            rob_tracking: robTrackingResult ?? null,
+            rob_waypoints: robTrackingResult?.waypoints ?? null,
+            rob_safety_status: robSafetyStatus ?? null,
+            eca_consumption: ecaConsumptionResult ?? null,
+            eca_summary: ecaSummaryResult ?? null,
+            vessel_name: vp.vessel_name,
+            vessel_profile: vp,
             agent_status: { 
               ...(state.agent_status || {}), 
               bunker_agent: 'success' 
@@ -2135,24 +2360,7 @@ export async function bunkerAgentNode(
       console.log('📊 [BUNKER-WORKFLOW] Analyzing bunker options...');
       
       try {
-        // Extract fuel parameters from fuelRequirements
-        const primaryFuelType = fuelRequirements.fuel_types[0] || 'VLSFO';
-        let totalFuelNeeded = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
-        
-        // Adjust fuel requirements based on ECA compliance
-        let vlsfoRequired = totalFuelNeeded;
-        let mgoRequiredForECA = 0;
-
-        if (requiresMGO && mgoRequired > 0) {
-          // Reduce VLSFO by MGO amount (since MGO replaces VLSFO in ECA zones)
-          vlsfoRequired = Math.max(0, totalFuelNeeded - mgoRequired);
-          mgoRequiredForECA = mgoRequired;
-          
-          console.log(`   Adjusted fuel requirements:`);
-          console.log(`   - VLSFO: ${vlsfoRequired.toFixed(0)} MT (for non-ECA portions)`);
-          console.log(`   - MGO: ${mgoRequiredForECA.toFixed(0)} MT (for ECA zones)`);
-        }
-        
+        // Use vlsfoRequired/mgoRequiredForECA from outer scope (adjusted for ECA)
         // Match manual implementation parameter structure exactly
         const analyzerInput = {
           bunker_ports: bunkerPorts.ports,
@@ -2224,6 +2432,34 @@ export async function bunkerAgentNode(
     // bunker_analysis is already in correct format
     const analysisData = bunkerAnalysis || null;
     const recommendationsCount = analysisData?.recommendations?.length || 0;
+
+    // === ROB with recommended bunker (when we have a best option) ===
+    const bestRec = analysisData?.recommendations?.[0];
+    const listForPort = portsArray ?? (Array.isArray(bunkerPorts) ? bunkerPorts : []);
+    const foundForRob = (listForPort as any[])?.find((p: any) => (p?.port?.port_code ?? p?.port_code) === bestRec?.port_code);
+    const portForRob = foundForRob ? (foundForRob.port ?? foundForRob) : null;
+
+    if (bestRec && portForRob && typeof (portForRob as any).name === 'string' && state.route_data && vesselProfile) {
+      try {
+        const quantityForRob = { VLSFO: vlsfoRequired, LSMGO: mgoRequiredForECA };
+        console.log('🔧 [BUNKER-WORKFLOW] Calculating ROB with recommended bunker...');
+        const { rob: robWithBunker } = calculateROBForVoyage(
+          state.route_data,
+          state.weather_consumption ?? null,
+          vesselProfile,
+          portForRob as Port,
+          quantityForRob,
+          ecaSegments
+        );
+        console.log(`📊 [BUNKER-WORKFLOW] Voyage WITH bunker at ${bestRec.port_name}:`);
+        console.log(`  - Final ROB: ${robWithBunker.final_rob.VLSFO} MT VLSFO, ${robWithBunker.final_rob.LSMGO} MT LSMGO`);
+        console.log(`  - Safety: ${robWithBunker.overall_safe ? '✅ Safe' : '❌ Unsafe'}`);
+        robTrackingResult = robWithBunker;
+        robSafetyStatus = formatROBSafetyStatus(robWithBunker, consumptionVlsfo, consumptionLsmgo);
+      } catch (e: any) {
+        console.warn(`⚠️ [BUNKER-WORKFLOW] ROB-with-bunker skipped: ${e?.message || e}`);
+      }
+    }
     
     console.log(`📊 [BUNKER-WORKFLOW] Returning to state:`);
     console.log(`   - Ports: ${portsCount} found`);
@@ -2233,12 +2469,19 @@ export async function bunkerAgentNode(
     
     return {
       bunker_ports: portsArray,              // ✅ FIXED: Array of ports, not full object
-      port_weather_status: portWeather,      // ✅ Already correct (array)
+      port_weather_status: portWeather,       // ✅ Already correct (array)
       port_prices: priceData,                 // ✅ Already correct (PriceFetcherOutput)
       bunker_analysis: analysisData,          // ✅ Already correct (BunkerAnalysis)
-      agent_status: { 
-        ...(state.agent_status || {}), 
-        bunker_agent: 'success' 
+      rob_tracking: robTrackingResult ?? null,
+      rob_waypoints: robTrackingResult?.waypoints ?? null,
+      rob_safety_status: robSafetyStatus ?? null,
+      eca_consumption: ecaConsumptionResult ?? null,
+      eca_summary: ecaSummaryResult ?? null,
+      vessel_name: vp.vessel_name,
+      vessel_profile: vp,
+      agent_status: {
+        ...(state.agent_status || {}),
+        bunker_agent: 'success'
       },
       messages: [
         ...state.messages,
@@ -2249,7 +2492,11 @@ export async function bunkerAgentNode(
             weather_checked: portWeather?.length || 0,
             prices_fetched: pricesCount,
             recommendations: recommendationsCount,
-            recommended_port: analysisData?.recommendations?.[0]?.port_name || 'Unknown'
+            recommended_port: analysisData?.recommendations?.[0]?.port_name || 'Unknown',
+            rob_overall_safe: robSafetyStatus?.overall_safe,
+            rob_minimum_days: robSafetyStatus?.minimum_rob_days,
+            eca_percentage: ecaSummaryResult?.eca_percentage,
+            vessel_name: vp.vessel_name,
           })
         })
       ]
@@ -2675,6 +2922,55 @@ Provide a clear summary of the route information.`;
     // Append compliance summary to recommendation if available
     if (complianceSummary) {
       recommendation += complianceSummary;
+    }
+
+    // Append ROB tracking summary if available
+    let robSummary = '';
+    if (state.rob_tracking && state.rob_waypoints && state.rob_waypoints.length > 0) {
+      robSummary = '\n\n### ⛽ Fuel Remaining On Board (ROB) Tracking\n\n';
+      if (state.rob_safety_status) {
+        if (state.rob_safety_status.overall_safe) {
+          robSummary += '✅ **Safe Voyage**: Sufficient fuel throughout journey\n';
+          robSummary += `- Minimum safety margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
+        } else {
+          robSummary += '⚠️ **WARNING**: Safety concerns detected\n';
+          state.rob_safety_status.violations.forEach((v) => {
+            robSummary += `- ${v}\n`;
+          });
+        }
+      }
+      robSummary += '\n**ROB at Key Waypoints:**\n\n';
+      state.rob_waypoints.forEach((waypoint) => {
+        const safetyEmoji = waypoint.is_safe ? '✅' : '⚠️';
+        robSummary += `${safetyEmoji} **${waypoint.location}**\n`;
+        robSummary += `  - VLSFO: ${waypoint.rob_after_action.VLSFO.toFixed(1)} MT\n`;
+        robSummary += `  - LSMGO: ${waypoint.rob_after_action.LSMGO.toFixed(1)} MT\n`;
+        robSummary += `  - Safety margin: ${waypoint.safety_margin_days.toFixed(1)} days\n`;
+        if (waypoint.action) {
+          robSummary += `  - Action: ${waypoint.action.type} ${waypoint.action.quantity.VLSFO} MT VLSFO, ${waypoint.action.quantity.LSMGO} MT LSMGO\n`;
+        }
+        robSummary += '\n';
+      });
+    }
+    if (robSummary) {
+      recommendation += robSummary;
+    }
+
+    // Append ECA zone fuel consumption summary if available
+    let ecaSummary = '';
+    if (state.eca_summary) {
+      ecaSummary = '\n\n### 🌍 ECA Zone Fuel Consumption\n\n';
+      if (state.eca_summary.eca_percentage > 0) {
+        ecaSummary += `**ECA Coverage**: ${state.eca_summary.eca_percentage.toFixed(1)}% of route\n`;
+        ecaSummary += `**Fuel Breakdown:**\n`;
+        ecaSummary += `- VLSFO (outside ECA): ${state.eca_summary.total_vlsfo_mt.toFixed(1)} MT\n`;
+        ecaSummary += `- LSMGO (in ECA + auxiliary): ${state.eca_summary.total_lsmgo_mt.toFixed(1)} MT\n`;
+      } else {
+        ecaSummary += '**No ECA zones** on this route\n';
+      }
+    }
+    if (ecaSummary) {
+      recommendation += ecaSummary;
     }
 
     return recommendation;

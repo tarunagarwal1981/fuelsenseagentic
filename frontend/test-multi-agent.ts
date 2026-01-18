@@ -56,6 +56,13 @@ async function testMultiAgent() {
         weather_agent_partial: false,
         compliance_data: null,
         vessel_consumption: null,
+        rob_tracking: null,
+        rob_waypoints: null,
+        rob_safety_status: null,
+        eca_consumption: null,
+        eca_summary: null,
+        vessel_name: null,
+        vessel_profile: null,
         agent_call_counts: {
           route_agent: 0,
           weather_agent: 0,
