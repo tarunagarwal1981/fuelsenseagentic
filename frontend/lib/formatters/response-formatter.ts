@@ -985,6 +985,44 @@ function formatTextOutput(state: MultiAgentState): string {
     }
   }
   
+  // Section 4b: ROB Tracking (if available)
+  if (state.rob_tracking && state.rob_waypoints && state.rob_waypoints.length > 0) {
+    output += '\n\n⛽ **Fuel Remaining On Board (ROB) Tracking**\n\n';
+    
+    if (state.rob_safety_status) {
+      if (state.rob_safety_status.overall_safe) {
+        output += '✅ **Safe Voyage**: Sufficient fuel throughout journey\n';
+        output += `- Minimum safety margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
+      } else {
+        output += '⚠️ **WARNING**: Safety concerns detected\n';
+        state.rob_safety_status.violations.forEach((v) => {
+          output += `- ${v}\n`;
+        });
+      }
+    }
+    
+    output += '\n**ROB at Key Waypoints:**\n\n';
+    state.rob_waypoints.forEach((waypoint) => {
+      const safetyEmoji = waypoint.is_safe ? '✅' : '⚠️';
+      output += `${safetyEmoji} **${waypoint.location}**\n`;
+      output += `  - VLSFO: ${waypoint.rob_after_action.VLSFO.toFixed(1)} MT\n`;
+      output += `  - LSMGO: ${waypoint.rob_after_action.LSMGO.toFixed(1)} MT\n`;
+      output += `  - Safety margin: ${waypoint.safety_margin_days.toFixed(1)} days\n`;
+      if (waypoint.action) {
+        output += `  - Action: ${waypoint.action.type} ${waypoint.action.quantity.VLSFO} MT VLSFO, ${waypoint.action.quantity.LSMGO} MT LSMGO\n`;
+      }
+      output += '\n';
+    });
+  } else if (state.rob_tracking) {
+    // Fallback: minimal ROB info when rob_tracking exists but waypoints are missing/empty
+    output += '\n\n⛽ **Fuel Remaining On Board (ROB) Tracking**\n\n';
+    output += `Final ROB: ${state.rob_tracking.final_rob.VLSFO.toFixed(1)} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO.toFixed(1)} MT LSMGO\n`;
+    output += `Overall Safe: ${state.rob_tracking.overall_safe ? '✅ Yes' : '❌ No'}\n`;
+    if (state.rob_safety_status) {
+      output += `Minimum Safety Margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
+    }
+  }
+  
   // Section 5: Recommendations (smart suggestions)
   const recommendations = generateRecommendations(state);
   if (recommendations.length > 0) {
