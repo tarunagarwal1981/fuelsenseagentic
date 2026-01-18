@@ -225,6 +225,7 @@ function InsightsPanel({ insights }: { insights: ExtractedInsight[] }) {
  */
 function InsightItem({ insight }: { insight: ExtractedInsight }) {
   const borderColor = {
+    critical: 'border-red-500',
     high: 'border-orange-400',
     medium: 'border-blue-300',
     low: 'border-gray-300 dark:border-gray-600',

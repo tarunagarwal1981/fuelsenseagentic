@@ -49,6 +49,7 @@ async function testMultiAgent() {
         bunker_analysis: null,
         final_recommendation: null,
         formatted_response: null,
+        synthesized_insights: null,
         agent_errors: {},
         agent_status: {},
         agent_context: null,

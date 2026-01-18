@@ -145,6 +145,7 @@ function createMockState(overrides: Partial<MultiAgentState> = {}): MultiAgentSt
     vessel_profile: null,
     final_recommendation: null,
     formatted_response: null,
+    synthesized_insights: null,
     agent_errors: {},
     agent_status: {
       bunker_agent: 'success',

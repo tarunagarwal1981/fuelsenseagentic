@@ -795,9 +795,9 @@ function formatWhyRecommendation(state: MultiAgentState): string {
   if (state.vessel_profile) {
     const vp = state.vessel_profile;
     output += '**Your Vessel:**\n';
-    output += `- Current ROB: ${vp.current_rob?.VLSFO?.toFixed(0) || '-'} MT VLSFO, ${vp.current_rob?.LSMGO?.toFixed(0) || '-'} MT LSMGO\n`;
-    output += `- Tank Capacity: ${vp.tank_capacity?.VLSFO?.toFixed(0) || '-'} MT VLSFO, ${vp.tank_capacity?.LSMGO?.toFixed(0) || '-'} MT LSMGO\n`;
-    output += `- Consumption: ${vp.consumption_rate?.VLSFO?.toFixed(1) || '-'} MT/day VLSFO, ${vp.consumption_rate?.LSMGO?.toFixed(1) || '-'} MT/day LSMGO\n\n`;
+    output += `- Current ROB: ${vp.initial_rob?.VLSFO?.toFixed(0) || '-'} MT VLSFO, ${vp.initial_rob?.LSMGO?.toFixed(0) || '-'} MT LSMGO\n`;
+    output += `- Tank Capacity: ${vp.capacity?.VLSFO?.toFixed(0) || '-'} MT VLSFO, ${vp.capacity?.LSMGO?.toFixed(0) || '-'} MT LSMGO\n`;
+    output += `- Consumption: ${vp.consumption_vlsfo_per_day?.toFixed(1) || '-'} MT/day VLSFO, ${vp.consumption_lsmgo_per_day?.toFixed(1) || '-'} MT/day LSMGO\n\n`;
   }
   
   // Voyage requirements

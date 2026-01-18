@@ -145,6 +145,7 @@ function buildInitialState(query: string): MultiAgentState {
     vessel_profile: null,
     final_recommendation: null,
     formatted_response: null,
+    synthesized_insights: null,
     agent_errors: {},
     agent_status: {},
   };

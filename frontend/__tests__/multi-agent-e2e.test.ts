@@ -643,6 +643,7 @@ async function testDirectGraphInvocation(): Promise<TestResult> {
         bunker_analysis: null,
         final_recommendation: null,
         formatted_response: null,
+        synthesized_insights: null,
       },
       {
         recursionLimit: 100,
