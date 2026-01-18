@@ -16,6 +16,12 @@ import {
   type TemplateSection,
   type BusinessRule
 } from '../config/template-loader';
+import { 
+  extractContent, 
+  getNestedValue as extractNestedValue,
+  formatCostSummary as extractCostSummary,
+  formatAlternativePort as extractAlternativePort
+} from './content-extractors';
 
 // ============================================================================
 // Extended Response Interface
@@ -409,24 +415,35 @@ function shouldRenderSection(section: TemplateSection, state: MultiAgentState): 
 
 /**
  * Render section content from state data
+ * 
+ * Uses content extractors to pull data from state and format it
+ * based on the template configuration.
  */
 function renderSectionContent(section: TemplateSection, state: MultiAgentState): string {
-  const statePath = section.content_source.state_path;
-  
-  // Get data from state based on path
-  const data = getStateData(state, statePath);
-  
-  if (!data) {
+  try {
+    const statePath = section.content_source.state_path;
+    const format = section.content_source.format;
+    
+    // Use content extractors for data extraction and formatting
+    const content = extractContent(statePath, state, format);
+    
+    // If no content from extractor, try fallback
+    if (!content || content.trim() === '') {
+      // Try section-specific formatters as fallback
+      const fallbackContent = formatDefaultContent(section, null, state);
+      if (fallbackContent && fallbackContent.trim() !== '') {
+        return fallbackContent;
+      }
+      return section.content_source.fallback || '';
+    }
+    
+    return content;
+    
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ [RENDER] Error rendering ${section.id}:`, message);
     return section.content_source.fallback || '';
   }
-  
-  // If template is provided, use it
-  if (section.content_source.template) {
-    return renderTemplate(section.content_source.template, data);
-  }
-  
-  // Otherwise, format based on section type
-  return formatDataForSection(section, data, state);
 }
 
 /**
@@ -660,16 +677,18 @@ function formatAsDetailedWeather(data: any): string {
  * Format default content for a section
  */
 function formatDefaultContent(section: TemplateSection, data: any, state: MultiAgentState): string {
-  // Handle specific section IDs
+  // Handle specific section IDs with fallback formatters
   switch (section.id) {
     case 'primary_recommendation':
       return formatPrimaryRecommendation(state);
     case 'cost_summary':
-      return formatCostSummary(state);
+      // Use extractor version which takes bunker_analysis
+      return extractCostSummary(state.bunker_analysis);
     case 'critical_safety_alert':
       return formatSafetyAlert(state);
     case 'alternative_port':
-      return formatAlternativePort(state);
+      // Use extractor version which takes bunker_analysis
+      return extractAlternativePort(state.bunker_analysis);
     case 'why_this_recommendation':
       return formatWhyRecommendation(state);
     case 'rob_tracking_summary':
@@ -679,11 +698,11 @@ function formatDefaultContent(section: TemplateSection, data: any, state: MultiA
     case 'route_summary':
       return formatRouteSummary(state);
     default:
-      // Generic formatting
-      if (typeof data === 'object') {
+      // Generic formatting - data may be null here
+      if (data && typeof data === 'object') {
         return JSON.stringify(data, null, 2);
       }
-      return String(data);
+      return data ? String(data) : '';
   }
 }
 
@@ -715,31 +734,6 @@ function formatPrimaryRecommendation(state: MultiAgentState): string {
   return output;
 }
 
-function formatCostSummary(state: MultiAgentState): string {
-  const best = state.bunker_analysis?.best_option;
-  if (!best) return '';
-  
-  const fuelCost = best.fuel_cost_usd || 0;
-  const deviationCost = best.deviation_cost_usd || 0;
-  const totalCost = best.total_cost_usd || 0;
-  
-  let output = `**Fuel Cost:** $${fuelCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
-  output += `**Deviation Cost:** $${deviationCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
-  output += `**Total:** $${totalCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
-  
-  // Calculate savings vs next best
-  const recommendations = state.bunker_analysis?.recommendations;
-  if (recommendations && recommendations.length > 1) {
-    const nextBest = recommendations[1];
-    const savings = (nextBest.total_cost_usd || 0) - totalCost;
-    if (savings > 0) {
-      output += `\n*Savings vs next best: $${savings.toLocaleString('en-US', { maximumFractionDigits: 0 })}*`;
-    }
-  }
-  
-  return output;
-}
-
 function formatSafetyAlert(state: MultiAgentState): string {
   if (!state.rob_safety_status || state.rob_safety_status.overall_safe) {
     return '';
@@ -754,23 +748,6 @@ function formatSafetyAlert(state: MultiAgentState): string {
   output += '\n**Action Required:** Review fuel requirements and consider alternative bunkering options.';
   
   return output;
-}
-
-function formatAlternativePort(state: MultiAgentState): string {
-  const alternatives = (state.bunker_analysis as any)?.alternatives;
-  if (!alternatives || alternatives.length === 0) {
-    // Try recommendations as fallback
-    const recommendations = state.bunker_analysis?.recommendations;
-    if (!recommendations || recommendations.length <= 1) {
-      return '';
-    }
-    
-    const alt = recommendations[1];
-    return `**${alt.port_name}** - $${(alt.total_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}\nTrade-off: Higher cost but may offer better availability`;
-  }
-  
-  const alt = alternatives[0];
-  return `**${alt.port_name}** - $${(alt.total_cost || alt.total_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}\nTrade-off: ${alt.tradeoff || 'Alternative option'}`;
 }
 
 function formatWhyRecommendation(state: MultiAgentState): string {

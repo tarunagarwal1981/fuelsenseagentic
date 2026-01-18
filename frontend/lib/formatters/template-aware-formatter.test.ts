@@ -6,6 +6,7 @@
 
 import { TemplateLoader, getTemplateLoader } from '../config/template-loader';
 import { formatResponseWithTemplate } from './template-aware-formatter';
+import { extractContent, getNestedValue } from './content-extractors';
 import type { MultiAgentState } from '../multi-agent/state';
 
 console.log('='.repeat(60));
@@ -227,6 +228,50 @@ test('should fallback to default when template not found', () => {
 });
 
 // ============================================================================
+// Content Extractor Tests
+// ============================================================================
+
+console.log('\n--- Content Extractor Tests ---');
+
+test('getNestedValue should extract simple path', () => {
+  const obj = { route_data: { distance_nm: 5000 } };
+  const value = getNestedValue(obj, 'route_data.distance_nm');
+  return value === 5000;
+});
+
+test('getNestedValue should extract array index', () => {
+  const obj = { recommendations: [{ port_name: 'Fujairah' }, { port_name: 'Colombo' }] };
+  const value = getNestedValue(obj, 'recommendations[1].port_name');
+  return value === 'Colombo';
+});
+
+test('getNestedValue should return null for missing path', () => {
+  const obj = { route_data: { distance_nm: 5000 } };
+  const value = getNestedValue(obj, 'missing.path');
+  return value === null;
+});
+
+test('extractContent should extract bunker_analysis', () => {
+  const state = createMockState();
+  const content = extractContent('bunker_analysis', state);
+  return content.includes('Fujairah') && content.includes('Recommended Port');
+});
+
+test('extractContent should handle array paths', () => {
+  const state = createMockState();
+  const content = extractContent(['vessel_profile', 'route_data'], state);
+  // Should return content (even if empty string due to null profile)
+  return typeof content === 'string';
+});
+
+test('extractContent should format as comparison_table', () => {
+  const state = createMockState();
+  const content = extractContent('bunker_ports', state, 'comparison_table');
+  // Should return a markdown table
+  return content.includes('|') && content.includes('Port');
+});
+
+// ============================================================================
 // Business Rules Tests
 // ============================================================================
 
@@ -258,6 +303,51 @@ test('should hide ECA section when no ECA zones', () => {
   );
   
   return !hasECASection;
+});
+
+// ============================================================================
+// Content Rendering Tests
+// ============================================================================
+
+console.log('\n--- Content Rendering Tests ---');
+
+test('should render primary_recommendation section with port name', () => {
+  const state = createMockState();
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  // Find the primary recommendation section
+  const primaryRec = response.sections_by_tier?.tier_1_visible?.find(
+    s => s.id === 'primary_recommendation'
+  );
+  
+  return primaryRec !== undefined && primaryRec.content.includes('Fujairah');
+});
+
+test('should render cost_summary section with costs', () => {
+  const state = createMockState();
+  const response = formatResponseWithTemplate(state, 'bunker-planning');
+  
+  // Find the cost summary section
+  const costSummary = response.sections_by_tier?.tier_1_visible?.find(
+    s => s.id === 'cost_summary'
+  );
+  
+  return costSummary !== undefined && costSummary.content.includes('$');
+});
+
+test('should render route_summary for route-only template', () => {
+  const state = createMockState({
+    agent_status: { route_agent: 'success' },
+    bunker_analysis: null,
+  });
+  const response = formatResponseWithTemplate(state, 'route-only');
+  
+  // Should have route summary in tier 1
+  const routeSummary = response.sections_by_tier?.tier_1_visible?.find(
+    s => s.id === 'route_summary'
+  );
+  
+  return routeSummary !== undefined && routeSummary.content.includes('5,000');
 });
 
 // ============================================================================
