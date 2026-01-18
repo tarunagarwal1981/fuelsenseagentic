@@ -45,6 +45,8 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { FormattedResponse } from "@/lib/formatters/response-formatter";
+import { TemplateResponseContainer } from './template-response';
+import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-formatter';
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
@@ -113,7 +115,7 @@ export function ChatInterfaceMultiAgent() {
   const [performanceMetrics, setPerformanceMetrics] =
     useState<PerformanceMetrics | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
-  const [structuredData, setStructuredData] = useState<FormattedResponse | null>(null);
+  const [structuredData, setStructuredData] = useState<TemplateFormattedResponse | null>(null);
   const [useMultiAgent, setUseMultiAgent] = useState(true);
 
   // Debug logging for feature flags
@@ -961,6 +963,13 @@ export function ChatInterfaceMultiAgent() {
                   )}
                 </div>
               ))}
+
+              {/* Template-Formatted Response (Progressive Disclosure) */}
+              {!isLoading && structuredData?.sections_by_tier && (
+                <div className="mt-4 p-4 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <TemplateResponseContainer response={structuredData} />
+                </div>
+              )}
 
               {/* Thinking Indicator - Fleet Sense Style */}
               {isLoading && thinkingState && (
