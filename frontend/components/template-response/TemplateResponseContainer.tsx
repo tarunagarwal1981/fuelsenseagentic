@@ -13,6 +13,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { TemplateFormattedResponse, RenderedSection } from '@/lib/formatters/template-aware-formatter';
 import type { ExtractedInsight } from '@/lib/formatters/insight-extractor';
+import { getSectionIcon, stripEmojiPrefix, TIER_STYLES } from './section-icons';
 
 interface Props {
   response: TemplateFormattedResponse;
@@ -109,10 +110,15 @@ function CriticalInsightsAlert({ insights }: { insights: ExtractedInsight[] }) {
  * Tier 1 section - always visible card with prominent styling
  */
 function Tier1Section({ section }: { section: RenderedSection }) {
+  const icon = getSectionIcon(section.id);
+  const cleanTitle = stripEmojiPrefix(section.title);
+  const styles = TIER_STYLES[1];
+  
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-5 hover:shadow-md transition-shadow">
-      <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">
-        {section.title}
+    <div className={`${styles.bg} rounded-lg border ${styles.border} shadow-sm p-5 ${styles.hover} transition-all duration-200`}>
+      <h3 className={`text-lg font-semibold mb-3 flex items-center gap-2 ${styles.text}`}>
+        <span className="text-2xl">{icon}</span>
+        <span>{cleanTitle}</span>
       </h3>
       <div className="prose prose-sm max-w-none dark:prose-invert">
         <ReactMarkdown>{section.content}</ReactMarkdown>
@@ -131,24 +137,20 @@ function Tier1Section({ section }: { section: RenderedSection }) {
  */
 function ExpandableSection({ section, tier }: { section: RenderedSection; tier: 2 | 3 }) {
   const [isExpanded, setIsExpanded] = useState(!section.collapsed);
-  
-  const bgColor = tier === 2 
-    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' 
-    : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700';
-  
-  const hoverColor = tier === 2 
-    ? 'hover:bg-blue-100 dark:hover:bg-blue-900/30' 
-    : 'hover:bg-gray-100 dark:hover:bg-gray-700/50';
+  const icon = getSectionIcon(section.id);
+  const cleanTitle = stripEmojiPrefix(section.title);
+  const styles = TIER_STYLES[tier];
   
   return (
-    <div className={`border rounded-lg ${bgColor} transition-all duration-200`}>
+    <div className={`border rounded-lg ${styles.bg} ${styles.border} transition-all duration-200`}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className={`w-full px-4 py-3 text-left flex items-center justify-between ${hoverColor} transition-colors rounded-lg`}
+        className={`w-full px-4 py-3 text-left flex items-center justify-between ${styles.hover} transition-colors rounded-lg`}
       >
-        <span className="font-medium text-sm flex items-center gap-2 text-gray-900 dark:text-gray-100">
-          <span>{section.title}</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+        <span className={`font-medium text-sm flex items-center gap-2 ${styles.text}`}>
+          <span className="text-lg">{icon}</span>
+          <span>{cleanTitle}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
             ({section.word_count} words)
           </span>
         </span>
@@ -160,7 +162,7 @@ function ExpandableSection({ section, tier }: { section: RenderedSection; tier: 
       </button>
       
       {isExpanded && (
-        <div className="px-4 pb-4 prose prose-sm max-w-none dark:prose-invert animate-fadeIn">
+        <div className="px-4 pb-4 pt-2 prose prose-sm max-w-none dark:prose-invert animate-fadeIn">
           <ReactMarkdown>{section.content}</ReactMarkdown>
         </div>
       )}
