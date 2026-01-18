@@ -1,0 +1,70 @@
+# Synthesis Engine Configuration
+# Controls when and how cross-agent synthesis runs
+
+synthesis:
+  # When to run synthesis
+  enabled: true
+  
+  # Minimum agents to trigger synthesis
+  min_agents_for_synthesis: 6
+  
+  # Agent combinations that always trigger synthesis (even if < 6 agents)
+  always_synthesize_combinations:
+    - ["cii_agent", "hull_agent"]  # Hull affects CII
+    - ["bunker_agent", "commercial_agent"]  # Cost optimization
+    - ["hull_agent", "bunker_agent", "commercial_agent"]  # ROI analysis
+  
+  # Agent combinations that should NOT synthesize (independent)
+  skip_synthesis_combinations:
+    - ["route_agent"]  # Route alone doesn't need synthesis
+    - ["weather_agent"]  # Weather alone doesn't need synthesis
+  
+  # LLM configuration
+  llm:
+    model: "gpt-4o-mini"  # Fast and cost-effective
+    max_tokens: 1500
+    temperature: 0.3  # Lower for consistency
+    
+  # Cost controls
+  max_synthesis_cost_usd: 0.05  # Skip if would exceed this
+  
+  # Quality controls
+  min_confidence_score: 0.7  # Minimum confidence to use synthesis
+  
+  # Timeout
+  timeout_seconds: 10  # Skip if synthesis takes too long
+  
+  # Feature flags
+  features:
+    executive_insight: true
+    strategic_priorities: true
+    cross_agent_connections: true
+    hidden_opportunities: true
+    risk_alerts: true
+    financial_analysis: true
+
+# Domain-specific synthesis rules
+domain_rules:
+  # When hull + cii agents run together
+  hull_cii_synergy:
+    enabled: true
+    focus:
+      - "How does hull condition affect CII rating?"
+      - "What's the ROI of hull cleaning on CII?"
+      - "Compare hull cleaning vs speed optimization for CII"
+  
+  # When commercial + technical agents run together
+  commercial_technical_synergy:
+    enabled: true
+    focus:
+      - "What's the total financial impact of all technical issues?"
+      - "Which single action has highest ROI?"
+      - "Trade-offs between different optimization strategies"
+  
+  # When compliance agents run
+  compliance_focus:
+    enabled: true
+    focus:
+      - "Combined compliance cost (EU ETS + FuelEU + ECA)"
+      - "Opportunities to reduce compliance burden"
+      - "Regulatory risk assessment"
