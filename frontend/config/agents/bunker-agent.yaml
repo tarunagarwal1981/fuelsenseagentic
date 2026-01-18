@@ -1,0 +1,77 @@
+# Bunker Agent Configuration
+# Optimizes bunker planning with ROB tracking and port recommendations
+
+agent_id: bunker_agent
+agent_name: "Bunker Planner Agent"
+agent_type: deterministic
+description: "Finds optimal bunker ports, calculates quantities, tracks ROB, and recommends best bunker strategy"
+
+capabilities:
+  - bunker_port_finding
+  - bunker_quantity_calculation
+  - rob_tracking
+  - cost_optimization
+  - port_ranking
+  - capacity_validation
+
+dependencies:
+  - route_agent    # Needs route for distance calculations
+  - weather_agent  # Needs weather for consumption adjustments
+
+tools:
+  - find_bunker_ports
+  - get_fuel_prices
+  - analyze_bunker_options
+  - check_bunker_port_weather  # Shared with weather_agent
+
+status: available
+
+execution:
+  type: workflow
+  average_duration_ms: 5000
+  max_duration_ms: 12000
+  cost_per_call: 0.00
+  retry_strategy:
+    max_retries: 3
+    backoff: exponential
+
+produces:
+  - bunker_ports
+  - recommended_port
+  - bunker_quantities
+  - total_bunker_cost
+  - rob_tracking_data
+  - alternative_options
+
+consumes:
+  required:
+    - route_data      # From route_agent
+    - weather_data    # From weather_agent
+    - vessel_profile  # From state
+  optional:
+    - current_rob
+    - user_specified_quantity
+
+validation:
+  pre_execution:
+    - route_data_exists
+    - weather_data_exists
+    - vessel_profile_exists
+  post_execution:
+    - bunker_ports_found
+    - quantities_fit_capacity
+    - rob_never_negative
+    - safety_margin_adequate
+
+human_approval:
+  required: true
+  threshold:
+    field: total_bunker_cost
+    operator: ">"
+    value: 500000  # USD
+
+metadata:
+  version: "1.0.0"
+  last_updated: "2025-01-15"
+  maintainer: "FuelSense Team"
+  documentation: "docs/agents/bunker-agent.md"

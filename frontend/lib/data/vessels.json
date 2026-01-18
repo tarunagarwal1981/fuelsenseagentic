@@ -1,0 +1,201 @@
+{
+  "MV Pacific Star": {
+    "vessel_id": "vessel_001",
+    "imo": "IMO9234567",
+    "vessel_type": "Container Ship",
+    "dwt": 50000,
+    "built_year": 2015,
+    "current_rob": {
+      "VLSFO": 850,
+      "LSMGO": 100,
+      "last_updated": "2025-01-18T08:00:00Z",
+      "last_bunker_port": "Singapore",
+      "last_bunker_date": "2025-01-15"
+    },
+    "tank_capacity": {
+      "VLSFO": 2000,
+      "LSMGO": 200,
+      "total": 2200
+    },
+    "consumption_profile": {
+      "speed_14_knots": {
+        "main_engine_vlsfo_mt_per_day": 30,
+        "auxiliary_lsmgo_mt_per_day": 3,
+        "total_mt_per_day": 33
+      },
+      "speed_12_knots": {
+        "main_engine_vlsfo_mt_per_day": 24,
+        "auxiliary_lsmgo_mt_per_day": 2.8,
+        "total_mt_per_day": 26.8
+      },
+      "speed_16_knots": {
+        "main_engine_vlsfo_mt_per_day": 38,
+        "auxiliary_lsmgo_mt_per_day": 3.2,
+        "total_mt_per_day": 41.2
+      }
+    },
+    "operational_speed_knots": 14,
+    "hull_condition": {
+      "last_cleaning_date": "2024-11-15",
+      "days_since_cleaning": 64,
+      "fouling_factor": 1.08,
+      "next_cleaning_due": "2025-05-15"
+    },
+    "owner": "Pacific Shipping Co.",
+    "operator": "Global Container Lines",
+    "flag": "Panama"
+  },
+  "MV Atlantic Trader": {
+    "vessel_id": "vessel_002",
+    "imo": "IMO9345678",
+    "vessel_type": "Bulk Carrier",
+    "dwt": 75000,
+    "built_year": 2012,
+    "current_rob": {
+      "VLSFO": 1200,
+      "LSMGO": 150,
+      "last_updated": "2025-01-18T06:00:00Z",
+      "last_bunker_port": "Fujairah",
+      "last_bunker_date": "2025-01-16"
+    },
+    "tank_capacity": {
+      "VLSFO": 3000,
+      "LSMGO": 300,
+      "total": 3300
+    },
+    "consumption_profile": {
+      "speed_14_knots": {
+        "main_engine_vlsfo_mt_per_day": 42,
+        "auxiliary_lsmgo_mt_per_day": 4,
+        "total_mt_per_day": 46
+      },
+      "speed_12_knots": {
+        "main_engine_vlsfo_mt_per_day": 35,
+        "auxiliary_lsmgo_mt_per_day": 3.8,
+        "total_mt_per_day": 38.8
+      }
+    },
+    "operational_speed_knots": 14,
+    "hull_condition": {
+      "last_cleaning_date": "2024-09-20",
+      "days_since_cleaning": 120,
+      "fouling_factor": 1.15,
+      "next_cleaning_due": "2025-03-20"
+    },
+    "owner": "Atlantic Bulk Carriers",
+    "operator": "Atlantic Bulk Carriers",
+    "flag": "Liberia"
+  },
+  "MV Ocean Navigator": {
+    "vessel_id": "vessel_003",
+    "imo": "IMO9456789",
+    "vessel_type": "Container Ship",
+    "dwt": 35000,
+    "built_year": 2018,
+    "current_rob": {
+      "VLSFO": 400,
+      "LSMGO": 50,
+      "last_updated": "2025-01-18T10:00:00Z",
+      "last_bunker_port": "Colombo",
+      "last_bunker_date": "2025-01-10",
+      "notes": "LOW ROB - Urgent bunkering needed"
+    },
+    "tank_capacity": {
+      "VLSFO": 1500,
+      "LSMGO": 150,
+      "total": 1650
+    },
+    "consumption_profile": {
+      "speed_14_knots": {
+        "main_engine_vlsfo_mt_per_day": 25,
+        "auxiliary_lsmgo_mt_per_day": 2.5,
+        "total_mt_per_day": 27.5
+      }
+    },
+    "operational_speed_knots": 14,
+    "hull_condition": {
+      "last_cleaning_date": "2024-12-10",
+      "days_since_cleaning": 39,
+      "fouling_factor": 1.03,
+      "next_cleaning_due": "2025-06-10"
+    },
+    "owner": "Ocean Shipping Ltd",
+    "operator": "Ocean Shipping Ltd",
+    "flag": "Singapore"
+  },
+  "MV Mediterranean Express": {
+    "vessel_id": "vessel_004",
+    "imo": "IMO9567890",
+    "vessel_type": "Container Ship",
+    "dwt": 65000,
+    "built_year": 2010,
+    "current_rob": {
+      "VLSFO": 1500,
+      "LSMGO": 180,
+      "last_updated": "2025-01-18T12:00:00Z",
+      "last_bunker_port": "Rotterdam",
+      "last_bunker_date": "2025-01-17",
+      "notes": "Recently bunkered - High ROB"
+    },
+    "tank_capacity": {
+      "VLSFO": 2500,
+      "LSMGO": 250,
+      "total": 2750
+    },
+    "consumption_profile": {
+      "speed_14_knots": {
+        "main_engine_vlsfo_mt_per_day": 35,
+        "auxiliary_lsmgo_mt_per_day": 3.5,
+        "total_mt_per_day": 38.5
+      }
+    },
+    "operational_speed_knots": 14,
+    "hull_condition": {
+      "last_cleaning_date": "2024-08-15",
+      "days_since_cleaning": 156,
+      "fouling_factor": 1.18,
+      "next_cleaning_due": "2025-02-15",
+      "notes": "Overdue for cleaning"
+    },
+    "owner": "Mediterranean Shipping Company",
+    "operator": "MSC",
+    "flag": "Malta"
+  },
+  "MV Asian Pioneer": {
+    "vessel_id": "vessel_005",
+    "imo": "IMO9678901",
+    "vessel_type": "Bulk Carrier",
+    "dwt": 95000,
+    "built_year": 2016,
+    "current_rob": {
+      "VLSFO": 2200,
+      "LSMGO": 250,
+      "last_updated": "2025-01-18T14:00:00Z",
+      "last_bunker_port": "Shanghai",
+      "last_bunker_date": "2025-01-18",
+      "notes": "Just bunkered - Maximum capacity"
+    },
+    "tank_capacity": {
+      "VLSFO": 3500,
+      "LSMGO": 350,
+      "total": 3850
+    },
+    "consumption_profile": {
+      "speed_14_knots": {
+        "main_engine_vlsfo_mt_per_day": 48,
+        "auxiliary_lsmgo_mt_per_day": 4.5,
+        "total_mt_per_day": 52.5
+      }
+    },
+    "operational_speed_knots": 14,
+    "hull_condition": {
+      "last_cleaning_date": "2024-12-01",
+      "days_since_cleaning": 48,
+      "fouling_factor": 1.05,
+      "next_cleaning_due": "2025-06-01"
+    },
+    "owner": "Asian Maritime Group",
+    "operator": "Asian Bulk Services",
+    "flag": "Hong Kong"
+  }
+}

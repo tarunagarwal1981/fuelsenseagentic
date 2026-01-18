@@ -12,6 +12,9 @@ import type { Coordinates, Port, FuelType } from '@/lib/types';
 import type { PriceFetcherOutput } from '@/lib/tools/price-fetcher';
 import type { ECAZoneValidatorOutput } from '../tools/eca-zone-validator';
 import type { FormattedResponse } from '../formatters/response-formatter';
+import type { ROBTrackingOutput, ROBWaypoint } from '@/lib/engines/rob-tracking-engine';
+import type { ECAConsumptionOutput } from '@/lib/engines/eca-consumption-engine';
+import type { VesselProfile } from '@/lib/services/vessel-service';
 
 // ============================================================================
 // Type Definitions
@@ -547,6 +550,65 @@ export const MultiAgentStateAnnotation = Annotation.Root({
    */
   vessel_consumption: Annotation<VesselConsumptionProfile | null>({
     reducer: (_, value) => value ?? null,
+    default: () => null,
+  }),
+
+  // ========================================================================
+  // ROB Tracking (Bunker Agent)
+  // ========================================================================
+
+  rob_tracking: Annotation<ROBTrackingOutput | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  rob_waypoints: Annotation<ROBWaypoint[] | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  rob_safety_status: Annotation<{
+    overall_safe: boolean;
+    minimum_rob_days: number;
+    violations: string[];
+  } | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  // ========================================================================
+  // ECA Consumption (Bunker Agent)
+  // ========================================================================
+
+  eca_consumption: Annotation<ECAConsumptionOutput | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  eca_summary: Annotation<{
+    eca_distance_nm: number;
+    eca_percentage: number;
+    total_vlsfo_mt: number;
+    total_lsmgo_mt: number;
+    segments_in_eca: number;
+  } | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  /**
+   * Vessel name (extracted from query, used for ROB lookup)
+   */
+  vessel_name: Annotation<string | null>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => null,
+  }),
+
+  /**
+   * Vessel profile from database (ROB, capacity, consumption, fouling)
+   */
+  vessel_profile: Annotation<VesselProfile | null>({
+    reducer: (x, y) => (y != null ? y : x),
     default: () => null,
   }),
 
