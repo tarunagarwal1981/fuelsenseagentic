@@ -6,6 +6,7 @@
  */
 
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { Runnable } from '@langchain/core/runnables';
 import type { z } from 'zod';
 
 // ============================================================================
@@ -351,7 +352,7 @@ export class AgentRegistry {
    * @param llm - The base LLM to bind tools to
    * @returns LLM with tools bound (or original LLM if binding fails)
    */
-  static bindToolsToSupervisor(llm: BaseChatModel): BaseChatModel {
+  static bindToolsToSupervisor(llm: BaseChatModel): Runnable | BaseChatModel {
     const tools = this.getToolsForLLMBinding();
     
     if (tools.length === 0) {
@@ -360,6 +361,12 @@ export class AgentRegistry {
     }
 
     try {
+      // Check if bindTools method exists on this LLM
+      if (typeof llm.bindTools !== 'function') {
+        console.warn('⚠️ [REGISTRY] LLM does not support bindTools method');
+        return llm;
+      }
+      
       // LangChain's bindTools accepts OpenAI function format
       const llmWithTools = llm.bindTools(tools);
       console.log(`✅ [REGISTRY] Bound ${tools.length} tools to supervisor LLM`);
