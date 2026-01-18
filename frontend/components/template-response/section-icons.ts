@@ -36,6 +36,12 @@ export const SECTION_ICONS: Record<string, string> = {
   'rating_breakdown': '📈',
   'optimization_strategies': '🎯',
   'calculation_methodology': '🔢',
+  
+  // Hull Performance
+  'hull_condition': '🚢',
+  'fouling_impact': '📉',
+  'cleaning_recommendation': '🧽',
+  'roi_analysis': '💰',
 };
 
 /**
