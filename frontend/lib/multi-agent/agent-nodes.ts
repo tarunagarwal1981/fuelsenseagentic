@@ -2180,6 +2180,9 @@ export async function bunkerAgentNode(
       segments_in_eca: number;
     } | null = null;
 
+    // Store ROB without bunker separately for comparison (P0-5)
+    let robWithoutBunker: ROBTrackingOutput | null = null;
+    
     try {
       const { rob, ecaConsumption } = calculateROBForVoyage(
         state.route_data!,
@@ -2190,6 +2193,7 @@ export async function bunkerAgentNode(
         ecaSegments
       );
       robTrackingResult = rob;
+      robWithoutBunker = rob;  // Store for comparison
       robSafetyStatus = formatROBSafetyStatus(rob, consumptionVlsfo, consumptionLsmgo);
       if (ecaConsumption) {
         ecaConsumptionResult = ecaConsumption;
@@ -2554,6 +2558,9 @@ export async function bunkerAgentNode(
     const foundForRob = (listForPort as any[])?.find((p: any) => (p?.port?.port_code ?? p?.port_code) === bestRec?.port_code);
     const portForRob = foundForRob ? (foundForRob.port ?? foundForRob) : null;
 
+    // Store ROB with bunker separately (P0-5)
+    let robWithBunkerResult: ROBTrackingOutput | null = null;
+    
     if (bestRec && portForRob && typeof (portForRob as any).name === 'string' && state.route_data && vesselProfile) {
       try {
         const quantityForRob = { VLSFO: vlsfoRequired, LSMGO: lsmgoRequired };
@@ -2572,11 +2579,89 @@ export async function bunkerAgentNode(
         console.log(`📊 [BUNKER-WORKFLOW] Voyage WITH bunker at ${bestRec.port_name}:`);
         console.log(`  - Final ROB: ${robWithBunker.final_rob.VLSFO} MT VLSFO, ${robWithBunker.final_rob.LSMGO} MT LSMGO`);
         console.log(`  - Safety: ${robWithBunker.overall_safe ? '✅ Safe' : '❌ Unsafe'}`);
+        robWithBunkerResult = robWithBunker;
         robTrackingResult = robWithBunker;
         robSafetyStatus = formatROBSafetyStatus(robWithBunker, consumptionVlsfo, consumptionLsmgo);
       } catch (e: any) {
         console.warn(`⚠️ [BUNKER-WORKFLOW] ROB-with-bunker skipped: ${e?.message || e}`);
       }
+    }
+    
+    // ========================================================================
+    // BUILD ENHANCED ROB TRACKING STRUCTURE (P0-5)
+    // ========================================================================
+    // This structure provides clear comparison between with/without bunker scenarios
+    // for prominent display in the response
+    //
+    const enhancedRobTracking: any = robTrackingResult ? {
+      // Current vessel state
+      vessel_name: vp.vessel_name,
+      current_rob: vp.initial_rob,
+      
+      // Voyage consumption requirements
+      voyage_consumption: {
+        VLSFO: voyageVlsfoConsumption,
+        LSMGO: voyageLsmgoConsumption,
+        total_days: voyageDurationDays,
+        distance_nm: state.route_data?.distance_nm || 0,
+      },
+      
+      // Scenario 1: WITHOUT bunkering
+      without_bunker: robWithoutBunker ? {
+        final_rob: robWithoutBunker.final_rob,
+        minimum_rob: robWithoutBunker.minimum_rob_reached,
+        minimum_location: robWithoutBunker.minimum_rob_location,
+        overall_safe: robWithoutBunker.overall_safe,
+        waypoints: robWithoutBunker.waypoints,
+        // Calculate when fuel runs out (if unsafe)
+        days_until_empty: !robWithoutBunker.overall_safe 
+          ? Math.max(0, vp.initial_rob.VLSFO / consumptionVlsfo)
+          : null,
+        critical_fuel: robWithoutBunker.final_rob.VLSFO < 0 ? 'VLSFO' : 
+                       robWithoutBunker.final_rob.LSMGO < 0 ? 'LSMGO' : null,
+      } : null,
+      
+      // Scenario 2: WITH recommended bunker
+      with_bunker: robWithBunkerResult ? {
+        final_rob: robWithBunkerResult.final_rob,
+        minimum_rob: robWithBunkerResult.minimum_rob_reached,
+        minimum_location: robWithBunkerResult.minimum_rob_location,
+        overall_safe: robWithBunkerResult.overall_safe,
+        waypoints: robWithBunkerResult.waypoints,
+        bunker_port: bestRec?.port_name || null,
+        bunker_quantity: {
+          VLSFO: vlsfoRequired,
+          LSMGO: lsmgoRequired,
+        },
+      } : null,
+      
+      // Overall safety status (based on with-bunker scenario)
+      overall_safe: robWithBunkerResult?.overall_safe ?? robWithoutBunker?.overall_safe ?? false,
+      
+      // Flag if recommended bunker is still insufficient
+      with_bunker_still_unsafe: robWithBunkerResult ? !robWithBunkerResult.overall_safe : false,
+      
+      // Safety margins
+      safety_margins: {
+        recommended_minimum_days: 3,
+        recommended_minimum_rob: {
+          VLSFO: consumptionVlsfo * 3,
+          LSMGO: consumptionLsmgo * 3,
+        },
+      },
+    } : null;
+    
+    console.log('📊 [BUNKER-WORKFLOW] Enhanced ROB tracking (P0-5):');
+    if (enhancedRobTracking) {
+      console.log('   Without bunker:', {
+        final: enhancedRobTracking.without_bunker?.final_rob,
+        safe: enhancedRobTracking.without_bunker?.overall_safe,
+      });
+      console.log('   With bunker:', {
+        final: enhancedRobTracking.with_bunker?.final_rob,
+        safe: enhancedRobTracking.with_bunker?.overall_safe,
+        port: enhancedRobTracking.with_bunker?.bunker_port,
+      });
     }
     
     console.log(`📊 [BUNKER-WORKFLOW] Returning to state:`);
@@ -2608,7 +2693,7 @@ export async function bunkerAgentNode(
       port_weather_status: portWeather,       // ✅ Already correct (array)
       port_prices: priceData,                 // ✅ Already correct (PriceFetcherOutput)
       bunker_analysis: analysisData,          // ✅ Already correct (BunkerAnalysis)
-      rob_tracking: robTrackingResult ?? null,
+      rob_tracking: enhancedRobTracking ?? robTrackingResult ?? null,  // P0-5: Enhanced ROB structure
       rob_waypoints: robTrackingResult?.waypoints ?? null,
       rob_safety_status: robSafetyStatus ?? null,
       eca_consumption: ecaConsumptionResult ?? null,

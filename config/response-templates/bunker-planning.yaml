@@ -73,6 +73,28 @@ template:
           
           **Action Required:** {action_required}
     
+    # NEW: ROB Safety Comparison (P0-5)
+    - id: "rob_safety_comparison"
+      title: "⛽ Fuel Safety Analysis"
+      tier: 1
+      priority: 4
+      visibility: "conditional"
+      condition: "rob_tracking"
+      style: "comparison_table"
+      
+      content_source:
+        state_path: ["rob_tracking", "vessel_profile", "bunker_analysis", "route_data"]
+        format: "rob_comparison"
+        template: |
+          | Scenario | VLSFO | LSMGO | Status |
+          |----------|-------|-------|--------|
+          | **Current ROB** | {current_rob_vlsfo} MT | {current_rob_lsmgo} MT | Starting point |
+          | **Voyage Consumption** | {voyage_vlsfo} MT | {voyage_lsmgo} MT | {distance}nm voyage |
+          | **Without Bunkering** | {without_vlsfo} MT | {without_lsmgo} MT | {without_status} |
+          | **With Recommended Bunker** | {with_vlsfo} MT | {with_lsmgo} MT | {with_status} |
+          
+          {safety_message}
+    
     # EXISTING: Cost summary (priority adjusted)
     - id: "cost_summary"
       title: "💰 Cost Summary"
@@ -338,3 +360,17 @@ template:
       condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
       action: "expand"
       target: "cross_agent_connections"
+    
+    # P0-5: Surface ROB safety comparison when unsafe
+    - name: "surface_rob_safety_critical"
+      description: "Move ROB safety comparison to top of Tier 1 if unsafe without bunker"
+      condition: "rob_tracking && !rob_tracking.overall_safe"
+      action: "move_to_tier_1"
+      target: "rob_safety_comparison"
+    
+    # P0-5: Expand ROB details if recommended bunker still insufficient
+    - name: "expand_rob_if_still_unsafe"
+      description: "Show full ROB details if recommended bunker quantity is insufficient"
+      condition: "rob_tracking && rob_tracking.with_bunker_still_unsafe"
+      action: "expand"
+      target: "complete_rob_tracking"

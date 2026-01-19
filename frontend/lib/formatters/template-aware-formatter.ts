@@ -356,6 +356,60 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
       return !!(state.synthesized_insights?.synthesis_metadata);
     }
     
+    // ========================================================================
+    // ROB TRACKING CONDITIONS (P0-5)
+    // ========================================================================
+    
+    // Pattern: "rob_tracking" - simple check for existence
+    if (condition === 'rob_tracking') {
+      return !!(state.rob_tracking);
+    }
+    
+    // Pattern: "rob_tracking && !rob_tracking.overall_safe"
+    if (condition.includes('rob_tracking') && condition.includes('!rob_tracking.overall_safe')) {
+      return !!(state.rob_tracking && !state.rob_tracking.overall_safe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.overall_safe"
+    if (condition.includes('rob_tracking') && condition.includes('rob_tracking.overall_safe') && !condition.includes('!')) {
+      return !!(state.rob_tracking?.overall_safe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.with_bunker_still_unsafe"
+    if (condition.includes('rob_tracking') && condition.includes('with_bunker_still_unsafe')) {
+      return !!(state.rob_tracking?.with_bunker_still_unsafe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.without_bunker"
+    if (condition.includes('rob_tracking') && condition.includes('without_bunker') && !condition.includes('overall_safe')) {
+      return !!(state.rob_tracking?.without_bunker);
+    }
+    
+    // Pattern: "rob_tracking && !rob_tracking.without_bunker.overall_safe"
+    if (condition.includes('rob_tracking') && condition.includes('without_bunker') && condition.includes('!') && condition.includes('overall_safe')) {
+      return !!(state.rob_tracking?.without_bunker && !state.rob_tracking.without_bunker.overall_safe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.without_bunker.overall_safe"
+    if (condition.includes('rob_tracking') && condition.includes('without_bunker') && condition.includes('overall_safe') && !condition.includes('!')) {
+      return !!(state.rob_tracking?.without_bunker?.overall_safe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.with_bunker"
+    if (condition.includes('rob_tracking') && condition.includes('with_bunker') && !condition.includes('still_unsafe') && !condition.includes('overall_safe')) {
+      return !!(state.rob_tracking?.with_bunker);
+    }
+    
+    // Pattern: "rob_tracking && !rob_tracking.with_bunker.overall_safe"
+    if (condition.includes('rob_tracking') && condition.includes('with_bunker') && condition.includes('!') && condition.includes('overall_safe')) {
+      return !!(state.rob_tracking?.with_bunker && !state.rob_tracking.with_bunker.overall_safe);
+    }
+    
+    // Pattern: "rob_tracking && rob_tracking.days_until_empty"
+    if (condition.includes('rob_tracking') && condition.includes('days_until_empty')) {
+      return !!(state.rob_tracking?.days_until_empty || state.rob_tracking?.without_bunker?.days_until_empty);
+    }
+    
     // Default: false for safety
     console.warn(`⚠️ [CONDITION] Unknown pattern: ${condition}`);
     return false;

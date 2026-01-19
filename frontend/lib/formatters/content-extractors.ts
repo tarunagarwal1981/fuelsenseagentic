@@ -164,6 +164,14 @@ function applyFormat(value: any, format: string, path: string): string {
       return renderBunkerRecommendation(value);
     
     case 'rob_comparison':
+      // P0-5: Handle both old (waypoints array) and new (enhanced object) formats
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        // New enhanced format with without_bunker/with_bunker
+        if (value.without_bunker || value.with_bunker || value.current_rob) {
+          return renderEnhancedROBComparison(value);
+        }
+      }
+      // Old format (waypoints array)
       return renderROBComparison(value);
     
     default:
@@ -1055,6 +1063,81 @@ export function renderROBComparison(robWaypoints: any[]): string {
     const lsmgo = destination.rob_after_action?.LSMGO?.toFixed(0) || '-';
     const margin = destination.safety_margin_days?.toFixed(1) || '-';
     output += `| 🏁 Destination | ${vlsfo} MT | ${lsmgo} MT | ${destination.is_safe ? '✅' : '⚠️'} (${margin} days) |\n`;
+  }
+  
+  return output;
+}
+
+/**
+ * Render enhanced ROB safety comparison (P0-5)
+ * Shows side-by-side comparison of with vs without bunker scenarios
+ */
+export function renderEnhancedROBComparison(robTracking: any, vesselProfile?: any, routeData?: any): string {
+  if (!robTracking) {
+    return '';
+  }
+  
+  // Extract data from enhanced structure
+  const currentRob = robTracking.current_rob || vesselProfile?.initial_rob || { VLSFO: 0, LSMGO: 0 };
+  const voyageConsumption = robTracking.voyage_consumption || { VLSFO: 0, LSMGO: 0, distance_nm: 0 };
+  const withoutBunker = robTracking.without_bunker;
+  const withBunker = robTracking.with_bunker;
+  
+  let output = '**Fuel Safety Analysis:**\n\n';
+  output += '| Scenario | VLSFO | LSMGO | Status |\n';
+  output += '|----------|-------|-------|--------|\n';
+  
+  // Row 1: Current ROB
+  output += `| **Current ROB** | ${currentRob.VLSFO?.toFixed(0) || 0} MT | ${currentRob.LSMGO?.toFixed(0) || 0} MT | Starting point |\n`;
+  
+  // Row 2: Voyage Consumption
+  const distanceStr = voyageConsumption.distance_nm ? `${voyageConsumption.distance_nm.toFixed(0)}nm voyage` : '';
+  output += `| **Voyage Consumption** | ${voyageConsumption.VLSFO?.toFixed(0) || 0} MT | ${voyageConsumption.LSMGO?.toFixed(0) || 0} MT | ${distanceStr} |\n`;
+  
+  // Row 3: Without Bunkering
+  if (withoutBunker) {
+    const vlsfo = withoutBunker.final_rob?.VLSFO?.toFixed(0) || 0;
+    const lsmgo = withoutBunker.final_rob?.LSMGO?.toFixed(0) || 0;
+    const status = withoutBunker.overall_safe ? '✅ Safe' : '❌ **UNSAFE**';
+    output += `| **Without Bunkering** | ${vlsfo} MT | ${lsmgo} MT | ${status} |\n`;
+  }
+  
+  // Row 4: With Recommended Bunker
+  if (withBunker) {
+    const vlsfo = withBunker.final_rob?.VLSFO?.toFixed(0) || 0;
+    const lsmgo = withBunker.final_rob?.LSMGO?.toFixed(0) || 0;
+    const status = withBunker.overall_safe ? '✅ Safe' : '⚠️ Needs attention';
+    output += `| **With Bunker at ${withBunker.bunker_port || 'Recommended Port'}** | ${vlsfo} MT | ${lsmgo} MT | ${status} |\n`;
+  }
+  
+  output += '\n';
+  
+  // Add safety messages
+  if (withoutBunker && !withoutBunker.overall_safe) {
+    const daysUntilEmpty = withoutBunker.days_until_empty;
+    const criticalFuel = withoutBunker.critical_fuel || 'VLSFO';
+    
+    if (daysUntilEmpty) {
+      output += `**🚨 Critical:** Without bunkering, vessel will run out of ${criticalFuel} after approximately ${daysUntilEmpty.toFixed(1)} days.\n\n`;
+    } else {
+      output += `**🚨 Critical:** Without bunkering, vessel cannot complete voyage safely. ${criticalFuel} will be depleted before arrival.\n\n`;
+    }
+  }
+  
+  if (withBunker && !withBunker.overall_safe) {
+    output += `**⚠️ Warning:** Recommended bunker quantity may be insufficient. Consider:\n`;
+    output += `- Increasing safety margin\n`;
+    output += `- Bunkering additional fuel at ${withBunker.bunker_port || 'the recommended port'}\n`;
+    output += `- Planning secondary bunker stop en route\n\n`;
+  }
+  
+  if (withBunker && withBunker.overall_safe) {
+    const bunkerQty = withBunker.bunker_quantity;
+    const vlsfoQty = bunkerQty?.VLSFO?.toFixed(0) || 0;
+    const lsmgoQty = bunkerQty?.LSMGO?.toFixed(0) || 0;
+    output += `**✅ Confirmation:** With recommended bunker at ${withBunker.bunker_port || 'the port'} `;
+    output += `(${vlsfoQty} MT VLSFO + ${lsmgoQty} MT LSMGO), `;
+    output += `vessel will have safe fuel margins throughout the voyage.\n`;
   }
   
   return output;
