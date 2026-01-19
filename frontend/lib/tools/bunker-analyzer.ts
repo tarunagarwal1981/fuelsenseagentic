@@ -17,6 +17,60 @@ import { PriceFetcherOutput, PriceData } from '@/lib/tools/price-fetcher';
 import { FuelType } from '@/lib/types';
 
 /**
+ * Price staleness thresholds and penalties
+ * Stale prices are less reliable and should be penalized in ranking
+ */
+const PRICE_STALENESS_CONFIG = {
+  // Warning thresholds (hours)
+  WARNING_THRESHOLD_HOURS: 24,      // Prices older than 1 day get a warning
+  MODERATE_THRESHOLD_HOURS: 168,    // Prices older than 1 week get moderate penalty
+  HIGH_THRESHOLD_HOURS: 720,        // Prices older than 1 month get high penalty
+  CRITICAL_THRESHOLD_HOURS: 2160,   // Prices older than 3 months get critical penalty
+  
+  // Score multipliers (1.0 = no penalty, lower = more penalty)
+  FRESH_MULTIPLIER: 1.0,            // < 24 hours: no penalty
+  WARNING_MULTIPLIER: 0.95,         // 24h - 1 week: 5% penalty
+  MODERATE_MULTIPLIER: 0.85,        // 1 week - 1 month: 15% penalty
+  HIGH_MULTIPLIER: 0.70,            // 1 month - 3 months: 30% penalty
+  CRITICAL_MULTIPLIER: 0.50,        // > 3 months: 50% penalty
+};
+
+/**
+ * Calculate the freshness penalty multiplier for a given price age
+ * Returns a value between 0.5 and 1.0
+ */
+function calculateFreshnessPenalty(hoursSinceUpdate: number): number {
+  if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.WARNING_THRESHOLD_HOURS) {
+    return PRICE_STALENESS_CONFIG.FRESH_MULTIPLIER;
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.MODERATE_THRESHOLD_HOURS) {
+    return PRICE_STALENESS_CONFIG.WARNING_MULTIPLIER;
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.HIGH_THRESHOLD_HOURS) {
+    return PRICE_STALENESS_CONFIG.MODERATE_MULTIPLIER;
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.CRITICAL_THRESHOLD_HOURS) {
+    return PRICE_STALENESS_CONFIG.HIGH_MULTIPLIER;
+  } else {
+    return PRICE_STALENESS_CONFIG.CRITICAL_MULTIPLIER;
+  }
+}
+
+/**
+ * Get staleness severity level for display
+ */
+function getStalenessLevel(hoursSinceUpdate: number): 'fresh' | 'warning' | 'moderate' | 'high' | 'critical' {
+  if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.WARNING_THRESHOLD_HOURS) {
+    return 'fresh';
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.MODERATE_THRESHOLD_HOURS) {
+    return 'warning';
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.HIGH_THRESHOLD_HOURS) {
+    return 'moderate';
+  } else if (hoursSinceUpdate < PRICE_STALENESS_CONFIG.CRITICAL_THRESHOLD_HOURS) {
+    return 'high';
+  } else {
+    return 'critical';
+  }
+}
+
+/**
  * Input parameters for bunker analyzer
  */
 export interface BunkerAnalyzerInput {
@@ -80,6 +134,10 @@ export interface BunkerRecommendation {
   data_freshness_hours: number;
   /** Whether price is considered stale (> 24 hours) */
   is_price_stale: boolean;
+  /** Staleness severity level */
+  staleness_level: 'fresh' | 'warning' | 'moderate' | 'high' | 'critical';
+  /** Freshness penalty applied to ranking (1.0 = no penalty) */
+  freshness_penalty: number;
 }
 
 /**
@@ -96,6 +154,12 @@ export interface BunkerAnalysisResult {
   max_savings: number;
   /** Human-readable analysis summary */
   analysis_summary: string;
+  /** Warning if prices are stale */
+  stale_price_warning?: string;
+  /** Count of ports with stale prices */
+  stale_price_count: number;
+  /** Whether ALL prices are stale (critical warning) */
+  all_prices_stale: boolean;
 }
 
 /**
@@ -296,6 +360,10 @@ export async function analyzeBunkerOptions(
     // Total cost (fuel cost + deviation cost)
     const totalCost = fuelCost + deviationFuelCost;
 
+    // Calculate freshness penalty
+    const freshnessPenalty = calculateFreshnessPenalty(hoursSinceUpdate);
+    const stalenessLevel = getStalenessLevel(hoursSinceUpdate);
+    
     recommendations.push({
       port_code: port.port_code,
       port_name: port.name,
@@ -312,6 +380,8 @@ export async function analyzeBunkerOptions(
       savings_percentage: 0, // Will be calculated
       data_freshness_hours: hoursSinceUpdate,
       is_price_stale: isPriceStale,
+      staleness_level: stalenessLevel,
+      freshness_penalty: freshnessPenalty,
     });
   }
 
@@ -322,13 +392,40 @@ export async function analyzeBunkerOptions(
     );
   }
 
-  // Sort by total cost (cheapest first)
-  recommendations.sort((a, b) => a.total_cost - b.total_cost);
+  // Sort by adjusted cost (total cost penalized by freshness)
+  // This ensures stale prices rank lower than fresh prices at similar cost levels
+  recommendations.sort((a, b) => {
+    // Calculate adjusted costs: higher penalty = higher adjusted cost = ranks lower
+    const adjustedCostA = a.total_cost / a.freshness_penalty;
+    const adjustedCostB = b.total_cost / b.freshness_penalty;
+    return adjustedCostA - adjustedCostB;
+  });
 
   // Set ranks
   recommendations.forEach((rec, index) => {
     rec.rank = index + 1;
   });
+  
+  // Calculate stale price statistics
+  const stalePrices = recommendations.filter(r => r.is_price_stale);
+  const staleCount = stalePrices.length;
+  const allStale = staleCount === recommendations.length;
+  
+  // Log warnings for stale prices
+  if (staleCount > 0) {
+    const criticalCount = recommendations.filter(r => r.staleness_level === 'critical').length;
+    const highCount = recommendations.filter(r => r.staleness_level === 'high').length;
+    
+    if (criticalCount > 0) {
+      console.warn(`⚠️ [BUNKER-ANALYZER] ${criticalCount} port(s) have critically stale prices (>3 months old)`);
+    }
+    if (highCount > 0) {
+      console.warn(`⚠️ [BUNKER-ANALYZER] ${highCount} port(s) have highly stale prices (1-3 months old)`);
+    }
+    if (allStale) {
+      console.warn(`🚨 [BUNKER-ANALYZER] ALL ${staleCount} ports have stale prices - recommendations may be unreliable!`);
+    }
+  }
 
   // Calculate savings vs most expensive option
   const mostExpensive = recommendations[recommendations.length - 1];
@@ -382,12 +479,27 @@ Time Impact: ${bestOption.deviation_hours.toFixed(
     })} vs worst option`
   );
 
+  // Generate stale price warning if applicable
+  let stalePriceWarning: string | undefined;
+  if (allStale) {
+    const avgAgeHours = recommendations.reduce((sum, r) => sum + r.data_freshness_hours, 0) / recommendations.length;
+    const avgAgeDays = Math.round(avgAgeHours / 24);
+    stalePriceWarning = `⚠️ PRICE DATA WARNING: All ${staleCount} ports have stale prices (average ${avgAgeDays} days old). ` +
+      `These recommendations may not reflect current market rates. Consider contacting ports directly for current prices.`;
+  } else if (staleCount > recommendations.length / 2) {
+    stalePriceWarning = `⚠️ Price data warning: ${staleCount} of ${recommendations.length} ports have stale prices. ` +
+      `Verify current prices before bunkering.`;
+  }
+
   return {
     recommendations,
     best_option: bestOption,
     worst_option: mostExpensive,
     max_savings: maxSavings,
     analysis_summary: analysisSummary,
+    stale_price_warning: stalePriceWarning,
+    stale_price_count: staleCount,
+    all_prices_stale: allStale,
   };
 }
 

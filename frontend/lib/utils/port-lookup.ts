@@ -20,6 +20,35 @@ interface Port {
 const PORTS: Port[] = portsData as Port[];
 
 /**
+ * Stop words that should NOT be matched as port names
+ * These are common words that appear in queries but are not ports
+ */
+const STOP_WORDS = new Set([
+  // Common English articles and prepositions
+  'me', 'and', 'n', 'to', 'from', 'the', 'a', 'an', 'for', 'or',
+  'at', 'in', 'on', 'by', 'of', 'with', 'between', 'via', 'through',
+  // Common query words
+  'bunker', 'fuel', 'options', 'give', 'show', 'get', 'find', 'what',
+  'where', 'when', 'how', 'which', 'best', 'cheapest', 'optimal',
+  // Vessel-related words
+  'mv', 'vessel', 'ship', 'tanker', 'cargo', 'container', 'bulk',
+  // Pronouns and other common words
+  'our', 'we', 'us', 'you', 'your', 'please', 'help', 'can', 'could',
+  'would', 'should', 'will', 'need', 'want', 'like', 'looking',
+  // Numbers and units (single characters that could match ports)
+  'i', 'is', 'it', 'be', 'do', 'if', 'so', 'no', 'my', 'am',
+  // Common maritime terms that aren't ports
+  'port', 'route', 'voyage', 'trip', 'transit', 'sailing', 'steam',
+]);
+
+/**
+ * Check if a query term is a stop word that should not be matched as a port
+ */
+function isStopWord(term: string): boolean {
+  return STOP_WORDS.has(term.toLowerCase().trim());
+}
+
+/**
  * Parse GPS coordinates from query string
  * Supports patterns: "10°N 65°E", "10N 65E", "10.5°N, 65.2°E", "25.5N 55.3E"
  * Returns {lat, lon} or null if not found
@@ -314,6 +343,17 @@ function scorePortMatch(query: string, port: Port): number {
   const portCodeLower = port.port_code.toLowerCase();
   const portNameLower = port.name.toLowerCase();
   
+  // CRITICAL: Skip scoring for stop words
+  // This prevents false matches like "me" → DEBRE, "and" → INIXY, "n" → SGSIN
+  if (isStopWord(normalizedQuery)) {
+    return 0;
+  }
+  
+  // Skip very short queries (1-2 chars) unless they're exact port codes
+  if (normalizedQuery.length <= 2 && portCodeLower !== normalizedQuery) {
+    return 0;
+  }
+  
   // Exact code match: 100 points
   if (portCodeLower === normalizedQuery) {
     return 100;
@@ -326,13 +366,14 @@ function scorePortMatch(query: string, port: Port): number {
   
   // Alias match: 80 points (checked separately in findPortCode)
   
-  // Contains match: 50 points
-  if (portNameLower.includes(normalizedQuery) || normalizedQuery.includes(portNameLower)) {
+  // Contains match: 50 points (but only for meaningful query lengths)
+  if (normalizedQuery.length >= 3 && 
+      (portNameLower.includes(normalizedQuery) || normalizedQuery.includes(portNameLower))) {
     return 50;
   }
   
-  // Fuzzy match: 30 points (simple word overlap)
-  const queryWords = normalizedQuery.split(/\s+/);
+  // Fuzzy match: 30 points (simple word overlap, excluding stop words)
+  const queryWords = normalizedQuery.split(/\s+/).filter(w => !isStopWord(w) && w.length > 2);
   const portWords = portNameLower.split(/\s+/);
   const matchingWords = queryWords.filter(qw => portWords.some(pw => pw.includes(qw) || qw.includes(pw)));
   if (matchingWords.length > 0) {
@@ -347,6 +388,11 @@ function scorePortMatch(query: string, port: Port): number {
  * Returns null if ambiguous (top 2 scores within 10 points)
  */
 function selectBestMatch(query: string, candidates: Port[]): Port | null {
+  // Skip stop words immediately - no matching needed
+  if (isStopWord(query)) {
+    return null;
+  }
+  
   if (candidates.length === 0) {
     return null;
   }

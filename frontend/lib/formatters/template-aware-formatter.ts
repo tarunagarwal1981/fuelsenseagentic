@@ -309,6 +309,53 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
       return !!state.weather_forecast;
     }
     
+    // ========================================================================
+    // SYNTHESIZED INSIGHTS CONDITIONS
+    // ========================================================================
+    
+    // Pattern: "synthesized_insights && synthesized_insights.executive_insight"
+    if (condition.includes('synthesized_insights') && condition.includes('executive_insight') && !condition.includes('some(')) {
+      return !!(state.synthesized_insights?.executive_insight);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.strategic_priorities && synthesized_insights.strategic_priorities.length > 0"
+    if (condition.includes('synthesized_insights') && condition.includes('strategic_priorities') && condition.includes('length')) {
+      return !!(state.synthesized_insights?.strategic_priorities && 
+                state.synthesized_insights.strategic_priorities.length > 0);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.cross_agent_connections && synthesized_insights.cross_agent_connections.length > 0"
+    if (condition.includes('synthesized_insights') && condition.includes('cross_agent_connections') && condition.includes('length')) {
+      return !!(state.synthesized_insights?.cross_agent_connections && 
+                state.synthesized_insights.cross_agent_connections.length > 0);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.hidden_opportunities && synthesized_insights.hidden_opportunities.length > 0"
+    if (condition.includes('synthesized_insights') && condition.includes('hidden_opportunities') && condition.includes('length')) {
+      return !!(state.synthesized_insights?.hidden_opportunities && 
+                state.synthesized_insights.hidden_opportunities.length > 0);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.length > 0"
+    if (condition.includes('synthesized_insights') && condition.includes('risk_alerts') && condition.includes('length') && !condition.includes('some(')) {
+      return !!(state.synthesized_insights?.risk_alerts && 
+                state.synthesized_insights.risk_alerts.length > 0);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+    if (condition.includes('synthesized_insights') && condition.includes('risk_alerts') && condition.includes("severity === 'critical'")) {
+      const riskAlerts = state.synthesized_insights?.risk_alerts;
+      if (!riskAlerts || !Array.isArray(riskAlerts)) {
+        return false;
+      }
+      return riskAlerts.some((r: any) => r.severity === 'critical');
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.synthesis_metadata"
+    if (condition.includes('synthesized_insights') && condition.includes('synthesis_metadata')) {
+      return !!(state.synthesized_insights?.synthesis_metadata);
+    }
+    
     // Default: false for safety
     console.warn(`⚠️ [CONDITION] Unknown pattern: ${condition}`);
     return false;
