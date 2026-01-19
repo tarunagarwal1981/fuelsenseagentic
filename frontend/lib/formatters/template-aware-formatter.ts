@@ -359,55 +359,60 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
     // ========================================================================
     // ROB TRACKING CONDITIONS (P0-5)
     // ========================================================================
+    // Note: rob_tracking can be either ROBTrackingOutput or enhanced structure
+    // Cast to any for dynamic property access
     
     // Pattern: "rob_tracking" - simple check for existence
     if (condition === 'rob_tracking') {
       return !!(state.rob_tracking);
     }
     
+    // Cast to any for enhanced properties
+    const robTracking = state.rob_tracking as any;
+    
     // Pattern: "rob_tracking && !rob_tracking.overall_safe"
     if (condition.includes('rob_tracking') && condition.includes('!rob_tracking.overall_safe')) {
-      return !!(state.rob_tracking && !state.rob_tracking.overall_safe);
+      return !!(robTracking && !robTracking.overall_safe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.overall_safe"
     if (condition.includes('rob_tracking') && condition.includes('rob_tracking.overall_safe') && !condition.includes('!')) {
-      return !!(state.rob_tracking?.overall_safe);
+      return !!(robTracking?.overall_safe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.with_bunker_still_unsafe"
     if (condition.includes('rob_tracking') && condition.includes('with_bunker_still_unsafe')) {
-      return !!(state.rob_tracking?.with_bunker_still_unsafe);
+      return !!(robTracking?.with_bunker_still_unsafe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.without_bunker"
     if (condition.includes('rob_tracking') && condition.includes('without_bunker') && !condition.includes('overall_safe')) {
-      return !!(state.rob_tracking?.without_bunker);
+      return !!(robTracking?.without_bunker);
     }
     
     // Pattern: "rob_tracking && !rob_tracking.without_bunker.overall_safe"
     if (condition.includes('rob_tracking') && condition.includes('without_bunker') && condition.includes('!') && condition.includes('overall_safe')) {
-      return !!(state.rob_tracking?.without_bunker && !state.rob_tracking.without_bunker.overall_safe);
+      return !!(robTracking?.without_bunker && !robTracking.without_bunker.overall_safe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.without_bunker.overall_safe"
     if (condition.includes('rob_tracking') && condition.includes('without_bunker') && condition.includes('overall_safe') && !condition.includes('!')) {
-      return !!(state.rob_tracking?.without_bunker?.overall_safe);
+      return !!(robTracking?.without_bunker?.overall_safe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.with_bunker"
     if (condition.includes('rob_tracking') && condition.includes('with_bunker') && !condition.includes('still_unsafe') && !condition.includes('overall_safe')) {
-      return !!(state.rob_tracking?.with_bunker);
+      return !!(robTracking?.with_bunker);
     }
     
     // Pattern: "rob_tracking && !rob_tracking.with_bunker.overall_safe"
     if (condition.includes('rob_tracking') && condition.includes('with_bunker') && condition.includes('!') && condition.includes('overall_safe')) {
-      return !!(state.rob_tracking?.with_bunker && !state.rob_tracking.with_bunker.overall_safe);
+      return !!(robTracking?.with_bunker && !robTracking.with_bunker.overall_safe);
     }
     
     // Pattern: "rob_tracking && rob_tracking.days_until_empty"
     if (condition.includes('rob_tracking') && condition.includes('days_until_empty')) {
-      return !!(state.rob_tracking?.days_until_empty || state.rob_tracking?.without_bunker?.days_until_empty);
+      return !!(robTracking?.days_until_empty || robTracking?.without_bunker?.days_until_empty);
     }
     
     // Default: false for safety
