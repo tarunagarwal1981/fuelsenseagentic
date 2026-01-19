@@ -33,6 +33,7 @@ async function testBunkerQuery() {
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
+        multi_bunker_plan: null,
     compliance_data: null,
     vessel_consumption: null,
     rob_tracking: null,

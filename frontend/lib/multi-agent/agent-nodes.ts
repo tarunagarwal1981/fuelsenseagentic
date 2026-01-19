@@ -57,6 +57,8 @@ import {
 import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/lib/engines/eca-consumption-engine';
 import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
 import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
+import { planMultiPortBunker, needsMultiPortBunkering } from '@/lib/engines/multi-port-bunker-planner';
+import type { MultiBunkerAnalysis } from './state';
 import { formatResponse } from '../formatters/response-formatter';
 import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
@@ -2252,6 +2254,22 @@ export async function bunkerAgentNode(
     console.log(`   - VLSFO: ${voyageVlsfoConsumption.toFixed(1)} MT`);
     console.log(`   - LSMGO: ${voyageLsmgoConsumption.toFixed(1)} MT`);
     
+    // === EARLY DETECTION: Multi-port bunkering needed? ===
+    const voyageConsumption = { VLSFO: voyageVlsfoConsumption, LSMGO: voyageLsmgoConsumption };
+    const needsMultiPort = needsMultiPortBunkering(
+      voyageConsumption,
+      vp.capacity,
+      vp.initial_rob,
+      3, // safety margin days
+      voyageDurationDays
+    );
+    
+    if (needsMultiPort) {
+      console.log(`⚠️ [BUNKER-WORKFLOW] Multi-port bunkering may be required!`);
+      console.log(`   Voyage consumption: ${(voyageVlsfoConsumption + voyageLsmgoConsumption).toFixed(0)} MT total`);
+      console.log(`   Vessel capacity: ${(vp.capacity.VLSFO + vp.capacity.LSMGO).toFixed(0)} MT total`);
+    }
+    
     // Calculate shortfall (how much more fuel is needed)
     const vlsfoShortfall = Math.max(0, voyageVlsfoConsumption - vp.initial_rob.VLSFO);
     const lsmgoShortfall = Math.max(0, voyageLsmgoConsumption - vp.initial_rob.LSMGO);
@@ -2664,6 +2682,46 @@ export async function bunkerAgentNode(
       });
     }
     
+    // ========================================================================
+    // MULTI-PORT BUNKER PLANNING (when single stop is insufficient)
+    // ========================================================================
+    let multiBunkerPlan: MultiBunkerAnalysis | null = null;
+    
+    // Check if multi-port is needed (capacity constraint OR single-port still unsafe)
+    const withBunkerStillUnsafe = enhancedRobTracking?.with_bunker_still_unsafe ?? false;
+    
+    if ((needsMultiPort || withBunkerStillUnsafe) && bunkerPorts?.ports && priceData && state.route_data) {
+      console.log('🔀 [BUNKER-WORKFLOW] Running multi-port bunker planning...');
+      
+      try {
+        multiBunkerPlan = planMultiPortBunker({
+          route_data: state.route_data,
+          vessel_profile: vp,  // Use full VesselProfile (vp), not VesselROBProfile
+          voyage_consumption: voyageConsumption,
+          candidate_ports: bunkerPorts.ports,
+          port_prices: priceData,
+          weather_factor: state.weather_consumption?.consumption_increase_percent 
+            ? 1 + (state.weather_consumption.consumption_increase_percent / 100) 
+            : 1.0,
+          safety_margin_days: 3,
+        });
+        
+        if (multiBunkerPlan.required && multiBunkerPlan.best_plan) {
+          console.log('✅ [BUNKER-WORKFLOW] Multi-port plan generated:');
+          console.log(`   Best option: ${multiBunkerPlan.best_plan.stops.map(s => s.port_name).join(' → ')}`);
+          console.log(`   Total cost: $${multiBunkerPlan.best_plan.total_cost_usd.toLocaleString()}`);
+          console.log(`   Plans available: ${multiBunkerPlan.plans.length}`);
+        } else if (multiBunkerPlan.required && !multiBunkerPlan.best_plan) {
+          console.log(`⚠️ [BUNKER-WORKFLOW] Multi-port required but no valid plans found: ${multiBunkerPlan.error_message}`);
+        } else {
+          console.log('ℹ️ [BUNKER-WORKFLOW] Multi-port not required after detailed analysis');
+        }
+      } catch (err: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Multi-port planning error:', err.message);
+        // Don't fail the whole workflow - multi-port is an enhancement
+      }
+    }
+    
     console.log(`📊 [BUNKER-WORKFLOW] Returning to state:`);
     console.log(`   - Ports: ${portsCount} found`);
     console.log(`   - Weather: ${portWeather?.length || 0} ports checked`);
@@ -2681,6 +2739,12 @@ export async function bunkerAgentNode(
       rob_minimum_days: robSafetyStatus?.minimum_rob_days,
       eca_percentage: ecaSummaryResult?.eca_percentage,
       vessel_name: vp.vessel_name,
+      // Multi-port info
+      multi_port_required: multiBunkerPlan?.required ?? false,
+      multi_port_plans_count: multiBunkerPlan?.plans?.length ?? 0,
+      multi_port_best_option: multiBunkerPlan?.best_plan 
+        ? multiBunkerPlan.best_plan.stops.map(s => s.port_name).join(' → ')
+        : null,
     };
 
     // Add warning if vessel not found
@@ -2688,11 +2752,17 @@ export async function bunkerAgentNode(
       messageContent.warning = vesselNotFoundWarning;
     }
     
+    // Add warning if multi-port required but no plans found
+    if (multiBunkerPlan?.required && !multiBunkerPlan.best_plan) {
+      messageContent.multi_port_warning = multiBunkerPlan.error_message || 'Multi-port bunkering required but no valid plans found';
+    }
+    
     return {
       bunker_ports: portsArray,              // ✅ FIXED: Array of ports, not full object
       port_weather_status: portWeather,       // ✅ Already correct (array)
       port_prices: priceData,                 // ✅ Already correct (PriceFetcherOutput)
       bunker_analysis: analysisData,          // ✅ Already correct (BunkerAnalysis)
+      multi_bunker_plan: multiBunkerPlan,     // Multi-port bunker plan (when single stop insufficient)
       rob_tracking: enhancedRobTracking ?? robTrackingResult ?? null,  // P0-5: Enhanced ROB structure
       rob_waypoints: robTrackingResult?.waypoints ?? null,
       rob_safety_status: robSafetyStatus ?? null,

@@ -179,6 +179,7 @@ test('should auto-detect query type as route-only', () => {
   const state = createMockState({
     agent_status: { route_agent: 'success' },
     bunker_analysis: null,
+        multi_bunker_plan: null,
   });
   const response = formatResponseWithTemplate(state);
   
@@ -340,6 +341,7 @@ test('should render route_summary for route-only template', () => {
   const state = createMockState({
     agent_status: { route_agent: 'success' },
     bunker_analysis: null,
+        multi_bunker_plan: null,
   });
   const response = formatResponseWithTemplate(state, 'route-only');
   

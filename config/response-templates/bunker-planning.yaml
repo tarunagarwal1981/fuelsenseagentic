@@ -73,6 +73,37 @@ template:
           
           **Action Required:** {action_required}
     
+    # NEW: Multi-Port Bunker Strategy (when single stop insufficient)
+    - id: "multi_port_bunker_plan"
+      title: "🔀 Multi-Port Bunker Strategy Required"
+      tier: 1
+      priority: 3.5
+      visibility: "conditional"
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      
+      content_source:
+        state_path: ["multi_bunker_plan", "bunker_analysis", "vessel_profile"]
+        format: "multi_bunker_recommendation"
+    
+    # NEW: Multi-Port Operational Warning
+    - id: "multi_port_operational_warning"
+      title: "📋 Operational Considerations"
+      tier: 1
+      priority: 3.6
+      visibility: "conditional"
+      condition: "multi_bunker_plan && multi_bunker_plan.required && multi_bunker_plan.best_plan"
+      
+      content_source:
+        template: |
+          **OPERATIONAL NOTE:** Multi-port bunkering requires additional coordination:
+          
+          - ⚓ **Fuel Availability:** Confirm bunker availability at all ports before departing
+          - 📅 **Schedule Coordination:** Additional port calls affect voyage timeline
+          - 💵 **Port Costs:** Port fees and pilotage not included in fuel cost estimates
+          - 📞 **Broker Contact:** Verify pricing and availability with your bunker broker
+          
+          *Recommendation: Confirm arrangements before committing to cargo fixture.*
+    
     # NEW: ROB Safety Comparison (P0-5)
     - id: "rob_safety_comparison"
       title: "⛽ Fuel Safety Analysis"
@@ -374,3 +405,17 @@ template:
       condition: "rob_tracking && rob_tracking.with_bunker_still_unsafe"
       action: "expand"
       target: "complete_rob_tracking"
+    
+    # Multi-Port: Surface multi-port plan when required
+    - name: "surface_multi_port_plan"
+      description: "Move multi-port bunker plan to top when capacity constraint detected"
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      action: "move_to_tier_1"
+      target: "multi_port_bunker_plan"
+    
+    # Multi-Port: Show warning alongside plan
+    - name: "show_multi_port_warning"
+      description: "Ensure operational warning is visible when multi-port plan is shown"
+      condition: "multi_bunker_plan && multi_bunker_plan.required && multi_bunker_plan.best_plan"
+      action: "expand"
+      target: "multi_port_operational_warning"

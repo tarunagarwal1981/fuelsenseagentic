@@ -163,6 +163,9 @@ function applyFormat(value: any, format: string, path: string): string {
     case 'bunker_recommendation':
       return renderBunkerRecommendation(value);
     
+    case 'multi_bunker_recommendation':
+      return renderMultiBunkerPlan(value);
+    
     case 'rob_comparison':
       // P0-5: Handle merged state paths (array of paths) and single rob_tracking
       // When state_path is an array like ["rob_tracking", "vessel_profile", ...],
@@ -1014,6 +1017,96 @@ export function renderBunkerRecommendation(
   }
   if (best.price_per_mt_usd) {
     output += `- Price: $${best.price_per_mt_usd.toFixed(0)}/MT\n`;
+  }
+  
+  return output;
+}
+
+/**
+ * Render multi-port bunker plan when single stop is insufficient
+ */
+export function renderMultiBunkerPlan(data: any): string {
+  const analysis = data?.multi_bunker_plan;
+  
+  if (!analysis?.required) {
+    return '';
+  }
+  
+  let output = '## ⚠️ Multi-Port Bunker Strategy Required\n\n';
+  
+  // Explain why multi-port is needed
+  if (analysis.reason) {
+    output += `> **${analysis.reason}**\n\n`;
+  }
+  
+  // Show capacity constraint details
+  if (analysis.capacity_constraint) {
+    const cc = analysis.capacity_constraint;
+    output += '**Capacity Analysis:**\n';
+    output += `- Voyage requires: ${(cc.voyage_consumption_mt?.VLSFO || 0).toFixed(0)} MT VLSFO, ${(cc.voyage_consumption_mt?.LSMGO || 0).toFixed(0)} MT LSMGO\n`;
+    output += `- Vessel capacity: ${(cc.vessel_capacity_mt?.VLSFO || 0).toFixed(0)} MT VLSFO, ${(cc.vessel_capacity_mt?.LSMGO || 0).toFixed(0)} MT LSMGO\n`;
+    output += '\n';
+  }
+  
+  // No valid plans found
+  if (!analysis.plans || analysis.plans.length === 0) {
+    output += '**⚠️ No Safe Multi-Port Plans Found**\n\n';
+    if (analysis.error_message) {
+      output += `${analysis.error_message}\n\n`;
+    }
+    output += '*Recommendation: Contact operations team for manual voyage planning.*\n';
+    return output;
+  }
+  
+  // Show best plan
+  const best = analysis.best_plan || analysis.plans[0];
+  if (best) {
+    output += '### Recommended Multi-Port Option\n\n';
+    
+    // Show each stop
+    for (let i = 0; i < best.stops.length; i++) {
+      const stop = best.stops[i];
+      const isFirst = i === 0;
+      const position = stop.position_on_route === 'departure' ? '(Departure)' : '(En-Route)';
+      
+      output += `**Stop ${i + 1}: ${stop.port_name}** ${position}\n`;
+      output += `- Bunker: ${(stop.bunker_quantity?.VLSFO || 0).toFixed(0)} MT VLSFO, ${(stop.bunker_quantity?.LSMGO || 0).toFixed(0)} MT LSMGO\n`;
+      output += `- Cost: $${(stop.estimated_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+      
+      if (!isFirst && stop.arrival_rob) {
+        output += `- Arrival ROB: ${(stop.arrival_rob.VLSFO || 0).toFixed(0)} MT VLSFO, ${(stop.arrival_rob.LSMGO || 0).toFixed(0)} MT LSMGO\n`;
+      }
+      
+      if (stop.deviation_nm > 10) {
+        output += `- Route deviation: ${stop.deviation_nm.toFixed(0)} nm\n`;
+      }
+      output += '\n';
+    }
+    
+    // Summary
+    output += '**Voyage Summary:**\n';
+    output += `- **Total Cost:** $${(best.total_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+    output += `- **Arrival ROB:** ${(best.final_rob?.VLSFO || 0).toFixed(0)} MT VLSFO, ${(best.final_rob?.LSMGO || 0).toFixed(0)} MT LSMGO\n`;
+    output += `- **Status:** ${best.is_safe ? '✅ Safe' : '⚠️ Review Required'}\n\n`;
+    
+    // Show alternatives
+    if (analysis.plans.length > 1) {
+      output += '### Alternative Options\n\n';
+      for (const plan of analysis.plans.slice(1, 3)) {
+        const stopNames = plan.stops.map((s: any) => s.port_name).join(' → ');
+        output += `- **${stopNames}:** $${(plan.total_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+        if (plan.savings_vs_worst) {
+          output += ` (saves $${plan.savings_vs_worst.toLocaleString('en-US', { maximumFractionDigits: 0 })} vs worst)`;
+        }
+        output += '\n';
+      }
+      output += '\n';
+    }
+    
+    // Limitation note
+    if (best.limitation_note) {
+      output += `*${best.limitation_note}*\n\n`;
+    }
   }
   
   return output;

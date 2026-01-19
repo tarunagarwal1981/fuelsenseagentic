@@ -42,6 +42,7 @@ export async function testPlanning(): Promise<void> {
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
+        multi_bunker_plan: null,
     agent_errors: {},
     agent_status: {},
   };
