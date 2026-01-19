@@ -3232,15 +3232,41 @@ export async function finalizeNode(state: MultiAgentState) {
   
   if (state.rob_tracking) {
     console.log('📊 [FINALIZE-DEBUG] ROB Tracking Details:');
-    console.log(`  - Final ROB: ${state.rob_tracking.final_rob.VLSFO} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO} MT LSMGO`);
-    console.log(`  - Overall Safe: ${state.rob_tracking.overall_safe}`);
-    console.log(`  - Waypoints: ${state.rob_tracking.waypoints.length}`);
+    
+    // Handle both old and new (P0-5 enhanced) ROB tracking structures
+    const robTracking = state.rob_tracking as any;
+    
+    // Check for new P0-5 enhanced structure
+    if (robTracking.with_bunker || robTracking.without_bunker) {
+      // New enhanced structure
+      const withBunker = robTracking.with_bunker;
+      const withoutBunker = robTracking.without_bunker;
+      
+      if (withoutBunker?.final_rob) {
+        console.log(`  - Without Bunker Final ROB: ${withoutBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withoutBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
+        console.log(`  - Without Bunker Safe: ${withoutBunker.overall_safe}`);
+      }
+      if (withBunker?.final_rob) {
+        console.log(`  - With Bunker Final ROB: ${withBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
+        console.log(`  - With Bunker Safe: ${withBunker.overall_safe}`);
+      }
+      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
+      console.log(`  - Still Unsafe After Bunker: ${robTracking.with_bunker_still_unsafe}`);
+    } else if (robTracking.final_rob) {
+      // Old structure (backwards compatibility)
+      console.log(`  - Final ROB: ${robTracking.final_rob.VLSFO} MT VLSFO, ${robTracking.final_rob.LSMGO} MT LSMGO`);
+      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
+      console.log(`  - Waypoints: ${robTracking.waypoints?.length || 0}`);
+    } else {
+      console.log(`  - Structure: Unknown (keys: ${Object.keys(robTracking).join(', ')})`);
+    }
   }
-  
+
   if (state.rob_waypoints) {
     console.log('📍 [FINALIZE-DEBUG] ROB Waypoints:');
     state.rob_waypoints.forEach((wp, idx) => {
-      console.log(`  ${idx + 1}. ${wp.location}: ${wp.rob_after_action.VLSFO.toFixed(1)} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
+      const vlsfo = wp.rob_after_action?.VLSFO;
+      console.log(`  ${idx + 1}. ${wp.location}: ${vlsfo !== undefined ? vlsfo.toFixed(1) : 'N/A'} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
     });
   }
   // === END DEBUG ===
