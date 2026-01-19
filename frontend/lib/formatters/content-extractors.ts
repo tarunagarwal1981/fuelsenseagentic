@@ -164,15 +164,19 @@ function applyFormat(value: any, format: string, path: string): string {
       return renderBunkerRecommendation(value);
     
     case 'rob_comparison':
-      // P0-5: Handle both old (waypoints array) and new (enhanced object) formats
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
+      // P0-5: Handle merged state paths (array of paths) and single rob_tracking
+      // When state_path is an array like ["rob_tracking", "vessel_profile", ...],
+      // the merged data has rob_tracking nested, not at top level
+      const robData = value?.rob_tracking || value;
+      if (robData && typeof robData === 'object' && !Array.isArray(robData)) {
         // New enhanced format with without_bunker/with_bunker
-        if (value.without_bunker || value.with_bunker || value.current_rob) {
-          return renderEnhancedROBComparison(value);
+        if (robData.without_bunker || robData.with_bunker || robData.current_rob) {
+          // Pass additional context from merged data
+          return renderEnhancedROBComparison(robData, value?.vessel_profile, value?.route_data);
         }
       }
       // Old format (waypoints array)
-      return renderROBComparison(value);
+      return renderROBComparison(robData);
     
     default:
       console.warn(`⚠️ [EXTRACTOR] Unknown format: ${format}`);

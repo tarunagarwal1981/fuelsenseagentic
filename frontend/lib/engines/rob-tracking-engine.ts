@@ -134,7 +134,8 @@ export class ROBTrackingEngine {
         is_safe: safetyMarginAfterBunker >= input.safety_margin_days,
       });
       
-      console.log(`✅ [ROB-ENGINE] Bunker at departure: +${bunkerAtDeparture.quantity_to_bunker.VLSFO} MT VLSFO, ROB now: ${currentROB.VLSFO} MT`);
+      console.log(`✅ [ROB-ENGINE] Bunker at departure: +${bunkerAtDeparture.quantity_to_bunker.VLSFO} MT VLSFO, +${bunkerAtDeparture.quantity_to_bunker.LSMGO || 0} MT LSMGO`);
+      console.log(`   ROB now: ${currentROB.VLSFO.toFixed(1)} MT VLSFO, ${currentROB.LSMGO.toFixed(1)} MT LSMGO`);
     }
 
     // Process each segment
