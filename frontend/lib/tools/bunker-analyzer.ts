@@ -78,14 +78,32 @@ export interface BunkerAnalyzerInput {
   bunker_ports: FoundPort[];
   /** Fuel price data for the ports */
   port_prices: PriceFetcherOutput;
-  /** Fuel quantity needed in metric tons */
+  /** VLSFO fuel quantity needed in metric tons */
   fuel_quantity_mt: number;
-  /** Type of fuel required */
+  /** LSMGO/MGO quantity needed in metric tons (for auxiliary engines, ECA zones) */
+  mgo_quantity_mt?: number;
+  /** Type of primary fuel required */
   fuel_type?: FuelType;
   /** Vessel speed in knots */
   vessel_speed_knots?: number;
   /** Vessel fuel consumption in MT per day */
   vessel_consumption_mt_per_day?: number;
+}
+
+/**
+ * Breakdown of cost for a single fuel type
+ */
+export interface FuelBreakdown {
+  /** Fuel type identifier */
+  type: 'VLSFO' | 'LSMGO' | 'MGO' | 'LSGO';
+  /** Quantity in metric tons */
+  quantity: number;
+  /** Price per metric ton in USD */
+  price_per_mt: number;
+  /** Total cost for this fuel type */
+  cost: number;
+  /** Whether price data was available or estimated */
+  is_estimated: boolean;
 }
 
 /**
@@ -128,6 +146,16 @@ export interface BunkerRecommendation {
   savings_vs_most_expensive: number;
   /** Savings as percentage */
   savings_percentage: number;
+
+  // Multi-fuel support
+  /** Breakdown of costs by fuel type */
+  fuels: FuelBreakdown[];
+  /** MGO/LSMGO price per metric ton (for backwards compatibility) */
+  mgo_price_per_mt?: number;
+  /** MGO/LSMGO total cost (for backwards compatibility) */
+  mgo_cost?: number;
+  /** MGO/LSMGO quantity in metric tons */
+  mgo_quantity_mt?: number;
 
   // Metadata
   /** Hours since price was last updated */
@@ -250,8 +278,14 @@ export async function analyzeBunkerOptions(
     vessel_consumption_mt_per_day = 35,
   } = validated;
 
+  // Get MGO quantity from input (not in Zod schema for backwards compatibility)
+  const mgo_quantity_mt = (input as any).mgo_quantity_mt || 0;
+
   console.log(`\n📊 Analyzing bunker options...`);
-  console.log(`   Fuel needed: ${fuel_quantity_mt} MT of ${fuel_type}`);
+  console.log(`   VLSFO needed: ${fuel_quantity_mt} MT`);
+  if (mgo_quantity_mt > 0) {
+    console.log(`   LSMGO needed: ${mgo_quantity_mt} MT`);
+  }
   console.log(`   Vessel consumption: ${vessel_consumption_mt_per_day} MT/day`);
   console.log(`   Vessel speed: ${vessel_speed_knots} knots`);
   console.log(`   Ports to analyze: ${bunker_ports.length}`);
@@ -327,7 +361,7 @@ export async function analyzeBunkerOptions(
       continue;
     }
 
-    // Find price for the requested fuel type
+    // Find price for the requested fuel type (VLSFO)
     const fuelPriceData = portPriceData.find(
       (p: PriceData) => p.price.fuel_type === fuel_type
     );
@@ -343,8 +377,42 @@ export async function analyzeBunkerOptions(
     const hoursSinceUpdate = fuelPriceData.hours_since_update;
     const isPriceStale = !fuelPriceData.is_fresh;
 
-    // Calculate direct fuel cost
+    // Calculate direct VLSFO fuel cost
     const fuelCost = fuel_quantity_mt * fuelPrice;
+
+    // ========================================================================
+    // MULTI-FUEL: Find and calculate MGO/LSMGO costs
+    // ========================================================================
+    let mgoPriceData: PriceData | undefined;
+    let mgoPrice = 0;
+    let mgoCost = 0;
+    let mgoIsEstimated = false;
+    
+    if (mgo_quantity_mt > 0) {
+      // Try to find LSGO price first (Low Sulfur Gas Oil = LSMGO)
+      mgoPriceData = portPriceData.find(
+        (p: PriceData) => p.price.fuel_type === 'LSGO'
+      );
+      
+      // Fallback to MGO if LSGO not found
+      if (!mgoPriceData) {
+        mgoPriceData = portPriceData.find(
+          (p: PriceData) => p.price.fuel_type === 'MGO'
+        );
+      }
+      
+      if (mgoPriceData) {
+        mgoPrice = mgoPriceData.price.price_per_mt;
+        mgoIsEstimated = false;
+      } else {
+        // Last resort: estimate MGO as VLSFO * 1.4 (MGO typically 40% more expensive)
+        mgoPrice = fuelPrice * 1.4;
+        mgoIsEstimated = true;
+        console.log(`   ℹ️ Estimating LSMGO price for ${port.port_code}: $${mgoPrice.toFixed(0)}/MT (VLSFO × 1.4)`);
+      }
+      
+      mgoCost = mgo_quantity_mt * mgoPrice;
+    }
 
     // Calculate deviation cost
     // Deviation is round trip: to port and back to route
@@ -353,16 +421,42 @@ export async function analyzeBunkerOptions(
     const deviationDays = deviationHours / 24;
 
     // Fuel consumed during deviation (at consumption rate)
-    const deviationFuelConsumption =
-      deviationDays * vessel_consumption_mt_per_day;
-    const deviationFuelCost = deviationFuelConsumption * fuelPrice;
+    // Use VLSFO for main engine, estimate 10% for auxiliary (MGO)
+    const deviationVlsfoConsumption = deviationDays * vessel_consumption_mt_per_day;
+    const deviationMgoConsumption = deviationDays * (vessel_consumption_mt_per_day * 0.1);
+    const deviationFuelConsumption = deviationVlsfoConsumption + deviationMgoConsumption;
+    const deviationFuelCost = (deviationVlsfoConsumption * fuelPrice) + 
+                              (mgo_quantity_mt > 0 ? deviationMgoConsumption * mgoPrice : 0);
 
-    // Total cost (fuel cost + deviation cost)
-    const totalCost = fuelCost + deviationFuelCost;
+    // Total cost (VLSFO cost + MGO cost + deviation cost)
+    const totalCost = fuelCost + mgoCost + deviationFuelCost;
 
-    // Calculate freshness penalty
-    const freshnessPenalty = calculateFreshnessPenalty(hoursSinceUpdate);
-    const stalenessLevel = getStalenessLevel(hoursSinceUpdate);
+    // Calculate freshness penalty (use worst of VLSFO and MGO freshness)
+    const mgoHoursSinceUpdate = mgoPriceData?.hours_since_update || hoursSinceUpdate;
+    const maxHoursSinceUpdate = Math.max(hoursSinceUpdate, mgoHoursSinceUpdate);
+    const freshnessPenalty = calculateFreshnessPenalty(maxHoursSinceUpdate);
+    const stalenessLevel = getStalenessLevel(maxHoursSinceUpdate);
+    
+    // Build fuels array for multi-fuel support
+    const fuels: FuelBreakdown[] = [
+      {
+        type: 'VLSFO',
+        quantity: fuel_quantity_mt,
+        price_per_mt: fuelPrice,
+        cost: fuelCost,
+        is_estimated: false,
+      }
+    ];
+    
+    if (mgo_quantity_mt > 0) {
+      fuels.push({
+        type: 'LSMGO',
+        quantity: mgo_quantity_mt,
+        price_per_mt: mgoPrice,
+        cost: mgoCost,
+        is_estimated: mgoIsEstimated,
+      });
+    }
     
     recommendations.push({
       port_code: port.port_code,
@@ -378,8 +472,12 @@ export async function analyzeBunkerOptions(
       total_cost: totalCost,
       savings_vs_most_expensive: 0, // Will be calculated
       savings_percentage: 0, // Will be calculated
-      data_freshness_hours: hoursSinceUpdate,
-      is_price_stale: isPriceStale,
+      fuels: fuels,
+      mgo_price_per_mt: mgo_quantity_mt > 0 ? mgoPrice : undefined,
+      mgo_cost: mgo_quantity_mt > 0 ? mgoCost : undefined,
+      mgo_quantity_mt: mgo_quantity_mt > 0 ? mgo_quantity_mt : undefined,
+      data_freshness_hours: maxHoursSinceUpdate,
+      is_price_stale: isPriceStale || (mgoPriceData ? !mgoPriceData.is_fresh : false),
       staleness_level: stalenessLevel,
       freshness_penalty: freshnessPenalty,
     });
@@ -440,19 +538,25 @@ export async function analyzeBunkerOptions(
   const bestOption = recommendations[0];
   const maxSavings = bestOption.savings_vs_most_expensive;
 
+  // Build fuel summary for multi-fuel display
+  const fuelSummaryLines: string[] = [];
+  for (const fuel of bestOption.fuels) {
+    fuelSummaryLines.push(
+      `- ${fuel.type}: $${fuel.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })} ` +
+      `(${fuel.quantity.toFixed(0)} MT @ $${fuel.price_per_mt.toFixed(0)}/MT)` +
+      (fuel.is_estimated ? ' [estimated]' : '')
+    );
+  }
+
   // Generate human-readable summary
   const analysisSummary = `
-Analyzed ${recommendations.length} bunker ports for ${fuel_quantity_mt} MT of ${fuel_type}.
+Analyzed ${recommendations.length} bunker ports for ${fuel_quantity_mt} MT of ${fuel_type}${mgo_quantity_mt > 0 ? ` + ${mgo_quantity_mt} MT of LSMGO` : ''}.
 
 Best Option: ${bestOption.port_name} (${bestOption.port_code})
 - Total Cost: $${bestOption.total_cost.toLocaleString(undefined, {
     maximumFractionDigits: 0,
   })}
-- Fuel Cost: $${bestOption.fuel_cost.toLocaleString(undefined, {
-    maximumFractionDigits: 0,
-  })} (${fuel_quantity_mt} MT @ $${bestOption.fuel_price_per_mt.toFixed(
-    2
-  )}/MT)
+${fuelSummaryLines.join('\n')}
 - Deviation Cost: $${bestOption.deviation_fuel_cost.toLocaleString(
     undefined,
     { maximumFractionDigits: 0 }
@@ -468,6 +572,15 @@ Time Impact: ${bestOption.deviation_hours.toFixed(
 
   console.log(`\n   ✅ Analysis complete: ${recommendations.length} options ranked`);
   console.log(`\n   🏆 Best option: ${bestOption.port_name}`);
+  
+  // Log each fuel type
+  for (const fuel of bestOption.fuels) {
+    console.log(
+      `      ${fuel.type}: ${fuel.quantity.toFixed(0)} MT @ $${fuel.price_per_mt.toFixed(0)}/MT = $${fuel.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` +
+      (fuel.is_estimated ? ' [estimated]' : '')
+    );
+  }
+  
   console.log(
     `      Total cost: $${bestOption.total_cost.toLocaleString(undefined, {
       maximumFractionDigits: 0,

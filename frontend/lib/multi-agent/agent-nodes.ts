@@ -2558,6 +2558,9 @@ export async function bunkerAgentNode(
       try {
         const quantityForRob = { VLSFO: vlsfoRequired, LSMGO: lsmgoRequired };
         console.log('🔧 [BUNKER-WORKFLOW] Calculating ROB with recommended bunker...');
+        console.log(`   Port: ${bestRec.port_name}`);
+        console.log(`   VLSFO: ${vlsfoRequired.toFixed(0)} MT`);
+        console.log(`   LSMGO: ${lsmgoRequired.toFixed(0)} MT`);
         const { rob: robWithBunker } = calculateROBForVoyage(
           state.route_data,
           state.weather_consumption ?? null,
