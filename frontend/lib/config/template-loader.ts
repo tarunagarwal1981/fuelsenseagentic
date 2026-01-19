@@ -58,8 +58,47 @@ export class TemplateLoader {
   private templatesDir: string;
   
   constructor(templatesDir?: string) {
-    this.templatesDir = templatesDir || path.join(process.cwd(), 'config', 'response-templates');
+    this.templatesDir = templatesDir || this.resolveTemplatesDir();
     console.log(`📁 [TEMPLATE-LOADER] Templates directory: ${this.templatesDir}`);
+  }
+  
+  /**
+   * Resolve templates directory with multiple fallback paths
+   * Handles different deployment environments (local dev, Netlify, Vercel)
+   */
+  private resolveTemplatesDir(): string {
+    const possiblePaths = [
+      // Local development - running from frontend/
+      path.join(process.cwd(), 'config', 'response-templates'),
+      // Local development - running from project root
+      path.join(process.cwd(), 'frontend', 'config', 'response-templates'),
+      // Relative to this file (works in bundled environments)
+      path.join(__dirname, '..', '..', '..', 'config', 'response-templates'),
+      path.join(__dirname, '..', '..', 'config', 'response-templates'),
+      // Netlify serverless functions
+      '/var/task/config/response-templates',
+      '/var/task/frontend/config/response-templates',
+      // Vercel serverless
+      path.join(process.cwd(), '.next', 'server', 'config', 'response-templates'),
+    ];
+    
+    for (const p of possiblePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          console.log(`✅ [TEMPLATE-LOADER] Found templates at: ${p}`);
+          return p;
+        }
+      } catch {
+        // Path check failed, try next
+      }
+    }
+    
+    // Log all attempted paths for debugging
+    console.warn(`⚠️ [TEMPLATE-LOADER] Templates not found in any expected location:`);
+    possiblePaths.forEach(p => console.warn(`   - ${p}`));
+    
+    // Fallback to default (will fail gracefully if not found)
+    return path.join(process.cwd(), 'config', 'response-templates');
   }
   
   /**

@@ -41,7 +41,7 @@ export interface ROBTrackingInput {
   bunker_stops?: Array<{
     port_name: string;
     quantity_to_bunker: FuelQuantity;
-    segment_index: number;  // After which segment this bunker happens
+    segment_index: number;  // After which segment this bunker happens (-1 = at departure, before first segment)
   }>;
   
   // Safety parameters
@@ -78,17 +78,64 @@ export class ROBTrackingEngine {
     }> = [];
 
     // Add departure waypoint
+    const defaultConsumption = input.segments[0]?.consumption_mt_per_day || { VLSFO: 30, LSMGO: 3 };
     waypoints.push({
       location: 'Departure',
       distance_from_previous: 0,
       rob_before_action: { ...currentROB },
       rob_after_action: { ...currentROB },
-      safety_margin_days: this.calculateSafetyMarginDays(
-        currentROB,
-        input.segments[0]?.consumption_mt_per_day || { VLSFO: 30, LSMGO: 3 }
-      ),
+      safety_margin_days: this.calculateSafetyMarginDays(currentROB, defaultConsumption),
       is_safe: true,
     });
+
+    // Check for bunker at departure (segment_index: -1)
+    // This handles the case where bunker happens at the departure port BEFORE sailing
+    const bunkerAtDeparture = input.bunker_stops?.find(b => b.segment_index === -1);
+    if (bunkerAtDeparture) {
+      // Validate bunker quantity fits in available capacity
+      const availableVLSFO = input.vessel_capacity.VLSFO - currentROB.VLSFO;
+      const availableLSMGO = input.vessel_capacity.LSMGO - currentROB.LSMGO;
+      
+      if (bunkerAtDeparture.quantity_to_bunker.VLSFO > availableVLSFO || 
+          bunkerAtDeparture.quantity_to_bunker.LSMGO > availableLSMGO) {
+        violations.push({
+          location: bunkerAtDeparture.port_name,
+          issue: 'Bunker quantity exceeds available tank capacity',
+          rob_at_violation: { ...currentROB },
+        });
+      }
+      
+      // Record ROB before bunkering
+      const robBeforeBunker = { ...currentROB };
+      
+      // Add fuel from bunkering
+      currentROB.VLSFO = Math.min(
+        currentROB.VLSFO + bunkerAtDeparture.quantity_to_bunker.VLSFO,
+        input.vessel_capacity.VLSFO
+      );
+      currentROB.LSMGO = Math.min(
+        currentROB.LSMGO + bunkerAtDeparture.quantity_to_bunker.LSMGO,
+        input.vessel_capacity.LSMGO
+      );
+      
+      // Add bunker waypoint (at departure, after bunkering)
+      const safetyMarginAfterBunker = this.calculateSafetyMarginDays(currentROB, defaultConsumption);
+      
+      waypoints.push({
+        location: `${bunkerAtDeparture.port_name} (After Bunker)`,
+        distance_from_previous: 0,
+        rob_before_action: robBeforeBunker,
+        action: {
+          type: 'bunker',
+          quantity: bunkerAtDeparture.quantity_to_bunker,
+        },
+        rob_after_action: { ...currentROB },
+        safety_margin_days: safetyMarginAfterBunker,
+        is_safe: safetyMarginAfterBunker >= input.safety_margin_days,
+      });
+      
+      console.log(`✅ [ROB-ENGINE] Bunker at departure: +${bunkerAtDeparture.quantity_to_bunker.VLSFO} MT VLSFO, ROB now: ${currentROB.VLSFO} MT`);
+    }
 
     // Process each segment
     for (let i = 0; i < input.segments.length; i++) {

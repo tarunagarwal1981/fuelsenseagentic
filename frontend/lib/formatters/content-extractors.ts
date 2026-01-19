@@ -151,6 +151,21 @@ function applyFormat(value: any, format: string, path: string): string {
     case 'risk_list':
       return renderRiskAlertsFromData(value);
     
+    // ROB display format types (Fix 4)
+    case 'current_rob_display':
+      return renderCurrentROBDisplay(value);
+    
+    case 'safety_alert':
+      // Note: safety_alert needs both rob_tracking and rob_safety_status
+      // When called from applyFormat, value should be { rob_tracking, rob_safety_status }
+      return renderSafetyAlert(value?.rob_tracking, value?.rob_safety_status);
+    
+    case 'bunker_recommendation':
+      return renderBunkerRecommendation(value);
+    
+    case 'rob_comparison':
+      return renderROBComparison(value);
+    
     default:
       console.warn(`⚠️ [EXTRACTOR] Unknown format: ${format}`);
       return formatGenericValue(value);
@@ -229,6 +244,11 @@ function formatValueByPath(value: any, path: string, state: MultiAgentState): st
   
   if (path === 'synthesized_insights.synthesis_metadata') {
     return renderSynthesisMetadata({ synthesized_insights: { ...value, executive_insight: '', strategic_priorities: [], cross_agent_connections: [], synthesis_metadata: value } } as any);
+  }
+  
+  // Current ROB display (for vessel_profile with current_rob)
+  if (path === 'vessel_profile.current_rob' || path === 'current_rob') {
+    return renderCurrentROBDisplay({ current_rob: value });
   }
   
   // Generic fallback
@@ -807,4 +827,261 @@ export function formatAlternativePort(analysis: any): string {
   }
   
   return output;
+}
+
+// ============================================================================
+// Current ROB Display Renderers (Fix 4)
+// ============================================================================
+
+/**
+ * Render current vessel fuel status (ROB display)
+ * Shows what fuel the vessel currently has onboard before the voyage
+ */
+export function renderCurrentROBDisplay(vesselProfile: any): string {
+  if (!vesselProfile?.current_rob) {
+    return 'Current fuel status not available';
+  }
+  
+  const rob = vesselProfile.current_rob;
+  const capacity = vesselProfile.fuel_capacity || vesselProfile.tank_capacity;
+  const consumption = vesselProfile.consumption_rate || vesselProfile.consumption;
+  
+  let output = '**Current Fuel Onboard:**\n\n';
+  
+  // VLSFO status
+  if (rob.VLSFO !== undefined) {
+    const vlsfoCapacity = capacity?.VLSFO || 2000;
+    const vlsfoConsumption = consumption?.VLSFO || 30;
+    const pct = ((rob.VLSFO / vlsfoCapacity) * 100).toFixed(1);
+    const days = vlsfoConsumption > 0 ? (rob.VLSFO / vlsfoConsumption).toFixed(1) : '?';
+    
+    output += `**VLSFO:** ${rob.VLSFO.toFixed(0)} MT`;
+    output += ` (${pct}% of ${vlsfoCapacity.toFixed(0)} MT capacity)\n`;
+    output += `  - Endurance: ~${days} days at current consumption\n`;
+  }
+  
+  // LSMGO/MGO status
+  if (rob.LSMGO !== undefined) {
+    const lsmgoCapacity = capacity?.LSMGO || 200;
+    const lsmgoConsumption = consumption?.LSMGO || 3;
+    const pct = ((rob.LSMGO / lsmgoCapacity) * 100).toFixed(1);
+    const days = lsmgoConsumption > 0 ? (rob.LSMGO / lsmgoConsumption).toFixed(1) : '?';
+    
+    output += `\n**MGO/LSMGO:** ${rob.LSMGO.toFixed(0)} MT`;
+    output += ` (${pct}% of ${lsmgoCapacity.toFixed(0)} MT capacity)\n`;
+    output += `  - Endurance: ~${days} days at current consumption\n`;
+  }
+  
+  return output.trim();
+}
+
+/**
+ * Render safety alert for ROB violations
+ * Shows critical warnings when voyage has fuel safety concerns
+ */
+export function renderSafetyAlert(
+  robTracking: any,
+  robSafetyStatus: any
+): string {
+  if (!robTracking && !robSafetyStatus) {
+    return '';
+  }
+  
+  const isOverallSafe = robTracking?.overall_safe ?? robSafetyStatus?.overall_safe ?? true;
+  const violations = robTracking?.safety_violations || [];
+  const minRobDays = robSafetyStatus?.minimum_rob_days;
+  
+  // No alert needed if voyage is safe
+  if (isOverallSafe && violations.length === 0) {
+    return '';
+  }
+  
+  let output = '⚠️ **SAFETY ALERT** ⚠️\n\n';
+  
+  // Check for critical negative ROB
+  const negativeROBViolation = violations.find(
+    (v: any) => v.issue?.includes('Negative ROB') || v.issue?.includes('cannot reach')
+  );
+  
+  if (negativeROBViolation) {
+    output += '🔴 **CRITICAL:** Vessel cannot complete voyage with current fuel!\n';
+    output += `- Location: ${negativeROBViolation.location}\n`;
+    output += `- Issue: ${negativeROBViolation.issue}\n\n`;
+    output += '**Immediate Action Required:** Plan bunkering stop or adjust route.\n';
+    return output;
+  }
+  
+  // Check for low safety margin
+  if (minRobDays !== undefined && minRobDays < 3) {
+    output += '🟠 **WARNING:** Safety margin below recommended minimum\n';
+    output += `- Minimum margin: ${minRobDays.toFixed(1)} days (recommend 3+ days)\n`;
+    
+    if (violations.length > 0) {
+      output += '\n**Issues:**\n';
+      violations.forEach((v: any) => {
+        output += `- ${v.location}: ${v.issue}\n`;
+      });
+    }
+    
+    output += '\n**Consider:** Bunkering earlier or adding more fuel.\n';
+    return output;
+  }
+  
+  // Generic violations
+  if (violations.length > 0) {
+    output += '**Safety Concerns:**\n';
+    violations.forEach((v: any) => {
+      output += `- ${v.location}: ${v.issue}\n`;
+    });
+    output += '\n**Review fuel plan and adjust if needed.**\n';
+  }
+  
+  return output;
+}
+
+/**
+ * Render bunker recommendation with key details
+ */
+export function renderBunkerRecommendation(
+  bunkerAnalysis: any,
+  vesselProfile?: any
+): string {
+  if (!bunkerAnalysis?.best_option) {
+    return 'No bunker recommendation available';
+  }
+  
+  const best = bunkerAnalysis.best_option;
+  const quantity = best.quantity_mt || best.recommended_quantity_mt;
+  
+  let output = `## 🚢 Recommended Bunker Stop: ${best.port_name}\n\n`;
+  
+  // Port details
+  output += `**Port:** ${best.port_name}`;
+  if (best.port_code) {
+    output += ` (${best.port_code})`;
+  }
+  if (best.country) {
+    output += `, ${best.country}`;
+  }
+  output += '\n\n';
+  
+  // Quantity
+  if (quantity) {
+    output += `**Fuel to Load:**\n`;
+    if (typeof quantity === 'object') {
+      if (quantity.VLSFO) output += `- VLSFO: ${quantity.VLSFO.toFixed(0)} MT\n`;
+      if (quantity.LSMGO) output += `- LSMGO: ${quantity.LSMGO.toFixed(0)} MT\n`;
+    } else {
+      output += `- ${quantity.toFixed(0)} MT\n`;
+    }
+    output += '\n';
+  }
+  
+  // Cost breakdown
+  output += '**Cost Breakdown:**\n';
+  output += `- Fuel Cost: $${(best.fuel_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+  if (best.deviation_cost_usd) {
+    output += `- Deviation Cost: $${best.deviation_cost_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}\n`;
+  }
+  output += `- **Total Cost: $${(best.total_cost_usd || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}**\n\n`;
+  
+  // Why this port
+  output += '**Why This Port:**\n';
+  if (bunkerAnalysis.recommendations?.length > 1) {
+    const savings = (bunkerAnalysis.recommendations[1].total_cost_usd || 0) - (best.total_cost_usd || 0);
+    if (savings > 0) {
+      output += `- Saves $${savings.toLocaleString('en-US', { maximumFractionDigits: 0 })} vs next best option\n`;
+    }
+  }
+  if (best.distance_from_route_nm !== undefined) {
+    if (best.distance_from_route_nm < 10) {
+      output += '- Minimal deviation from planned route\n';
+    } else {
+      output += `- Route deviation: ${best.distance_from_route_nm.toFixed(0)} nm\n`;
+    }
+  }
+  if (best.price_per_mt_usd) {
+    output += `- Price: $${best.price_per_mt_usd.toFixed(0)}/MT\n`;
+  }
+  
+  return output;
+}
+
+/**
+ * Render ROB comparison at key waypoints
+ * Shows fuel status at departure, after bunker, and at destination
+ */
+export function renderROBComparison(robWaypoints: any[]): string {
+  if (!Array.isArray(robWaypoints) || robWaypoints.length === 0) {
+    return '';
+  }
+  
+  // Find key waypoints: departure, after bunker, destination
+  const departure = robWaypoints.find(wp => 
+    wp.location?.toLowerCase().includes('departure') || 
+    robWaypoints.indexOf(wp) === 0
+  );
+  
+  const afterBunker = robWaypoints.find(wp => 
+    wp.location?.toLowerCase().includes('bunker') ||
+    wp.action?.type === 'bunker'
+  );
+  
+  const destination = robWaypoints[robWaypoints.length - 1];
+  
+  let output = '**Fuel Status at Key Points:**\n\n';
+  output += '| Waypoint | VLSFO | LSMGO | Status |\n';
+  output += '|----------|-------|-------|--------|\n';
+  
+  // Departure
+  if (departure) {
+    const vlsfo = departure.rob_after_action?.VLSFO?.toFixed(0) || '-';
+    const lsmgo = departure.rob_after_action?.LSMGO?.toFixed(0) || '-';
+    output += `| 📍 Departure | ${vlsfo} MT | ${lsmgo} MT | ${departure.is_safe ? '✅' : '⚠️'} |\n`;
+  }
+  
+  // After Bunker (if exists)
+  if (afterBunker && afterBunker !== departure) {
+    const vlsfo = afterBunker.rob_after_action?.VLSFO?.toFixed(0) || '-';
+    const lsmgo = afterBunker.rob_after_action?.LSMGO?.toFixed(0) || '-';
+    const added = afterBunker.action?.quantity?.VLSFO;
+    const addedStr = added ? ` (+${added.toFixed(0)})` : '';
+    output += `| ⛽ After Bunker | ${vlsfo}${addedStr} MT | ${lsmgo} MT | ${afterBunker.is_safe ? '✅' : '⚠️'} |\n`;
+  }
+  
+  // Destination
+  if (destination && destination !== departure && destination !== afterBunker) {
+    const vlsfo = destination.rob_after_action?.VLSFO?.toFixed(0) || '-';
+    const lsmgo = destination.rob_after_action?.LSMGO?.toFixed(0) || '-';
+    const margin = destination.safety_margin_days?.toFixed(1) || '-';
+    output += `| 🏁 Destination | ${vlsfo} MT | ${lsmgo} MT | ${destination.is_safe ? '✅' : '⚠️'} (${margin} days) |\n`;
+  }
+  
+  return output;
+}
+
+/**
+ * Combined ROB status renderer for bunker-planning template
+ * Includes current ROB, safety status, and waypoint comparison
+ */
+export function renderFullROBStatus(state: MultiAgentState): string {
+  const parts: string[] = [];
+  
+  // Current ROB display
+  if (state.vessel_profile) {
+    parts.push(renderCurrentROBDisplay(state.vessel_profile));
+  }
+  
+  // Safety alert (only if there are issues)
+  const safetyAlert = renderSafetyAlert(state.rob_tracking, state.rob_safety_status);
+  if (safetyAlert) {
+    parts.push(safetyAlert);
+  }
+  
+  // ROB comparison at waypoints
+  if (state.rob_waypoints && state.rob_waypoints.length > 0) {
+    parts.push(renderROBComparison(state.rob_waypoints));
+  }
+  
+  return parts.filter(p => p).join('\n\n');
 }

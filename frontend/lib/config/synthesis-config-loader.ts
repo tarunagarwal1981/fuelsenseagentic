@@ -150,21 +150,31 @@ export class SynthesisConfigLoader {
 
   /**
    * Get default configuration
+   * 
+   * NOTE: max_tokens increased to 4000 to prevent JSON truncation.
+   * Previous 1500 token limit caused "Unterminated string in JSON" errors
+   * when synthesis output exceeded the limit.
    */
   private getDefaultConfig(): SynthesisConfig {
     return {
       enabled: true,
       min_agents_for_synthesis: 6,
-      always_synthesize_combinations: [],
-      skip_synthesis_combinations: [],
+      always_synthesize_combinations: [
+        ['route_agent', 'bunker_agent'],
+        ['cii_agent', 'hull_agent'],
+        ['compliance_agent', 'bunker_agent'],
+      ],
+      skip_synthesis_combinations: [
+        ['route_agent'],
+      ],
       llm: {
-        model: 'gpt-4o-mini',
-        max_tokens: 1500,
-        temperature: 0.3,
+        model: 'claude-sonnet-4-20250514',  // Better JSON generation
+        max_tokens: 4000,  // INCREASED from 1500 to prevent truncation
+        temperature: 0.2,  // DECREASED from 0.3 for consistent JSON
       },
-      max_synthesis_cost_usd: 0.05,
+      max_synthesis_cost_usd: 0.10,  // INCREASED from 0.05
       min_confidence_score: 0.7,
-      timeout_seconds: 10,
+      timeout_seconds: 15,  // INCREASED from 10
       features: {
         executive_insight: true,
         strategic_priorities: true,

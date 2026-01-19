@@ -105,16 +105,25 @@ export function calculateROBForVoyage(
       consumption_mt_per_day: { VLSFO: seg.consumption_mt_per_day.VLSFO, LSMGO: seg.consumption_mt_per_day.LSMGO },
       duration_days: seg.duration_days,
     }));
+    
+    // CRITICAL FIX: For ECA multi-segment routes, bunker at departure (-1)
+    // This ensures bunker happens BEFORE sailing, not after destination
     const bunkerStopsECA =
       bunkerPort && bunkerQuantity
         ? [
             {
               port_name: bunkerPort.name,
               quantity_to_bunker: bunkerQuantity,
-              segment_index: Math.floor(robSegments.length / 2),
+              segment_index: -1, // FIXED: Bunker at departure, not mid-route
             },
           ]
         : undefined;
+    
+    if (bunkerPort && bunkerQuantity) {
+      console.log(`📍 [ROB-CALC] ECA route: Bunker at departure (segment_index: -1)`);
+      console.log(`   Bunker port: ${bunkerPort.name}, Quantity: ${bunkerQuantity.VLSFO} MT VLSFO`);
+    }
+    
     const rob = robTrackingEngine.calculateROBTracking({
       initial_rob: vesselProfile.initial_rob,
       vessel_capacity: vesselProfile.capacity,
@@ -132,13 +141,28 @@ export function calculateROBForVoyage(
     weatherFactor
   );
 
+  // CRITICAL FIX: For single-segment routes, use segment_index: -1
+  // This means bunker happens at departure (BEFORE sailing) not after destination.
+  // segment_index: 0 would place bunker AFTER segment 0 completes (at destination)
+  // which causes negative ROB warnings and incorrect waypoint ordering.
+  //
+  // Correct waypoint order:
+  //   1. Departure (initial ROB)
+  //   2. After Bunker (ROB + bunker quantity)
+  //   3. Destination (ROB - voyage consumption)
+  
+  if (bunkerPort && bunkerQuantity) {
+    console.log(`📍 [ROB-CALC] Single-segment route: Bunker at departure (segment_index: -1)`);
+    console.log(`   Bunker port: ${bunkerPort.name}, Quantity: ${bunkerQuantity.VLSFO} MT VLSFO`);
+  }
+
   const bunkerStops =
     bunkerPort && bunkerQuantity
       ? [
           {
             port_name: bunkerPort.name,
             quantity_to_bunker: bunkerQuantity,
-            segment_index: 0, // after the single segment’s arrival
+            segment_index: -1, // FIXED: -1 = at departure, BEFORE first segment
           },
         ]
       : undefined;

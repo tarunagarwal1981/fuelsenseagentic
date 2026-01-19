@@ -21,18 +21,18 @@ synthesis:
   
   # LLM configuration
   llm:
-    model: "gpt-4o-mini"  # Fast and cost-effective
-    max_tokens: 1500
-    temperature: 0.3  # Lower for consistency
+    model: "claude-sonnet-4-20250514"  # Better JSON generation, more reliable
+    max_tokens: 4000  # INCREASED from 1500 to prevent truncation
+    temperature: 0.2  # DECREASED from 0.3 for more consistent JSON output
     
   # Cost controls
-  max_synthesis_cost_usd: 0.05  # Skip if would exceed this
+  max_synthesis_cost_usd: 0.10  # INCREASED from 0.05 to allow longer responses
   
   # Quality controls
   min_confidence_score: 0.7  # Minimum confidence to use synthesis
   
   # Timeout
-  timeout_seconds: 10  # Skip if synthesis takes too long
+  timeout_seconds: 15  # INCREASED from 10 for longer responses
   
   # Feature flags
   features:
