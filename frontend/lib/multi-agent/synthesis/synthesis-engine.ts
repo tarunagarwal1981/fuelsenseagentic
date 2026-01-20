@@ -349,6 +349,10 @@ function parseAndValidateSynthesis(
     
     const parsed = JSON.parse(jsonStr);
     
+    // DEBUG: Log parsed structure
+    console.log('🔍 [SYNTHESIS-DEBUG] Parsed keys:', Object.keys(parsed));
+    console.log('🔍 [SYNTHESIS-DEBUG] Response keys:', parsed.response ? Object.keys(parsed.response) : 'NO RESPONSE');
+    
     // ===== VALIDATE QUERY TYPE =====
     const validQueryTypes = ['informational', 'decision-required', 'validation', 'comparison'];
     if (!parsed.query_type || !validQueryTypes.includes(parsed.query_type)) {
@@ -361,6 +365,7 @@ function parseAndValidateSynthesis(
     // ===== VALIDATE RESPONSE OBJECT =====
     if (!parsed.response) {
       console.error('❌ [SYNTHESIS] Missing response object');
+      console.error('🔍 [SYNTHESIS-DEBUG] Full parsed object:', JSON.stringify(parsed, null, 2).substring(0, 2000));
       return null;
     }
     
@@ -370,6 +375,8 @@ function parseAndValidateSynthesis(
     
     if (!parsed.response[expectedKey]) {
       console.error(`❌ [SYNTHESIS] Missing response.${expectedKey} for query_type ${queryType}`);
+      console.error(`🔍 [SYNTHESIS-DEBUG] Available response keys:`, Object.keys(parsed.response));
+      console.error(`🔍 [SYNTHESIS-DEBUG] Response content:`, JSON.stringify(parsed.response, null, 2).substring(0, 1000));
       return null;
     }
     
