@@ -164,8 +164,11 @@ export class TemplateLoader {
     // Validate each section
     t.sections.forEach((section, index) => {
       if (!section.id) throw new Error(`Section ${index} missing id`);
-      if (!section.title) throw new Error(`Section ${section.id} missing title`);
-      if (![1, 2, 3].includes(section.tier)) {
+      // Title is optional for tier 0 (map component)
+      if (!section.title && section.tier !== 0) {
+        throw new Error(`Section ${section.id} missing title`);
+      }
+      if (![0, 1, 2, 3].includes(section.tier)) {
         throw new Error(`Section ${section.id} invalid tier: ${section.tier}`);
       }
       if (!section.content_source) {

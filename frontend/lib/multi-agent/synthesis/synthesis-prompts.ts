@@ -18,14 +18,35 @@ export async function buildBaseSynthesisPrompt(
   state: MultiAgentState,
   agentList: string[]
 ): Promise<string> {
-  // Load synthesis-v3.txt prompt
-  const promptPath = join(process.cwd(), 'config', 'prompts', 'synthesis-v3.txt');
-  let basePrompt: string;
+  // Try multiple paths for synthesis-v3.txt (handles different deployment environments)
+  const possiblePaths = [
+    // Local development - running from frontend/
+    join(process.cwd(), 'config', 'prompts', 'synthesis-v3.txt'),
+    // Local development - running from project root
+    join(process.cwd(), 'frontend', 'config', 'prompts', 'synthesis-v3.txt'),
+    // Relative to this file
+    join(__dirname, '..', '..', '..', 'config', 'prompts', 'synthesis-v3.txt'),
+    join(__dirname, '..', '..', 'config', 'prompts', 'synthesis-v3.txt'),
+    // Netlify serverless functions
+    '/var/task/config/prompts/synthesis-v3.txt',
+    '/var/task/frontend/config/prompts/synthesis-v3.txt',
+  ];
   
-  try {
-    basePrompt = readFileSync(promptPath, 'utf-8');
-  } catch (error) {
-    console.error('❌ [SYNTHESIS] Failed to load synthesis-v3.txt, using fallback');
+  let basePrompt: string | null = null;
+  
+  for (const promptPath of possiblePaths) {
+    try {
+      basePrompt = readFileSync(promptPath, 'utf-8');
+      console.log(`✅ [SYNTHESIS] Loaded prompt from: ${promptPath}`);
+      break;
+    } catch {
+      // Try next path
+    }
+  }
+  
+  if (!basePrompt) {
+    console.error('❌ [SYNTHESIS] Failed to load synthesis-v3.txt from any path, using fallback');
+    console.error('   Tried:', possiblePaths.join(', '));
     basePrompt = getFallbackPrompt();
   }
   
