@@ -6,9 +6,8 @@
  * by analyzing outputs from multiple specialist agents.
  */
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import type { MultiAgentState } from '../state';
+import { SYNTHESIS_PROMPT_V3 } from './synthesis-prompt-v3';
 
 // ============================================================================
 // Base Synthesis Prompt (v3 - Query Type Classification)
@@ -18,37 +17,9 @@ export async function buildBaseSynthesisPrompt(
   state: MultiAgentState,
   agentList: string[]
 ): Promise<string> {
-  // Try multiple paths for synthesis-v3.txt (handles different deployment environments)
-  const possiblePaths = [
-    // Local development - running from frontend/
-    join(process.cwd(), 'config', 'prompts', 'synthesis-v3.txt'),
-    // Local development - running from project root
-    join(process.cwd(), 'frontend', 'config', 'prompts', 'synthesis-v3.txt'),
-    // Relative to this file
-    join(__dirname, '..', '..', '..', 'config', 'prompts', 'synthesis-v3.txt'),
-    join(__dirname, '..', '..', 'config', 'prompts', 'synthesis-v3.txt'),
-    // Netlify serverless functions
-    '/var/task/config/prompts/synthesis-v3.txt',
-    '/var/task/frontend/config/prompts/synthesis-v3.txt',
-  ];
-  
-  let basePrompt: string | null = null;
-  
-  for (const promptPath of possiblePaths) {
-    try {
-      basePrompt = readFileSync(promptPath, 'utf-8');
-      console.log(`✅ [SYNTHESIS] Loaded prompt from: ${promptPath}`);
-      break;
-    } catch {
-      // Try next path
-    }
-  }
-  
-  if (!basePrompt) {
-    console.error('❌ [SYNTHESIS] Failed to load synthesis-v3.txt from any path, using fallback');
-    console.error('   Tried:', possiblePaths.join(', '));
-    basePrompt = getFallbackPrompt();
-  }
+  // Use embedded prompt (always available, no file system dependencies)
+  const basePrompt = SYNTHESIS_PROMPT_V3;
+  console.log(`✅ [SYNTHESIS] Using embedded v3 prompt (${basePrompt.length} chars)`);
   
   // Serialize agent outputs
   const agentOutputs = serializeAgentOutputsInternal(state, agentList);
@@ -118,62 +89,7 @@ function extractAgentDataInternal(state: MultiAgentState, agentName: string): st
   }
 }
 
-function getFallbackPrompt(): string {
-  return `You are the Intelligence Filter for a maritime bunker planning system.
-
-STEP 1: Classify the query as one of:
-- "informational" (facts/data queries like "what is", "calculate", "how many")
-- "decision-required" (recommendations like "find", "recommend", "plan", "optimize")
-- "validation" (feasibility checks like "can I", "is it safe", "will it fit")
-- "comparison" (evaluating options like "compare", "vs", "better", "all options")
-
-STEP 2: Return JSON with this EXACT structure:
-
-{
-  "query_type": "decision-required",
-  "response": {
-    "decision": {
-      "action": "Single sentence stating what to do",
-      "primary_metric": "$XXX total or X days margin",
-      "risk_level": "safe|caution|critical",
-      "confidence": 85
-    }
-  },
-  "strategic_priorities": [
-    {
-      "priority": 1,
-      "action": "Specific actionable step",
-      "why": "Root cause explanation",
-      "impact": "Financial/operational consequence",
-      "urgency": "immediate|today|this_week"
-    }
-  ],
-  "critical_risks": [
-    {
-      "risk": "Specific risk description",
-      "severity": "critical|high",
-      "consequence": "What happens if ignored",
-      "mitigation": "How to fix"
-    }
-  ],
-  "details_to_surface": {
-    "show_multi_port_analysis": false,
-    "show_alternatives": false,
-    "show_rob_waypoints": true,
-    "show_weather_details": false,
-    "show_eca_details": false
-  },
-  "cross_agent_connections": [],
-  "hidden_opportunities": []
-}
-
-For INFORMATIONAL queries, use response.informational with: answer, key_facts[], additional_context
-For VALIDATION queries, use response.validation with: result (feasible|not_feasible|risky), explanation, consequence, alternative
-For COMPARISON queries, use response.comparison with: winner, winner_reason, runner_up, comparison_factors[]
-
-Analyze these agent outputs and return ONLY valid JSON (no markdown):
-{agent_outputs}`;
-}
+// getFallbackPrompt is no longer needed - using embedded SYNTHESIS_PROMPT_V3 instead
 
 // Legacy synchronous version for backward compatibility
 export function buildBaseSynthesisPromptSync(
