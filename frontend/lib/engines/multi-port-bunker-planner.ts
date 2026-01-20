@@ -443,6 +443,11 @@ export function planMultiPortBunker(
     LSMGO: Math.max(0, voyage_consumption.LSMGO - vessel_profile.capacity.LSMGO),
   };
   
+  // Calculate totals for error messages and reason strings
+  const totalConsumption = vlsfoConsumption + lsmgoConsumption;
+  const totalCapacity = vessel_profile.capacity.VLSFO + vessel_profile.capacity.LSMGO;
+  const singleStopMaxFuel = totalCapacity; // Max fuel with single full refuel
+  
   console.log('⚠️ [MULTI-PORT-PLANNER] Multi-port bunkering required!');
   console.log(`   Voyage consumption: ${voyage_consumption.VLSFO.toFixed(0)} MT VLSFO, ${voyage_consumption.LSMGO.toFixed(0)} MT LSMGO`);
   console.log(`   Vessel capacity: ${vessel_profile.capacity.VLSFO.toFixed(0)} MT VLSFO, ${vessel_profile.capacity.LSMGO.toFixed(0)} MT LSMGO`);
