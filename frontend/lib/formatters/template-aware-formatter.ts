@@ -415,6 +415,26 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
       return !!(robTracking?.days_until_empty || robTracking?.without_bunker?.days_until_empty);
     }
     
+    // ========================================================================
+    // MULTI-BUNKER PLAN CONDITIONS
+    // ========================================================================
+    
+    // Pattern: "multi_bunker_plan && multi_bunker_plan.required && multi_bunker_plan.best_plan"
+    // Note: Check for best_plan first (more specific pattern)
+    if (condition.includes('multi_bunker_plan') && condition.includes('required') && condition.includes('best_plan')) {
+      return !!(state.multi_bunker_plan && state.multi_bunker_plan.required && state.multi_bunker_plan.best_plan);
+    }
+    
+    // Pattern: "multi_bunker_plan && multi_bunker_plan.required"
+    if (condition.includes('multi_bunker_plan') && condition.includes('required')) {
+      return !!(state.multi_bunker_plan && state.multi_bunker_plan.required);
+    }
+    
+    // Pattern: "multi_bunker_plan" (simple existence check)
+    if (condition === 'multi_bunker_plan') {
+      return !!state.multi_bunker_plan;
+    }
+    
     // Default: false for safety
     console.warn(`⚠️ [CONDITION] Unknown pattern: ${condition}`);
     return false;

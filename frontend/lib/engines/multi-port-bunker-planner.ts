@@ -382,27 +382,53 @@ function calculate2StopPlan(
  * Plan multi-port bunkering strategy
  * 
  * @param input - Planner input with route, vessel, ports, and prices
+ * @param forceRequired - Force multi-port planning even if capacity check passes (e.g., when voyage is still unsafe after single-stop bunker)
  * @returns Multi-port bunker analysis with ranked plans
  */
-export function planMultiPortBunker(input: MultiPortPlannerInput): MultiBunkerAnalysis {
+export function planMultiPortBunker(
+  input: MultiPortPlannerInput,
+  forceRequired: boolean = false
+): MultiBunkerAnalysis {
   console.log('\n🔀 [MULTI-PORT-PLANNER] Starting multi-port planning...');
+  if (forceRequired) {
+    console.log('   ⚠️ Force required: voyage still unsafe after single-stop bunker');
+  }
   
   const { route_data, vessel_profile, voyage_consumption, candidate_ports, port_prices, safety_margin_days = DEFAULT_SAFETY_MARGIN_DAYS } = input;
   
-  // 1. Check if multi-port is needed
-  const totalConsumption = voyage_consumption.VLSFO + voyage_consumption.LSMGO;
-  const totalCapacity = vessel_profile.capacity.VLSFO + vessel_profile.capacity.LSMGO;
-  const initialRob = vessel_profile.initial_rob.VLSFO + vessel_profile.initial_rob.LSMGO;
-  const availableFuel = initialRob + totalCapacity;
-  
-  // Calculate safety buffer needed
+  // Calculate voyage duration and daily consumption rates
   const totalDays = route_data.estimated_hours / 24;
-  const dailyConsumption = totalConsumption / totalDays;
-  const safetyBuffer = dailyConsumption * safety_margin_days;
   
-  // Need multi-port if: consumption + safety > initial ROB + what we can add in one stop
-  const singleStopMaxFuel = initialRob + (totalCapacity - initialRob); // Fill to capacity
-  const needsMultiPort = (totalConsumption + safetyBuffer) > singleStopMaxFuel;
+  // Check each fuel type independently (not combined totals)
+  const vlsfoConsumption = voyage_consumption.VLSFO;
+  const lsmgoConsumption = voyage_consumption.LSMGO;
+  const vlsfoDailyConsumption = vlsfoConsumption / totalDays;
+  const lsmgoDailyConsumption = lsmgoConsumption / totalDays;
+  
+  // Safety buffers per fuel type
+  const vlsfoSafetyBuffer = vlsfoDailyConsumption * safety_margin_days;
+  const lsmgoSafetyBuffer = lsmgoDailyConsumption * safety_margin_days;
+  
+  // Check if single stop can meet requirements WITH safety buffer at destination
+  // After filling to capacity and consuming voyage fuel, what's left?
+  const vlsfoAfterSingleStop = vessel_profile.capacity.VLSFO - vlsfoConsumption;
+  const lsmgoAfterSingleStop = vessel_profile.capacity.LSMGO - lsmgoConsumption;
+  
+  // Need multi-port if final ROB would be below safety buffer for either fuel type
+  const vlsfoNeedsMultiPort = vlsfoAfterSingleStop < vlsfoSafetyBuffer;
+  const lsmgoNeedsMultiPort = lsmgoAfterSingleStop < lsmgoSafetyBuffer;
+  
+  // Determine if multi-port is needed
+  const needsMultiPort = forceRequired || vlsfoNeedsMultiPort || lsmgoNeedsMultiPort;
+  
+  if (needsMultiPort) {
+    console.log('📊 [MULTI-PORT-PLANNER] Per-fuel analysis:');
+    console.log(`   VLSFO: after single stop = ${vlsfoAfterSingleStop.toFixed(0)} MT, safety buffer = ${vlsfoSafetyBuffer.toFixed(0)} MT → ${vlsfoNeedsMultiPort ? '⚠️ Needs multi-port' : '✅ OK'}`);
+    console.log(`   LSMGO: after single stop = ${lsmgoAfterSingleStop.toFixed(0)} MT, safety buffer = ${lsmgoSafetyBuffer.toFixed(0)} MT → ${lsmgoNeedsMultiPort ? '⚠️ Needs multi-port' : '✅ OK'}`);
+    if (forceRequired && !vlsfoNeedsMultiPort && !lsmgoNeedsMultiPort) {
+      console.log('   Force required: planning multi-port despite capacity being technically sufficient');
+    }
+  }
   
   if (!needsMultiPort) {
     console.log('✅ [MULTI-PORT-PLANNER] Single bunker stop is sufficient');
@@ -526,7 +552,9 @@ export function planMultiPortBunker(input: MultiPortPlannerInput): MultiBunkerAn
 /**
  * Check if multi-port bunkering is needed (quick check without full planning)
  * 
- * Use this for early detection before running full analysis
+ * Use this for early detection before running full analysis.
+ * Checks each fuel type independently - if EITHER fuel type has insufficient
+ * capacity to maintain safety margin, multi-port is needed.
  */
 export function needsMultiPortBunkering(
   voyageConsumption: FuelQuantityMT,
@@ -535,15 +563,18 @@ export function needsMultiPortBunkering(
   safetyMarginDays: number = DEFAULT_SAFETY_MARGIN_DAYS,
   voyageDays: number = 14
 ): boolean {
-  const totalConsumption = voyageConsumption.VLSFO + voyageConsumption.LSMGO;
-  const maxSingleStop = vesselCapacity.VLSFO + vesselCapacity.LSMGO;
+  // Check VLSFO independently
+  const vlsfoDailyConsumption = voyageConsumption.VLSFO / voyageDays;
+  const vlsfoSafetyBuffer = vlsfoDailyConsumption * safetyMarginDays;
+  const vlsfoAfterSingleStop = vesselCapacity.VLSFO - voyageConsumption.VLSFO;
+  const vlsfoNeedsMultiPort = vlsfoAfterSingleStop < vlsfoSafetyBuffer;
   
-  // Safety buffer
-  const dailyConsumption = totalConsumption / voyageDays;
-  const safetyBuffer = dailyConsumption * safetyMarginDays;
+  // Check LSMGO independently
+  const lsmgoDailyConsumption = voyageConsumption.LSMGO / voyageDays;
+  const lsmgoSafetyBuffer = lsmgoDailyConsumption * safetyMarginDays;
+  const lsmgoAfterSingleStop = vesselCapacity.LSMGO - voyageConsumption.LSMGO;
+  const lsmgoNeedsMultiPort = lsmgoAfterSingleStop < lsmgoSafetyBuffer;
   
-  // Can we complete voyage with initial ROB + one full refuel?
-  const availableWithSingleStop = (initialRob.VLSFO + initialRob.LSMGO) + (maxSingleStop - initialRob.VLSFO - initialRob.LSMGO);
-  
-  return (totalConsumption + safetyBuffer) > availableWithSingleStop;
+  // Need multi-port if EITHER fuel type has insufficient capacity
+  return vlsfoNeedsMultiPort || lsmgoNeedsMultiPort;
 }

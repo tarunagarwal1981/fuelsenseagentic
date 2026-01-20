@@ -2692,8 +2692,13 @@ export async function bunkerAgentNode(
     
     if ((needsMultiPort || withBunkerStillUnsafe) && bunkerPorts?.ports && priceData && state.route_data) {
       console.log('🔀 [BUNKER-WORKFLOW] Running multi-port bunker planning...');
+      if (withBunkerStillUnsafe) {
+        console.log('   Reason: Single-stop bunker leaves voyage still unsafe');
+      }
       
       try {
+        // Pass forceRequired=true when voyage is still unsafe after single-stop bunker
+        // This ensures multi-port planning runs even if capacity check alone passes
         multiBunkerPlan = planMultiPortBunker({
           route_data: state.route_data,
           vessel_profile: vp,  // Use full VesselProfile (vp), not VesselROBProfile
@@ -2704,7 +2709,7 @@ export async function bunkerAgentNode(
             ? 1 + (state.weather_consumption.consumption_increase_percent / 100) 
             : 1.0,
           safety_margin_days: 3,
-        });
+        }, withBunkerStillUnsafe /* forceRequired */);
         
         if (multiBunkerPlan.required && multiBunkerPlan.best_plan) {
           console.log('✅ [BUNKER-WORKFLOW] Multi-port plan generated:');
