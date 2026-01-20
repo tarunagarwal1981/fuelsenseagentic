@@ -189,3 +189,102 @@ block-beta
 - **Safety Margin**: Ensures safety buffer calculations
 - **Weather Adjustment**: Adjusts for weather conditions
 - **Multi-Port Planner**: Plans multi-port bunkering strategies
+
+## UX Design Patterns
+
+### Progressive Disclosure Architecture
+
+The response system follows industry-standard UX patterns for optimal user comprehension:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ TIER 0 (0-2 sec): Visual Context                           │
+│ [INTERACTIVE MAP - Route + Bunker Ports + ECA Zones]       │
+└─────────────────────────────────────────────────────────────┘
+
+TIER 1 (2-5 sec): The Answer + Critical Decision
+Singapore → Houston: 15,551 nm, 46 days, +9.7% weather
+
+🚨 MULTI-STOP REQUIRED
+Singapore + Gibraltar = $776K
+⚠️ 2.7 days safety margin (need 3.0 minimum)
+
+📊 Departure ROB: 850 MT VLSFO, 100 MT LSMGO
+
+Next Steps:
+1. 🔴 Execute immediate bunkering at Singapore for 914 MT
+2. 🟡 Verify current Singapore bunker prices - data is stale
+
+───────────────────────────────────────────────────────────────
+
+TIER 2 (5-30 sec): Expandable Supporting Details
+▼ 📋 Action Items (2)          [expanded by default]
+▼ ⚠️ Critical Risks (2)        [expanded by default]
+▶ ⛽ Fuel Tracking (3 waypoints) [collapsed]
+▶ 🌊 Weather Impact              [collapsed]
+
+TIER 3 (30+ sec): Technical Deep-Dive
+▶ ⚓ ECA Compliance
+▶ 📊 Alternative Ports
+```
+
+### Design Principles Applied
+
+| Principle | Source | Application |
+|-----------|--------|-------------|
+| **F-Pattern Reading** | Nielsen Norman Group | Top line: key facts (left-to-right scan); Left edge: critical alerts (vertical scan) |
+| **Miller's Law** | Cognitive Psychology | Max 5-6 items in Tier 1; Max 3-4 items per expandable card |
+| **Progressive Disclosure** | UX Best Practice | Essential info visible; details on demand |
+| **Inverted Pyramid** | Journalism | Most important first (decision), supporting details next, background last |
+| **Scannable Content** | Web Writing | Short sentences, emoji icons, numerical data prominent |
+
+### Information Hierarchy
+
+| Tier | Time | Purpose | Max Items | Collapsed |
+|------|------|---------|-----------|-----------|
+| 0 | 0-2s | Visual orientation | 1 (map) | Never |
+| 1 | 2-5s | Critical decision | 5-6 lines | Never |
+| 2 | 5-30s | Supporting context | 3-4 per card | Mixed |
+| 3 | 30s+ | Technical details | Unlimited | Always |
+
+### Template Configuration
+
+Response templates are defined in `config/response-templates/bunker-planning.yaml`:
+
+```yaml
+template:
+  name: "F-Pattern Progressive Disclosure"
+  version: "5.0.0"
+  
+  sections:
+    - id: "route_map"
+      tier: 0
+      visibility: "always"
+      
+    - id: "executive_decision"
+      tier: 1
+      max_words: 80  # Strict limit for scannability
+      
+    - id: "action_items"
+      tier: 2
+      collapsed: false  # Important items start expanded
+      
+    - id: "eca_compliance"
+      tier: 3
+      collapsed: true  # Technical details hidden by default
+```
+
+### Success Metrics
+
+| Metric | Before | Target |
+|--------|--------|--------|
+| Time to decision | ~45 seconds | 5-10 seconds |
+| Cognitive load | High | Low |
+| User satisfaction | Medium | High |
+
+### References
+
+- Nielsen Norman Group: [F-Shaped Pattern for Reading Web Content](https://www.nngroup.com/articles/f-shaped-pattern-reading-web-content/)
+- Miller's Law: 7±2 items in working memory
+- Google Material Design: Information Hierarchy
+- Apple HIG: Progressive Disclosure

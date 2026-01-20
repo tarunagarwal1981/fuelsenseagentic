@@ -2822,8 +2822,17 @@ export async function bunkerAgentNode(
  * No tools, just LLM synthesis.
  */
 /**
- * Format synthesis insights into user-friendly narrative
- * This replaces the LLM call with direct template-based formatting
+ * Format synthesis into progressive disclosure structure
+ * 
+ * UX Pattern: F-Pattern + Progressive Disclosure
+ * - Level 1 (0-5 sec): One-line summary + critical decision + warnings
+ * - Level 2 (5-30 sec): Expandable action items and risks
+ * - Level 3 (30+ sec): Technical details (handled by template)
+ * 
+ * Design Principles:
+ * - Nielsen Norman Group: F-pattern reading (top-left → horizontal → vertical)
+ * - Miller's Law: Max 7±2 items in working memory
+ * - Inverted Pyramid: Most important first
  * 
  * NO LLM CALL - Uses direct formatting for speed (~0.1s vs 20-30s)
  */
@@ -2831,205 +2840,97 @@ function formatSynthesisAsNarrative(state: MultiAgentState): string {
   const parts: string[] = [];
   const synthesis = state.synthesized_insights;
   
-  if (!synthesis) {
-    return 'Analysis completed. Please check the map and data panels for details.';
-  }
-
-  // === PRIMARY RESPONSE (based on query type) ===
-  const queryType = synthesis.query_type;
-  const response = synthesis.response;
+  // ============================================================================
+  // LEVEL 1: THE 5-SECOND ANSWER (Above the fold, always visible)
+  // ============================================================================
   
-  if (queryType === 'decision-required' && response.decision) {
-    const decision = response.decision;
-    const riskEmoji = decision.risk_level === 'critical' ? '🔴' : 
-                      decision.risk_level === 'caution' ? '🟡' : '🟢';
-    parts.push(`🎯 **Recommendation**: ${decision.action}\n`);
-    parts.push(`${riskEmoji} **Key Metric**: ${decision.primary_metric}`);
-    parts.push(`📊 **Confidence**: ${decision.confidence}%\n`);
-  } else if (queryType === 'informational' && response.informational) {
-    const info = response.informational;
-    parts.push(`📋 ${info.answer}\n`);
-    if (info.key_facts && info.key_facts.length > 0) {
-      parts.push('**Key Facts:**');
-      info.key_facts.forEach(fact => parts.push(`• ${fact}`));
-      parts.push('');
-    }
-    if (info.additional_context) {
-      parts.push(`ℹ️ ${info.additional_context}\n`);
-    }
-  } else if (queryType === 'validation' && response.validation) {
-    const validation = response.validation;
-    const resultEmoji = validation.result === 'feasible' ? '✅' : 
-                        validation.result === 'not_feasible' ? '❌' : '⚠️';
-    parts.push(`${resultEmoji} **Result**: ${validation.result.replace('_', ' ').toUpperCase()}\n`);
-    parts.push(`${validation.explanation}\n`);
-    if (validation.consequence) {
-      parts.push(`⚠️ **If ignored**: ${validation.consequence}`);
-    }
-    if (validation.alternative) {
-      parts.push(`💡 **Alternative**: ${validation.alternative}\n`);
-    }
-  } else if (queryType === 'comparison' && response.comparison) {
-    const comparison = response.comparison;
-    parts.push(`🏆 **Best Option**: ${comparison.winner}\n`);
-    parts.push(`${comparison.winner_reason}\n`);
-    if (comparison.runner_up) {
-      parts.push(`🥈 **Runner-up**: ${comparison.runner_up}`);
-    }
-    if (comparison.comparison_factors && comparison.comparison_factors.length > 0) {
-      parts.push(`📊 **Compared on**: ${comparison.comparison_factors.join(', ')}\n`);
-    }
-  }
-  
-  // === STRATEGIC PRIORITIES ===
-  if (synthesis.strategic_priorities && synthesis.strategic_priorities.length > 0) {
-    parts.push('\n📋 **Recommended Actions:**\n');
-    
-    synthesis.strategic_priorities.forEach((priority, index) => {
-      const urgencyEmoji = priority.urgency === 'immediate' ? '🔴' : 
-                          priority.urgency === 'today' ? '🟡' : '🟢';
-      
-      parts.push(`${index + 1}. ${urgencyEmoji} **${priority.action}**`);
-      parts.push(`   → Why: ${priority.why}`);
-      parts.push(`   → Impact: ${priority.impact}\n`);
-    });
-  }
-  
-  // === BUNKER RECOMMENDATION ===
-  if (state.bunker_analysis?.best_option) {
-    const best = state.bunker_analysis.best_option;
-    parts.push('\n🏆 **Best Bunker Option:**\n');
-    parts.push(`**Port**: ${best.port_name} (${best.port_code})`);
-    
-    // Total cost
-    const totalCost = best.total_cost_usd || 0;
-    parts.push(`**Total Cost**: $${totalCost.toLocaleString()}`);
-    
-    // Deviation
-    if (best.distance_from_route_nm !== undefined) {
-      parts.push(`**Deviation**: ${best.distance_from_route_nm.toFixed(1)} nm`);
-    }
-    
-    // Savings if available
-    if (state.bunker_analysis.max_savings_usd && state.bunker_analysis.max_savings_usd > 0) {
-      parts.push(`💰 **Potential Savings**: $${state.bunker_analysis.max_savings_usd.toLocaleString()}\n`);
-    } else {
-      parts.push('');
-    }
-  }
-  
-  // === MULTI-PORT BUNKER PLAN (if required) ===
-  if (state.multi_bunker_plan?.required && state.multi_bunker_plan.best_plan) {
-    const plan = state.multi_bunker_plan.best_plan;
-    parts.push('\n⚠️ **Multi-Port Bunkering Required:**\n');
-    if (state.multi_bunker_plan.reason) {
-      parts.push(`**Reason**: ${state.multi_bunker_plan.reason}\n`);
-    }
-    
-    parts.push('**Recommended Strategy:**');
-    plan.stops.forEach((stop, index) => {
-      parts.push(`\n${index + 1}. **${stop.port_name}** (${stop.port_code})`);
-      if (stop.bunker_quantity?.VLSFO) {
-        parts.push(`   • VLSFO: ${stop.bunker_quantity.VLSFO.toFixed(0)} MT`);
-      }
-      if (stop.bunker_quantity?.LSMGO && stop.bunker_quantity.LSMGO > 0) {
-        parts.push(`   • LSMGO: ${stop.bunker_quantity.LSMGO.toFixed(0)} MT`);
-      }
-      parts.push(`   • Subtotal: $${(stop.estimated_cost_usd || 0).toLocaleString()}`);
-    });
-    
-    parts.push(`\n**Total Plan Cost**: $${(plan.total_cost_usd || 0).toLocaleString()}`);
-    parts.push(`**Safety Status**: ${plan.is_safe ? '✅ Safe' : '⚠️ Review required'}\n`);
-  }
-  
-  // === CRITICAL RISKS ===
-  if (synthesis.critical_risks && synthesis.critical_risks.length > 0) {
-    parts.push('\n⚠️ **Critical Alerts:**\n');
-    synthesis.critical_risks.forEach(risk => {
-      parts.push(`• **${risk.risk}** (${risk.severity})`);
-      parts.push(`  Consequence: ${risk.consequence}`);
-      parts.push(`  → Mitigation: ${risk.mitigation}\n`);
-    });
-  }
-  
-  // === ROB SAFETY STATUS ===
-  if (state.rob_safety_status && !state.rob_safety_status.overall_safe) {
-    parts.push('\n🚨 **SAFETY WARNING:**\n');
-    if (state.rob_safety_status.violations && state.rob_safety_status.violations.length > 0) {
-      state.rob_safety_status.violations.forEach(violation => {
-        parts.push(`• ${violation}`);
-      });
-    }
-    parts.push(`• Minimum ROB margin: ${state.rob_safety_status.minimum_rob_days?.toFixed(1) || 'N/A'} days\n`);
-  }
-  
-  // === ROUTE SUMMARY ===
+  // --- ONE-LINE VOYAGE SUMMARY ---
   if (state.route_data) {
-    parts.push('\n📍 **Route Summary:**\n');
     const origin = state.route_data.origin_port_code || 'Origin';
     const dest = state.route_data.destination_port_code || 'Destination';
-    parts.push(`**Route**: ${origin} → ${dest}`);
-    parts.push(`**Distance**: ${state.route_data.distance_nm.toFixed(0)} nautical miles`);
-    if (state.route_data.estimated_hours) {
-      const days = Math.floor(state.route_data.estimated_hours / 24);
-      const hours = Math.floor(state.route_data.estimated_hours % 24);
-      parts.push(`**Duration**: ${days}d ${hours}h\n`);
+    const distance = state.route_data.distance_nm.toFixed(0);
+    const days = Math.floor((state.route_data.estimated_hours || 0) / 24);
+    const weatherPct = state.weather_consumption?.consumption_increase_percent;
+    
+    let voyageLine = `**${origin} → ${dest}**: ${distance} nm, ${days} days`;
+    if (weatherPct && weatherPct > 0) {
+      voyageLine += `, +${weatherPct.toFixed(1)}% weather`;
+    }
+    parts.push(voyageLine + '\n');
+  }
+  
+  // --- CRITICAL DECISION BLOCK ---
+  const criticals: string[] = [];
+  
+  // Multi-port requirement (most critical - affects entire voyage plan)
+  if (state.multi_bunker_plan?.required && state.multi_bunker_plan.best_plan) {
+    const plan = state.multi_bunker_plan.best_plan;
+    const stops = plan.stops.map(s => s.port_name).join(' + ');
+    const totalCostK = (plan.total_cost_usd / 1000).toFixed(0);
+    
+    criticals.push('🚨 **MULTI-STOP REQUIRED**');
+    criticals.push(`${stops} = **$${totalCostK}K**`);
+  } else if (state.bunker_analysis?.best_option) {
+    // Single-stop bunker (simpler decision)
+    const best = state.bunker_analysis.best_option;
+    const costK = ((best.total_cost_usd || 0) / 1000).toFixed(0);
+    
+    criticals.push(`🏆 **${best.port_name}** = **$${costK}K**`);
+  }
+  
+  // Safety margin warning (high priority - regulatory/safety issue)
+  if (state.rob_safety_status && !state.rob_safety_status.overall_safe) {
+    const minDays = state.rob_safety_status.minimum_rob_days?.toFixed(1) || 'N/A';
+    criticals.push(`⚠️ ${minDays} days safety margin (need 3.0 minimum)`);
+  }
+  
+  // Synthesis-based critical risks (from LLM analysis)
+  if (synthesis?.critical_risks && synthesis.critical_risks.length > 0) {
+    // Show only first critical risk in Level 1 (rest in expandable)
+    const topRisk = synthesis.critical_risks[0];
+    if (topRisk.severity === 'critical') {
+      criticals.push(`⚠️ ${topRisk.risk}`);
     }
   }
   
-  // === WEATHER IMPACT ===
-  if (state.weather_consumption?.consumption_increase_percent) {
-    const increase = state.weather_consumption.consumption_increase_percent;
-    if (increase > 0) {
-      parts.push('\n🌊 **Weather Impact:**\n');
-      parts.push(`**Fuel Adjustment**: +${increase.toFixed(1)}% due to weather conditions`);
-      if (state.weather_consumption.weather_alerts && state.weather_consumption.weather_alerts.length > 0) {
-        parts.push(`**Alerts**: ${state.weather_consumption.weather_alerts.length} weather warnings along route`);
-      }
-      if (state.weather_consumption.voyage_weather_summary) {
-        parts.push(`**Summary**: ${state.weather_consumption.voyage_weather_summary}\n`);
-      }
+  if (criticals.length > 0) {
+    parts.push(criticals.join('\n'));
+    parts.push(''); // Blank line for spacing
+  }
+  
+  // --- DEPARTURE ROB (Key operational context) ---
+  if (state.rob_waypoints && state.rob_waypoints.length > 0) {
+    const departure = state.rob_waypoints[0];
+    if (departure.rob_after_action) {
+      const vlsfo = departure.rob_after_action.VLSFO?.toFixed(0) || '0';
+      const lsmgo = departure.rob_after_action.LSMGO?.toFixed(0) || '0';
+      parts.push(`📊 **Departure ROB**: ${vlsfo} MT VLSFO, ${lsmgo} MT LSMGO`);
     }
   }
   
-  // === ECA COMPLIANCE ===
-  if (state.eca_summary?.eca_distance_nm && state.eca_summary.eca_distance_nm > 0) {
-    parts.push('\n⚓ **ECA Compliance:**\n');
-    parts.push(`**ECA Distance**: ${state.eca_summary.eca_distance_nm.toFixed(0)} nm`);
-    if (state.eca_summary.eca_percentage) {
-      parts.push(`**Coverage**: ${state.eca_summary.eca_percentage.toFixed(1)}% of voyage`);
-    }
-    if (state.eca_summary.total_lsmgo_mt) {
-      parts.push(`**LSMGO Required**: ${state.eca_summary.total_lsmgo_mt.toFixed(0)} MT\n`);
-    }
-  }
+  // ============================================================================
+  // LEVEL 2: NEXT STEPS (5-30 seconds, concise action items)
+  // ============================================================================
   
-  // === ALTERNATIVE PORTS ===
-  if (state.bunker_analysis?.recommendations && state.bunker_analysis.recommendations.length > 1) {
-    parts.push('\n📊 **Alternative Options:**\n');
-    const bestCost = state.bunker_analysis.best_option?.total_cost_usd || 0;
-    const alternatives = state.bunker_analysis.recommendations.slice(1, 4);
-    alternatives.forEach((alt, index) => {
-      const altCost = alt.total_cost_usd || 0;
-      const diff = altCost - bestCost;
-      parts.push(`${index + 2}. ${alt.port_name}: $${altCost.toLocaleString()} (+$${diff.toLocaleString()})`);
+  // Strategic priorities from synthesis (limit to top 2 for scannability)
+  if (synthesis?.strategic_priorities && synthesis.strategic_priorities.length > 0) {
+    parts.push('\n**Next Steps**:');
+    synthesis.strategic_priorities.slice(0, 2).forEach((p, i) => {
+      const urgencyIcon = p.urgency === 'immediate' ? '🔴' : 
+                          p.urgency === 'today' ? '🟡' : '🟢';
+      parts.push(`${i + 1}. ${urgencyIcon} ${p.action}`);
     });
-    parts.push('');
+    
+    // Indicate if there are more items
+    if (synthesis.strategic_priorities.length > 2) {
+      parts.push(`   _+ ${synthesis.strategic_priorities.length - 2} more action items_`);
+    }
   }
   
-  // === DATA QUALITY WARNINGS ===
-  // Note: Price staleness is tracked per-port in the analysis
-  // This section can be enhanced if staleness flag is added to BunkerAnalysis
-  
-  // === HIDDEN OPPORTUNITIES (if any) ===
-  if (synthesis.hidden_opportunities && synthesis.hidden_opportunities.length > 0) {
-    parts.push('\n💡 **Optimization Opportunities:**\n');
-    synthesis.hidden_opportunities.forEach(opp => {
-      parts.push(`• **${opp.opportunity}**`);
-      parts.push(`  Value: ${opp.potential_value}`);
-      parts.push(`  Effort: ${opp.effort_required}\n`);
-    });
-  }
+  // ============================================================================
+  // LEVEL 3+: Everything else handled by template expandable cards
+  // (Multi-port details, weather impact, ECA compliance, alternatives, etc.)
+  // ============================================================================
   
   return parts.join('\n');
 }
