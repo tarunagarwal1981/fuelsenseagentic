@@ -64,7 +64,7 @@ export async function testQuery(
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
-        multi_bunker_plan: null,
+    multi_bunker_plan: null,
     final_recommendation: null,
     formatted_response: null,
     synthesized_insights: null,
@@ -75,6 +75,16 @@ export async function testQuery(
     weather_agent_partial: false,
     compliance_data: null,
     vessel_consumption: null,
+    // ROB Tracking fields
+    rob_tracking: null,
+    rob_waypoints: null,
+    rob_safety_status: null,
+    // ECA Consumption fields
+    eca_consumption: null,
+    eca_summary: null,
+    // Vessel fields
+    vessel_name: null,
+    vessel_profile: null,
     agent_call_counts: {
       route_agent: 0,
       weather_agent: 0,
@@ -105,7 +115,8 @@ export async function testQuery(
     for await (const event of streamResult) {
       stepCount++;
       const nodeName = Object.keys(event)[0];
-      const state = event[nodeName] as MultiAgentState;
+      // Cast through unknown to access dynamic property
+      const state = (event as unknown as Record<string, MultiAgentState>)[nodeName];
       finalState = state;
       
       if (nodeName !== lastNode) {

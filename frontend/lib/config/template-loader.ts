@@ -26,18 +26,23 @@ export interface ResponseTemplate {
 
 export interface TemplateSection {
   id: string;
-  title: string;
-  tier: 1 | 2 | 3;
+  title?: string;  // Optional for tier 0 (map component)
+  tier: 0 | 1 | 2 | 3;  // 0 = map (always visible), 1 = primary, 2 = priorities/risks, 3 = expandable details
   priority: number;
   visibility: 'always' | 'expandable' | 'conditional';
   collapsed?: boolean;
   max_words?: number;
+  max_items?: number;  // For array rendering
   condition?: string;
+  notes?: string;  // Documentation
   content_source: {
-    state_path: string | string[];
+    state_path?: string | string[];  // Optional for component-based sections
     template?: string;
     format?: string;
     fallback?: string;
+    component?: string;  // React component name
+    props?: Record<string, string>;  // Props mapping
+    render_as?: string;  // Render mode
   };
 }
 
@@ -159,8 +164,11 @@ export class TemplateLoader {
     // Validate each section
     t.sections.forEach((section, index) => {
       if (!section.id) throw new Error(`Section ${index} missing id`);
-      if (!section.title) throw new Error(`Section ${section.id} missing title`);
-      if (![1, 2, 3].includes(section.tier)) {
+      // Title is optional for tier 0 (map component)
+      if (!section.title && section.tier !== 0) {
+        throw new Error(`Section ${section.id} missing title`);
+      }
+      if (![0, 1, 2, 3].includes(section.tier)) {
         throw new Error(`Section ${section.id} invalid tier: ${section.tier}`);
       }
       if (!section.content_source) {

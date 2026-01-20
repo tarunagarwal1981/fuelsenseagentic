@@ -7,12 +7,92 @@
  */
 
 import type { MultiAgentState } from '../state';
+import { SYNTHESIS_PROMPT_V3 } from './synthesis-prompt-v3';
 
 // ============================================================================
-// Base Synthesis Prompt
+// Base Synthesis Prompt (v3 - Query Type Classification)
 // ============================================================================
 
-export function buildBaseSynthesisPrompt(
+export async function buildBaseSynthesisPrompt(
+  state: MultiAgentState,
+  agentList: string[]
+): Promise<string> {
+  // Use embedded prompt (always available, no file system dependencies)
+  const basePrompt = SYNTHESIS_PROMPT_V3;
+  console.log(`✅ [SYNTHESIS] Using embedded v3 prompt (${basePrompt.length} chars)`);
+  
+  // Serialize agent outputs
+  const agentOutputs = serializeAgentOutputsInternal(state, agentList);
+  
+  // Replace placeholder
+  const finalPrompt = basePrompt.replace('{agent_outputs}', agentOutputs);
+  
+  return finalPrompt;
+}
+
+function serializeAgentOutputsInternal(state: MultiAgentState, agentList: string[]): string {
+  const outputs: string[] = [];
+  
+  agentList.forEach(agentName => {
+    const agentData = extractAgentDataInternal(state, agentName);
+    if (agentData) {
+      outputs.push(`\n=== ${agentName.toUpperCase()} OUTPUT ===\n${agentData}`);
+    }
+  });
+  
+  return outputs.join('\n');
+}
+
+function extractAgentDataInternal(state: MultiAgentState, agentName: string): string | null {
+  // Extract relevant state data for each agent
+  switch (agentName) {
+    case 'route_agent':
+      if (!state.route_data) return null;
+      return JSON.stringify({
+        distance_nm: state.route_data.distance_nm,
+        estimated_hours: state.route_data.estimated_hours,
+        waypoints_count: state.route_data.waypoints?.length || 0,
+        origin: state.route_data.origin_port_code,
+        destination: state.route_data.destination_port_code,
+      }, null, 2);
+      
+    case 'weather_agent':
+      if (!state.weather_forecast && !state.weather_consumption) return null;
+      return JSON.stringify({
+        forecast_points: state.weather_forecast?.length || 0,
+        consumption_increase_percent: state.weather_consumption?.consumption_increase_percent,
+        additional_fuel_mt: state.weather_consumption?.additional_fuel_needed_mt,
+        weather_alerts_count: state.weather_consumption?.weather_alerts?.length || 0,
+        voyage_summary: state.weather_consumption?.voyage_weather_summary,
+      }, null, 2);
+      
+    case 'bunker_agent':
+      if (!state.bunker_analysis) return null;
+      return JSON.stringify({
+        best_option: state.bunker_analysis.best_option,
+        alternatives_count: state.bunker_analysis.recommendations?.length || 0,
+        total_ports_found: state.bunker_ports?.length || 0,
+        max_savings_usd: state.bunker_analysis.max_savings_usd,
+        analysis_summary: state.bunker_analysis.analysis_summary,
+      }, null, 2);
+      
+    case 'rob_agent':
+      if (!state.rob_safety_status) return null;
+      return JSON.stringify({
+        overall_safe: state.rob_safety_status.overall_safe,
+        minimum_days_remaining: state.rob_safety_status.minimum_rob_days,
+        violations: state.rob_safety_status.violations,
+      }, null, 2);
+      
+    default:
+      return null;
+  }
+}
+
+// getFallbackPrompt is no longer needed - using embedded SYNTHESIS_PROMPT_V3 instead
+
+// Legacy synchronous version for backward compatibility
+export function buildBaseSynthesisPromptSync(
   state: MultiAgentState,
   agentList: string[]
 ): string {
@@ -40,88 +120,13 @@ ${agentList.map(agent => `- ${agent}`).join('\n')}
 
 **Your Tasks:**
 
-1. **Executive Insight** (50 words max)
-   - What is THE MOST IMPORTANT finding across all agents?
-   - Focus on actionable insight, not summary
-   - Include financial impact if relevant
-   - Be specific, not generic
-
-2. **Strategic Priorities** (2-4 actions)
-   - What should the user do, in priority order?
-   - Each action must have:
-     * Clear action ("Clean hull", not "Consider hull maintenance")
-     * Rationale (WHY this action)
-     * Impact (financial/operational benefit)
-     * Urgency (immediate/planned/optional)
-   - Prioritize by: (1) ROI, (2) Risk mitigation, (3) Ease of implementation
-
-3. **Cross-Agent Connections** (2-3 connections)
-   - How do different agents' findings relate?
-   - Look for:
-     * Synergies (A + B = better result)
-     * Contradictions (A says X, B says Y)
-     * Cause-effect (A causes B)
-     * Alternatives (A vs B trade-offs)
-   - Include financial impact where possible
-
-4. **Hidden Opportunities** (1-2 opportunities, if any)
-   - What might the user overlook?
-   - What non-obvious optimization exists?
-   - What combined actions create extra value?
-
-5. **Risk Alerts** (if any)
-   - What could go wrong?
-   - What's the financial exposure?
-   - How to mitigate?
-
-**Critical Rules:**
-- Be SPECIFIC with numbers (costs, savings, ROI, days, percentages)
-- Focus on FINANCIAL IMPACT (users care about money)
-- Prioritize by URGENCY and IMPACT
-- Avoid generic advice ("optimize operations")
-- No jargon unless necessary
-- Keep executive insight under 50 words
-- Each priority must be immediately actionable
+1. Classify the query type (informational/decision-required/validation/comparison)
+2. Generate the appropriate response structure
+3. Apply filtering rules for details_to_surface
+4. Include strategic priorities and critical risks as needed
 
 **Output Format:**
-Return ONLY valid JSON (no markdown, no explanation):
-
-{
-  "executive_insight": "string (max 50 words)",
-  "strategic_priorities": [
-    {
-      "priority": 1,
-      "action": "string",
-      "rationale": "string",
-      "impact": "string (include $$ if possible)",
-      "urgency": "immediate|planned|optional",
-      "estimated_roi": "string (optional)"
-    }
-  ],
-  "cross_agent_connections": [
-    {
-      "agents_involved": ["agent1", "agent2"],
-      "insight": "string",
-      "connection_type": "synergy|contradiction|cause_effect|alternative",
-      "financial_impact": "string (optional)"
-    }
-  ],
-  "hidden_opportunities": [
-    {
-      "opportunity": "string",
-      "value": "string",
-      "effort": "low|medium|high"
-    }
-  ],
-  "risk_alerts": [
-    {
-      "risk": "string",
-      "severity": "critical|high|medium|low",
-      "mitigation": "string",
-      "financial_exposure": "string (optional)"
-    }
-  ]
-}`;
+Return ONLY valid JSON (no markdown, no explanation).`;
 }
 
 // ============================================================================
@@ -210,12 +215,48 @@ Mark safety as "critical" severity in risk_alerts.`;
 // Prompt Builder (combines base + domain-specific)
 // ============================================================================
 
-export function buildSynthesisPrompt(
+export async function buildSynthesisPrompt(
+  state: MultiAgentState,
+  agentList: string[]
+): Promise<string> {
+  // Start with base prompt (async - loads from file)
+  let prompt = await buildBaseSynthesisPrompt(state, agentList);
+  
+  // Add domain-specific focuses based on which agents ran
+  const agentSet = new Set(agentList);
+  
+  // Hull + CII synergy
+  if (agentSet.has('hull_agent') && agentSet.has('cii_agent')) {
+    prompt = addHullCIISynergyFocus(prompt);
+  }
+  
+  // Commercial + technical synergy
+  if (agentSet.has('commercial_agent') && 
+      (agentSet.has('hull_agent') || agentSet.has('bunker_agent') || agentSet.has('cii_agent'))) {
+    prompt = addCommercialTechnicalFocus(prompt);
+  }
+  
+  // Multiple compliance agents
+  const complianceAgents = ['eca_agent', 'eu_ets_agent', 'fueleu_agent', 'compliance_agent'].filter(a => agentSet.has(a));
+  if (complianceAgents.length >= 2) {
+    prompt = addComplianceFocus(prompt);
+  }
+  
+  // Safety critical
+  if (state.rob_safety_status && !state.rob_safety_status.overall_safe) {
+    prompt = addSafetyFocus(prompt, state);
+  }
+  
+  return prompt;
+}
+
+// Synchronous version for backward compatibility
+export function buildSynthesisPromptSync(
   state: MultiAgentState,
   agentList: string[]
 ): string {
-  // Start with base prompt
-  let prompt = buildBaseSynthesisPrompt(state, agentList);
+  // Start with sync base prompt
+  let prompt = buildBaseSynthesisPromptSync(state, agentList);
   
   // Add domain-specific focuses based on which agents ran
   const agentSet = new Set(agentList);

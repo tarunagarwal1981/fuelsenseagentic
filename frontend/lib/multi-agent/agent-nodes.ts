@@ -2822,473 +2822,204 @@ export async function bunkerAgentNode(
  * No tools, just LLM synthesis.
  */
 /**
- * Generate legacy text output using LLM synthesis
- * This preserves the EXACT current format
+ * Format synthesis into progressive disclosure structure
+ * 
+ * UX Pattern: F-Pattern + Progressive Disclosure
+ * - Level 1 (0-5 sec): One-line summary + critical decision + warnings
+ * - Level 2 (5-30 sec): Expandable action items and risks
+ * - Level 3 (30+ sec): Technical details (handled by template)
+ * 
+ * Design Principles:
+ * - Nielsen Norman Group: F-pattern reading (top-left → horizontal → vertical)
+ * - Miller's Law: Max 7±2 items in working memory
+ * - Inverted Pyramid: Most important first
+ * 
+ * NO LLM CALL - Uses direct formatting for speed (~0.1s vs 20-30s)
+ */
+function formatSynthesisAsNarrative(state: MultiAgentState): string {
+  const parts: string[] = [];
+  const synthesis = state.synthesized_insights;
+  
+  // ============================================================================
+  // LEVEL 1: THE 5-SECOND ANSWER (Above the fold, always visible)
+  // ============================================================================
+  
+  // --- ONE-LINE VOYAGE SUMMARY ---
+  if (state.route_data) {
+    const origin = state.route_data.origin_port_code || 'Origin';
+    const dest = state.route_data.destination_port_code || 'Destination';
+    const distance = state.route_data.distance_nm.toFixed(0);
+    const days = Math.floor((state.route_data.estimated_hours || 0) / 24);
+    const weatherPct = state.weather_consumption?.consumption_increase_percent;
+    
+    let voyageLine = `**${origin} → ${dest}**: ${distance} nm, ${days} days`;
+    if (weatherPct && weatherPct > 0) {
+      voyageLine += `, +${weatherPct.toFixed(1)}% weather`;
+    }
+    parts.push(voyageLine + '\n');
+  }
+  
+  // --- CRITICAL DECISION BLOCK ---
+  const criticals: string[] = [];
+  
+  // Multi-port requirement (most critical - affects entire voyage plan)
+  if (state.multi_bunker_plan?.required && state.multi_bunker_plan.best_plan) {
+    const plan = state.multi_bunker_plan.best_plan;
+    const stops = plan.stops.map(s => s.port_name).join(' + ');
+    const totalCostK = (plan.total_cost_usd / 1000).toFixed(0);
+    
+    criticals.push('🚨 **MULTI-STOP REQUIRED**');
+    criticals.push(`${stops} = **$${totalCostK}K**`);
+  } else if (state.bunker_analysis?.best_option) {
+    // Single-stop bunker (simpler decision)
+    const best = state.bunker_analysis.best_option;
+    const costK = ((best.total_cost_usd || 0) / 1000).toFixed(0);
+    
+    criticals.push(`🏆 **${best.port_name}** = **$${costK}K**`);
+  }
+  
+  // Safety margin warning (high priority - regulatory/safety issue)
+  if (state.rob_safety_status && !state.rob_safety_status.overall_safe) {
+    const minDays = state.rob_safety_status.minimum_rob_days?.toFixed(1) || 'N/A';
+    criticals.push(`⚠️ ${minDays} days safety margin (need 3.0 minimum)`);
+  }
+  
+  // Synthesis-based critical risks (from LLM analysis)
+  if (synthesis?.critical_risks && synthesis.critical_risks.length > 0) {
+    // Show only first critical risk in Level 1 (rest in expandable)
+    const topRisk = synthesis.critical_risks[0];
+    if (topRisk.severity === 'critical') {
+      criticals.push(`⚠️ ${topRisk.risk}`);
+    }
+  }
+  
+  if (criticals.length > 0) {
+    parts.push(criticals.join('\n'));
+    parts.push(''); // Blank line for spacing
+  }
+  
+  // --- DEPARTURE ROB (Key operational context) ---
+  if (state.rob_waypoints && state.rob_waypoints.length > 0) {
+    const departure = state.rob_waypoints[0];
+    if (departure.rob_after_action) {
+      const vlsfo = departure.rob_after_action.VLSFO?.toFixed(0) || '0';
+      const lsmgo = departure.rob_after_action.LSMGO?.toFixed(0) || '0';
+      parts.push(`📊 **Departure ROB**: ${vlsfo} MT VLSFO, ${lsmgo} MT LSMGO`);
+    }
+  }
+  
+  // ============================================================================
+  // LEVEL 2: NEXT STEPS (5-30 seconds, concise action items)
+  // ============================================================================
+  
+  // Strategic priorities from synthesis (limit to top 2 for scannability)
+  if (synthesis?.strategic_priorities && synthesis.strategic_priorities.length > 0) {
+    parts.push('\n**Next Steps**:');
+    synthesis.strategic_priorities.slice(0, 2).forEach((p, i) => {
+      const urgencyIcon = p.urgency === 'immediate' ? '🔴' : 
+                          p.urgency === 'today' ? '🟡' : '🟢';
+      parts.push(`${i + 1}. ${urgencyIcon} ${p.action}`);
+    });
+    
+    // Indicate if there are more items
+    if (synthesis.strategic_priorities.length > 2) {
+      parts.push(`   _+ ${synthesis.strategic_priorities.length - 2} more action items_`);
+    }
+  }
+  
+  // ============================================================================
+  // LEVEL 3+: Everything else handled by template expandable cards
+  // (Multi-port details, weather impact, ECA compliance, alternatives, etc.)
+  // ============================================================================
+  
+  return parts.join('\n');
+}
+
+/**
+ * Generate legacy text output using synthesis data
+ * NO LLM CALL - Uses direct formatting for speed
  */
 async function generateLegacyTextOutput(state: MultiAgentState): Promise<string> {
-  // Determine what the user actually asked for
-  const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
-  const userQuery = userMessage 
-    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-    : '';
-  const userQueryLower = userQuery.toLowerCase();
+  console.log('📝 [LEGACY-OUTPUT] Formatting synthesis data (no LLM call)');
   
-  const needsWeather = [
-    'weather', 'forecast', 'conditions', 'wind', 'wave', 
-    'storm', 'gale', 'seas', 'swell', 'meteorological', 'climate'
-  ].some(keyword => userQueryLower.includes(keyword));
-  
-  const needsBunker = [
-    'bunker', 'fuel', 'port', 'price', 'cheapest', 'cost', 'refuel',
-    'bunkering', 'fueling', 'vlsfo', 'mgo', 'diesel', 'optimization',
-    'best option', 'recommendation', 'compare', 'savings'
-  ].some(keyword => userQueryLower.includes(keyword));
-
-  // Get agent context from supervisor
-  const context = state.agent_context?.finalize;
-  const complexity = context?.complexity || 'medium';
-
-  // Use tiered LLM (Haiku 4.5 for synthesis)
-  const finalizeLLM = LLMFactory.getLLMForAgent('finalize', state.agent_context || undefined);
-
-  // Check for errors and build context
-  const agentErrors = state.agent_errors || {};
-  const agentStatus = state.agent_status || {};
-  const hasErrors = Object.keys(agentErrors).length > 0;
-  
-  // Build user-friendly error context
-  let errorContext = '';
-  if (hasErrors) {
-    const routeError = agentErrors.route_agent;
-    const weatherError = agentErrors.weather_agent;
-    const bunkerError = agentErrors.bunker_agent;
+  // Strategy 1: Use synthesis if available (preferred)
+  if (state.synthesized_insights) {
+    console.log('✅ [LEGACY-OUTPUT] Using synthesis-based narrative');
+    const narrative = formatSynthesisAsNarrative(state);
     
-    if (routeError) {
-      const isTimeout = routeError.error.includes('timeout') || routeError.error.includes('timed out');
-      errorContext = `\n\n⚠️ IMPORTANT: The route calculation service is currently unavailable${isTimeout ? ' (timed out after 20 seconds)' : ''}. This prevents us from:\n- Calculating the optimal route between ports\n- Identifying bunker ports along the route\n- Providing accurate distance and time estimates\n\nPlease try again in a few moments, or contact support if the issue persists.`;
-    } else if (weatherError) {
-      errorContext = `\n\n⚠️ Note: Weather data could not be retrieved. This may affect fuel consumption estimates.`;
-    } else if (bunkerError) {
-      errorContext = `\n\n⚠️ Note: Bunker port analysis encountered an issue. Some pricing data may be incomplete.`;
-    }
-  }
-
-  // Build state context summary
-  const stateContext: string[] = [];
-
-  if (state.route_data) {
-    stateContext.push(
-      `Route: ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h, ${state.route_data.route_type}`
-    );
-  }
-
-  if (state.weather_forecast) {
-    stateContext.push(
-      `Weather Forecast: ${state.weather_forecast.length} data points available`
-    );
-  }
-
-  if (state.weather_consumption) {
-    stateContext.push(
-      `Weather Impact: +${state.weather_consumption.consumption_increase_percent.toFixed(2)}% consumption, ${state.weather_consumption.additional_fuel_needed_mt.toFixed(2)}MT additional fuel`
-    );
-  }
-
-  if (state.bunker_analysis) {
-    const best = state.bunker_analysis.best_option;
-    if (best) {
-      const totalCost = best.total_cost_usd ? best.total_cost_usd.toFixed(2) : 'N/A';
-      const savings = state.bunker_analysis.max_savings_usd ? state.bunker_analysis.max_savings_usd.toFixed(2) : 'N/A';
-      stateContext.push(
-        `Best Option: ${best.port_name || 'N/A'} - Total cost: $${totalCost}, Savings: $${savings}`
-      );
-    }
-  }
-
-  if (state.port_weather_status && state.port_weather_status.length > 0) {
-    const portWeather = state.port_weather_status[0];
-    stateContext.push(
-      `Port Weather: ${portWeather.port_name} - ${portWeather.bunkering_feasible ? 'Feasible' : 'Not feasible'}, ${portWeather.weather_risk} risk`
-    );
-  }
-
-  const stateSummary = stateContext.length > 0 ? `\n\nAvailable Data:\n${stateContext.join('\n')}` : '';
-
-  // Build system prompt based on what user asked for
-  let systemPrompt = '';
-  
-  if (needsWeather && !needsBunker) {
-    // Weather-only query - focus on weather information
-    // Build weather forecast summary
-    let weatherDetails = '';
-    if (state.weather_forecast && state.weather_forecast.length > 0) {
-      // Sample first, middle, and last weather points
-      const samplePoints = [
-        state.weather_forecast[0],
-        state.weather_forecast[Math.floor(state.weather_forecast.length / 2)],
-        state.weather_forecast[state.weather_forecast.length - 1]
-      ];
-      
-      weatherDetails = `\n\nWeather Forecast Sample (showing first, middle, and last points):
-${samplePoints.map((wp, i) => {
-  const pos = wp.position || {};
-  return `Point ${i === 0 ? 'Start' : i === 1 ? 'Mid' : 'End'}: 
-  - Location: ${pos.lat?.toFixed(2)}, ${pos.lon?.toFixed(2)}
-  - Datetime: ${wp.datetime}
-  - Wave Height: ${wp.weather?.wave_height_m?.toFixed(2)}m
-  - Wind Speed: ${wp.weather?.wind_speed_knots?.toFixed(1)} knots
-  - Wind Direction: ${wp.weather?.wind_direction_deg?.toFixed(0)}°
-  - Sea State: ${wp.weather?.sea_state}
-  - Confidence: ${wp.forecast_confidence}`;
-}).join('\n\n')}
-
-Total weather data points: ${state.weather_forecast.length}`;
-    }
-    
-    systemPrompt = `You are the Weather Analysis Agent. The user asked about weather conditions for their route.
-
-User Query: "${userQuery}"
-
-Available data:
-- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}, ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)} hours` : 'Not available'}
-- Weather Forecast: ${state.weather_forecast ? `${state.weather_forecast.length} data points along the route` : 'Not available'}${weatherDetails}${errorContext}${stateSummary}
-
-Create a comprehensive weather analysis that includes:
-1. Route Overview: Distance, estimated transit time, route type, departure date
-2. Weather Conditions Along Route: 
-   - Wave heights, wind speeds, and sea states by segment
-   - Weather patterns by region/geographic area
-   - Forecast confidence levels
-3. Weather Timeline: Key weather events and conditions at different stages of the voyage
-4. Weather Alerts: Any severe conditions, storms, or warnings
-5. Recommendations: Weather-related planning advice
-
-${state.weather_forecast ? 'Use the weather forecast data to provide detailed weather information. Analyze the weather patterns across the route and identify any challenging conditions.' : 'Note: Weather forecast data is not available.'}
-
-IMPORTANT: Focus ONLY on weather information. Do NOT include bunker port recommendations, fuel cost analysis, or bunkering advice.`;
-  } else if (needsBunker) {
-    // Bunker query - include bunker analysis
-    // Build comprehensive data context
-    let dataContext = `Available Data:\n`;
-    if (state.route_data) {
-      dataContext += `- Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}${(state.route_data as any)._from_cache ? ' (from cache)' : ''}, ${state.route_data.distance_nm.toFixed(2)}nm, ${state.route_data.estimated_hours.toFixed(1)}h\n`;
-    }
-    if (state.weather_consumption) {
-      dataContext += `- Weather impact: +${state.weather_consumption.consumption_increase_percent.toFixed(2)}% consumption increase\n`;
-    }
-    if (state.bunker_analysis) {
-      dataContext += `- Bunker analysis: ${state.bunker_analysis.recommendations.length} options analyzed\n`;
-      if (state.bunker_analysis.best_option) {
-        dataContext += `- Best option: ${state.bunker_analysis.best_option.port_name} - $${state.bunker_analysis.best_option.total_cost_usd?.toFixed(2) || 'N/A'}\n`;
-      }
-    }
-    if (state.port_weather_status) {
-      dataContext += `- Port weather: ${state.port_weather_status.length} ports checked for safety\n`;
-    }
-    dataContext += stateSummary;
-    if (errorContext) {
-      dataContext += errorContext;
-    }
-
-    systemPrompt = `You are synthesizing the final recommendation for a maritime bunker planning query.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RESPONSE STRUCTURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Format your response based on query complexity:
-
-FOR MULTI-FUEL BUNKER QUERIES (e.g., "VLSFO and LSGO"):
-
-📍 ROUTE SUMMARY
-Origin → Destination: [ports], Distance: [nm], Duration: [hours]
-
-🌊 WEATHER IMPACT
-- Consumption increase: [X]% due to weather
-- Severe conditions: [Yes/No - describe if any]
-
-⚓ RECOMMENDED BUNKER PORT
-
-Port: [Port Name] ([Port Code])
-Distance from route: [X] nm
-
-Fuel Availability:
-✓ VLSFO - Available
-✓ LSGO - Available
-[✗ MGO - Not available]
-
-Cost Breakdown:
-• VLSFO: [quantity] MT × $[price]/MT = $[subtotal]
-• LSGO: [quantity] MT × $[price]/MT = $[subtotal]
-• Deviation cost: $[amount]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOTAL COST: $[sum]
-
-Weather Conditions: [If check_port_weather was used]
-• Risk Level: Low/Medium/High
-• Wave height: [X]m (limit: 1.5m)
-• Wind speed: [X]kt (limit: 25kt)
-• Bunkering window: Safe ✓ / Unsafe ✗
-
-🔄 ALTERNATIVE OPTIONS
-[List 1-2 other ports with their total costs]
-
-💰 POTENTIAL SAVINGS
-Choosing this port saves $[amount] vs most expensive option
-
----
-
-FOR SIMPLE BUNKER QUERIES (single fuel type):
-
-[Use simpler format - route summary, recommended port with single fuel price, weather if applicable, alternatives]
-
-FOR ROUTE-ONLY QUERIES:
-
-[Just route and weather summary, no bunker analysis]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WEATHER SAFETY REPORTING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-If weather safety was checked:
-- Always include weather conditions in port recommendations
-- Highlight risk level (Low/Medium/High)
-- If High risk: Explain why port was excluded
-- If Medium risk: Add warning but allow recommendation
-- If Low risk: Emphasize safe conditions
-
-Weather Risk Criteria:
-• Low: wave <1.2m AND wind <20kt
-• Medium: wave 1.2-1.5m OR wind 20-25kt
-• High: wave >1.5m OR wind >25kt
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FUEL TYPE HANDLING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Multi-fuel requirements:
-- Show EACH fuel type with quantity and price
-- Calculate subtotal for EACH fuel type
-- Show combined TOTAL cost
-
-Default fuel type:
-- If analysis used default VLSFO, mention: "Note: Using VLSFO as default fuel type (not specified in query)"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE DATA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${dataContext}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ORIGINAL USER QUERY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-"${userQuery}"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUCTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. Use the appropriate response structure based on query type
-2. Include all fuel types if multi-fuel query
-3. Always show cost breakdowns with specific numbers
-4. Include weather safety if data available
-5. Be specific, clear, and well-formatted
-6. Use emojis for visual structure (📍 🌊 ⚓ etc.)
-
-${hasErrors ? 'IMPORTANT: Clearly indicate which data is missing and how it affects the recommendation. Be transparent about limitations.' : ''}
-
-${!state.route_data ? 'IMPORTANT: If route calculation failed, provide a helpful but concise explanation. Focus on:\n1. What went wrong (route service unavailable)\n2. What this means for the user (cannot provide bunker recommendations without route)\n3. What they can do (retry in a few moments, or use general port knowledge)\n4. Keep it brief - avoid overly technical details or lengthy disclaimers.' : ''}
-
-Generate a comprehensive, well-structured recommendation now.`;
-  } else {
-    // Route-only query or general query
-    systemPrompt = `You are the Route Planning Agent. Provide information about the requested route.
-
-User Query: "${userQuery}"
-
-Available data:
-- Route: ${state.route_data ? `${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}, ${state.route_data.distance_nm.toFixed(2)}nm` : 'Not available'}${errorContext}${stateSummary}
-
-Provide a clear summary of the route information.`;
-  }
-
-  try {
-    // ========================================================================
-    // Build compliance summary if available
-    // ========================================================================
-    
+    // Append compliance summary if available
     let complianceSummary = '';
-
     if (state.compliance_data?.eca_zones) {
       const ecaData = state.compliance_data.eca_zones;
-      
       if (ecaData.has_eca_zones) {
         complianceSummary = '\n\n⚖️ **REGULATORY COMPLIANCE:**\n';
-        complianceSummary += `ECA Zones Crossed: ${ecaData.eca_zones_crossed.length}\n`;
-        complianceSummary += `Total ECA Distance: ${ecaData.total_eca_distance_nm.toFixed(1)} nm\n`;
-        complianceSummary += `MGO Required: ${ecaData.fuel_requirements.mgo_with_safety_margin_mt} MT\n\n`;
-        
-        // List each zone
-        complianceSummary += 'Zones:\n';
-        for (const zone of ecaData.eca_zones_crossed) {
-          complianceSummary += `• ${zone.zone_name}: ${zone.distance_in_zone_nm.toFixed(1)} nm, ${zone.estimated_mgo_consumption_mt.toFixed(1)} MT MGO\n`;
+        complianceSummary += `ECA Zones Crossed: ${ecaData.eca_zones_crossed?.length || 0}\n`;
+        complianceSummary += `Total ECA Distance: ${ecaData.total_eca_distance_nm?.toFixed(1) || 0} nm\n`;
+        if (ecaData.fuel_requirements?.mgo_with_safety_margin_mt) {
+          complianceSummary += `MGO Required: ${ecaData.fuel_requirements.mgo_with_safety_margin_mt} MT\n`;
         }
-        
-        // Show fuel switching points
-        if (ecaData.fuel_requirements.switching_points.length > 0) {
-          complianceSummary += '\n🔄 **Fuel Switching Points:**\n';
-          for (const point of ecaData.fuel_requirements.switching_points) {
-            const hours = Math.floor(point.time_from_start_hours);
-            const minutes = Math.round((point.time_from_start_hours % 1) * 60);
-            const emoji = point.action === 'SWITCH_TO_MGO' ? '🔴' : '🟢';
-            complianceSummary += `${emoji} ${point.action} at ${hours}h ${minutes}m from departure\n`;
-            complianceSummary += `   Location: ${point.location.lat.toFixed(2)}°N, ${point.location.lon.toFixed(2)}°E\n`;
-          }
-        }
-        
-        // Add warnings if any
-        if (ecaData.compliance_warnings.length > 0) {
-          complianceSummary += '\n⚠️ **Warnings:**\n';
-          for (const warning of ecaData.compliance_warnings) {
-            complianceSummary += `• ${warning}\n`;
-          }
-        }
-      } else {
-        complianceSummary = '\n\n✅ No ECA zones crossed - VLSFO only required.\n';
       }
     }
-
-    // Build comprehensive context for final synthesis
-    // CRITICAL: Validate BEFORE slicing - validation needs full message array to find complete pairs
     
-    // Step 1: Get all messages (don't trim yet - we need full context for validation)
-    const allMessages = state.messages;
-
-    // Step 2: Remove SystemMessages (we'll add our own)
-    let messagesWithoutSystem = allMessages.filter(
-      (msg) => !(msg instanceof SystemMessage) && 
-               msg.constructor.name !== 'SystemMessage'
-    );
-
-    // Step 3: Validate COMPLETE messages (this needs full message array!)
-    const validatedMessages = validateMessagesForAnthropicAPI(messagesWithoutSystem);
-
-    // Step 4: NOW find last HumanMessage and slice if needed
-    const lastHumanMessageIndex = validatedMessages.findLastIndex(
-      (msg) => msg instanceof HumanMessage || msg.constructor.name === 'HumanMessage'
-    );
-
-    // Step 5: Take messages from last human query onward
-    const messagesToInclude = lastHumanMessageIndex >= 0
-      ? validatedMessages.slice(lastHumanMessageIndex)
-      : validatedMessages.slice(-20);  // Fallback: last 20 messages
-
-    // Step 6: Build final message array for LLM
-    // CRITICAL: Only ONE SystemMessage allowed, and it must be first
-    const messages = [
-      new SystemMessage(systemPrompt),
-      ...messagesToInclude,
-    ];
-
-    const response = await withTimeout(
-      finalizeLLM.invoke(messages),
-      TIMEOUTS.AGENT,
-      'Finalize node timed out'
-    );
-
-    // Extract recommendation text
-    let recommendation =
-      typeof response.content === 'string'
-        ? response.content
-        : JSON.stringify(response.content);
-
-    // Append compliance summary to recommendation if available
-    if (complianceSummary) {
-      recommendation += complianceSummary;
-    }
-
-    // Append ROB tracking summary if available
-    console.log(`🔍 [LEGACY-OUTPUT] Checking ROB data...`);
-    console.log(`  - rob_tracking exists: ${!!state.rob_tracking}`);
-    console.log(`  - rob_waypoints exists: ${!!state.rob_waypoints}`);
-    console.log(`  - rob_waypoints length: ${state.rob_waypoints?.length || 0}`);
-    
+    // Append ROB tracking if available
     let robSummary = '';
     if (state.rob_tracking && state.rob_waypoints && state.rob_waypoints.length > 0) {
-      console.log('✅ [LEGACY-OUTPUT] Building ROB summary section...');
-      robSummary = '\n\n### ⛽ Fuel Remaining On Board (ROB) Tracking\n\n';
+      robSummary = '\n\n### ⛽ ROB Tracking\n\n';
       if (state.rob_safety_status) {
         if (state.rob_safety_status.overall_safe) {
           robSummary += '✅ **Safe Voyage**: Sufficient fuel throughout journey\n';
-          robSummary += `- Minimum safety margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
+          robSummary += `• Minimum safety margin: ${state.rob_safety_status.minimum_rob_days?.toFixed(1) || 'N/A'} days\n`;
         } else {
           robSummary += '⚠️ **WARNING**: Safety concerns detected\n';
-          state.rob_safety_status.violations.forEach((v) => {
-            robSummary += `- ${v}\n`;
+          state.rob_safety_status.violations?.forEach((v) => {
+            robSummary += `• ${v}\n`;
           });
         }
       }
-      robSummary += '\n**ROB at Key Waypoints:**\n\n';
-      state.rob_waypoints.forEach((waypoint) => {
-        const safetyEmoji = waypoint.is_safe ? '✅' : '⚠️';
-        robSummary += `${safetyEmoji} **${waypoint.location}**\n`;
-        robSummary += `  - VLSFO: ${waypoint.rob_after_action.VLSFO.toFixed(1)} MT\n`;
-        robSummary += `  - LSMGO: ${waypoint.rob_after_action.LSMGO.toFixed(1)} MT\n`;
-        robSummary += `  - Safety margin: ${waypoint.safety_margin_days.toFixed(1)} days\n`;
-        if (waypoint.action) {
-          robSummary += `  - Action: ${waypoint.action.type} ${waypoint.action.quantity.VLSFO} MT VLSFO, ${waypoint.action.quantity.LSMGO} MT LSMGO\n`;
-        }
-        robSummary += '\n';
-      });
-      console.log(`✅ [LEGACY-OUTPUT] ROB summary built: ${robSummary.length} characters`);
-    } else if (state.rob_tracking) {
-      // Fallback: minimal ROB info when rob_tracking exists but waypoints are missing/empty
-      console.log('⚠️ [LEGACY-OUTPUT] ROB waypoints missing/empty, using minimal ROB summary');
-      robSummary = '\n\n### ⛽ Fuel Remaining On Board (ROB) Tracking\n\n';
-      robSummary += `Final ROB: ${state.rob_tracking.final_rob.VLSFO.toFixed(1)} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO.toFixed(1)} MT LSMGO\n`;
-      robSummary += `Overall Safe: ${state.rob_tracking.overall_safe ? '✅ Yes' : '❌ No'}\n`;
-      if (state.rob_safety_status) {
-        robSummary += `Minimum Safety Margin: ${state.rob_safety_status.minimum_rob_days.toFixed(1)} days\n`;
-        if (!state.rob_safety_status.overall_safe && state.rob_safety_status.violations.length > 0) {
-          robSummary += '\n⚠️ **Warnings:**\n';
-          state.rob_safety_status.violations.forEach((v) => {
-            robSummary += `- ${v}\n`;
-          });
-        }
-      }
-      console.log(`✅ [LEGACY-OUTPUT] Minimal ROB summary built: ${robSummary.length} characters`);
-    } else {
-      console.warn('⚠️ [LEGACY-OUTPUT] ROB section SKIPPED - rob_tracking is null/undefined');
     }
-    if (robSummary) {
-      recommendation += robSummary;
-      console.log('✅ [LEGACY-OUTPUT] ROB summary APPENDED to recommendation');
-    }
-
-    // Append ECA zone fuel consumption summary if available
-    let ecaSummary = '';
-    if (state.eca_summary) {
-      ecaSummary = '\n\n### 🌍 ECA Zone Fuel Consumption\n\n';
-      if (state.eca_summary.eca_percentage > 0) {
-        ecaSummary += `**ECA Coverage**: ${state.eca_summary.eca_percentage.toFixed(1)}% of route\n`;
-        ecaSummary += `**Fuel Breakdown:**\n`;
-        ecaSummary += `- VLSFO (outside ECA): ${state.eca_summary.total_vlsfo_mt.toFixed(1)} MT\n`;
-        ecaSummary += `- LSMGO (in ECA + auxiliary): ${state.eca_summary.total_lsmgo_mt.toFixed(1)} MT\n`;
-      } else {
-        ecaSummary += '**No ECA zones** on this route\n';
-      }
-    }
-    if (ecaSummary) {
-      recommendation += ecaSummary;
-    }
-
-    return recommendation;
-  } catch (error) {
-    console.error('❌ [FINALIZE] Error generating legacy text output:', error);
-    throw error;
+    
+    return narrative + complianceSummary + robSummary;
   }
+  
+  // Strategy 2: Basic bunker summary (fallback - no synthesis)
+  if (state.bunker_analysis?.best_option) {
+    console.log('ℹ️ [LEGACY-OUTPUT] Using basic bunker summary (no synthesis)');
+    const best = state.bunker_analysis.best_option;
+    const parts: string[] = [];
+    
+    parts.push(`🏆 **Recommended Bunker Port**: ${best.port_name} (${best.port_code})\n`);
+    const totalCost = best.total_cost_usd || 0;
+    parts.push(`**Total Cost**: $${totalCost.toLocaleString()}`);
+    
+    if (state.route_data) {
+      const origin = state.route_data.origin_port_code || 'Origin';
+      const dest = state.route_data.destination_port_code || 'Destination';
+      parts.push(`\n📍 **Route**: ${origin} → ${dest}`);
+      parts.push(`**Distance**: ${state.route_data.distance_nm.toFixed(0)} nm\n`);
+    }
+    
+    if (state.multi_bunker_plan?.required) {
+      parts.push('\n⚠️ Multi-port bunkering required due to vessel capacity constraints.');
+      parts.push('See detailed plan above.\n');
+    }
+    
+    return parts.join('\n');
+  }
+  
+  // Strategy 3: Route-only response
+  if (state.route_data) {
+    console.log('ℹ️ [LEGACY-OUTPUT] Using route-only summary');
+    const origin = state.route_data.origin_port_code || 'Origin';
+    const dest = state.route_data.destination_port_code || 'Destination';
+    const hours = state.route_data.estimated_hours || 0;
+    return `📍 Route calculated: ${origin} → ${dest}\n` +
+           `Distance: ${state.route_data.distance_nm.toFixed(0)} nautical miles\n` +
+           `Estimated duration: ${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
+  }
+  
+  // Strategy 4: Generic completion message
+  console.warn('⚠️ [LEGACY-OUTPUT] No synthesis or bunker data - using generic message');
+  return 'Analysis completed. Please check the structured response for details.';
 }
 
 export async function finalizeNode(state: MultiAgentState) {
