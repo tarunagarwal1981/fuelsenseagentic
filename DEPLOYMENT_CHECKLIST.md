@@ -241,32 +241,141 @@ export const FEATURE_FLAGS = {
 | User satisfaction | Improved | NPS scores |
 | Support ticket reduction | >20% | Support system |
 
+## Frontend Project Structure
+
+```
+frontend/
+├── app/                         # Next.js App Router
+│   ├── api/                     # API routes
+│   │   ├── chat/                # Basic chat endpoint
+│   │   ├── chat-langgraph/      # LangGraph-based chat
+│   │   ├── chat-multi-agent/    # Multi-agent orchestration
+│   │   ├── chat-ab/             # A/B testing endpoint
+│   │   ├── monitoring/          # Performance monitoring
+│   │   ├── template-preferences/# Template preference API
+│   │   └── test-*/              # Test endpoints (weather, etc.)
+│   ├── chat/                    # Chat page
+│   ├── chat-langgraph/          # LangGraph chat page
+│   ├── chat-multi-agent/        # Multi-agent chat page
+│   ├── analytics/               # Analytics dashboard
+│   └── compare/                 # Implementation comparison page
+├── components/                  # React components
+│   ├── cards/                   # Response card components
+│   │   ├── comparison-result-card.tsx
+│   │   ├── executive-decision-card.tsx
+│   │   ├── informational-response-card.tsx
+│   │   ├── priority-card.tsx
+│   │   ├── risk-alert-card.tsx
+│   │   ├── validation-result-card.tsx
+│   │   └── __tests__/           # Card tests
+│   ├── template-response/       # Template-based response rendering
+│   ├── ui/                      # Shadcn UI components
+│   ├── bunker-response-viewer.tsx
+│   ├── chat-interface-multi-agent.tsx
+│   ├── map-viewer.tsx
+│   ├── weather-card.tsx
+│   └── voyage-timeline.tsx
+├── lib/                         # Core libraries
+│   ├── config/                  # Configuration loaders
+│   │   ├── feature-flags.ts
+│   │   ├── synthesis-config-loader.ts
+│   │   ├── template-loader.ts
+│   │   └── template-preferences.ts
+│   ├── data/                    # Static data
+│   │   ├── ports.json
+│   │   ├── prices.json
+│   │   ├── vessels.json
+│   │   └── cached-routes.json
+│   ├── engines/                 # Business logic engines
+│   │   ├── capacity-validation-engine.ts
+│   │   ├── eca-consumption-engine.ts
+│   │   ├── multi-port-bunker-planner.ts
+│   │   ├── rob-tracking-engine.ts
+│   │   ├── safety-margin-engine.ts
+│   │   └── weather-adjustment-engine.ts
+│   ├── formatters/              # Response formatters
+│   │   ├── content-extractors.ts
+│   │   ├── insight-extractor.ts
+│   │   ├── response-formatter.ts
+│   │   ├── synthesis-renderers.ts
+│   │   └── template-aware-formatter.ts
+│   ├── multi-agent/             # Multi-agent orchestration
+│   │   ├── synthesis/           # Response synthesis
+│   │   │   ├── synthesis-engine.ts
+│   │   │   ├── synthesis-prompts.ts
+│   │   │   └── synthesis-metrics.ts
+│   │   ├── agent-nodes.ts
+│   │   ├── execution-planner.ts
+│   │   ├── intent-analyzer.ts
+│   │   ├── supervisor-planner.ts
+│   │   └── state.ts
+│   ├── registry/                # Registries
+│   │   ├── agent-registry.ts
+│   │   ├── tool-registry.ts
+│   │   └── workflow-registry.ts
+│   ├── tools/                   # Agent tools
+│   │   ├── bunker-analyzer.ts
+│   │   ├── marine-weather.ts
+│   │   ├── port-finder.ts
+│   │   ├── price-fetcher.ts
+│   │   ├── route-calculator.ts
+│   │   ├── weather-consumption.ts
+│   │   ├── weather-timeline.ts
+│   │   └── port-weather.ts
+│   ├── utils/                   # Utilities
+│   │   ├── ab-testing.ts
+│   │   ├── debug-logger.ts
+│   │   ├── feature-flags.ts
+│   │   └── performance.ts
+│   └── validators/              # Input validation
+├── config/                      # YAML configurations
+│   ├── agents/                  # Agent configs
+│   ├── validation-rules/        # Validation rules
+│   └── workflows/               # Workflow definitions
+└── tests/                       # Test suites
+    ├── integration/             # Integration tests
+    ├── unit/                    # Unit tests
+    └── synthesis-test-queries.ts
+```
+
 ## Files Changed
 
-### New Files Created
-- `config/prompts/synthesis-v3.txt` - Synthesis prompt
-- `config/response-templates/bunker-planning-v4.yaml` - Template config
-- `frontend/components/cards/` - 6 card components + index
+### Key Frontend Components
+- `frontend/components/cards/` - 6 response card components
 - `frontend/components/ui/accordion.tsx` - Accordion component
 - `frontend/components/ui/alert.tsx` - Alert component
-- `frontend/components/bunker-response-viewer.tsx` - Main viewer
-- `frontend/tests/synthesis-test-queries.ts` - Test suite
-- `frontend/lib/monitoring/synthesis-metrics.ts` - Metrics module
-- `DEPLOYMENT_CHECKLIST.md` - This file
+- `frontend/components/bunker-response-viewer.tsx` - Main response viewer
+- `frontend/components/weather-card.tsx` - Weather display card
+- `frontend/components/voyage-timeline.tsx` - Voyage timeline visualization
 
-### Modified Files
-- `frontend/lib/multi-agent/state.ts` - Updated synthesized_insights schema
-- `frontend/lib/multi-agent/synthesis/synthesis-engine.ts` - Updated validation
-- `frontend/lib/multi-agent/synthesis/synthesis-prompts.ts` - Updated prompt loading
-- `frontend/lib/formatters/template-aware-formatter.ts` - Updated filtering logic
-- `frontend/lib/formatters/synthesis-renderers.ts` - Updated renderers
-- `frontend/lib/config/template-loader.ts` - Added tier 0 support
-- `frontend/package.json` - Added test scripts and dependencies
-- `frontend/lib/multi-agent/__tests__/query-test.ts` - Fixed state types
+### Multi-Agent System
+- `frontend/lib/multi-agent/state.ts` - Agent state management
+- `frontend/lib/multi-agent/synthesis/synthesis-engine.ts` - Response synthesis
+- `frontend/lib/multi-agent/synthesis/synthesis-prompts.ts` - Prompt loading
+- `frontend/lib/multi-agent/execution-planner.ts` - Execution planning
+- `frontend/lib/multi-agent/intent-analyzer.ts` - Query classification
+- `frontend/lib/multi-agent/supervisor-planner.ts` - Agent orchestration
 
-## Dependencies Added
-- `@radix-ui/react-accordion` - For expandable details sections
-- `@types/jest` - TypeScript definitions for Jest
+### Formatters
+- `frontend/lib/formatters/template-aware-formatter.ts` - Template-based formatting
+- `frontend/lib/formatters/synthesis-renderers.ts` - Rendering logic
+- `frontend/lib/config/template-loader.ts` - Template configuration
+
+### Test Suites
+- `frontend/tests/synthesis-test-queries.ts` - Synthesis test suite
+- `frontend/lib/multi-agent/__tests__/query-test.ts` - Query tests
+- `frontend/components/cards/__tests__/cards.test.ts` - Card component tests
+
+## Dependencies (frontend/package.json)
+- `@radix-ui/react-accordion` - Expandable sections
+- `@radix-ui/react-scroll-area` - Scroll containers
+- `@langchain/langgraph` - LangGraph framework
+- `@langchain/anthropic` - Claude integration
+- `recharts` - Data visualization
+- `react-leaflet` - Map visualization
+- `zod` - Schema validation
+- `yaml` - YAML parsing
+- `@types/jest` - TypeScript test definitions
 
 ## Contact
 

@@ -92,6 +92,22 @@ template:
         render_as: "basic_recommendation"
 
     # =========================================================
+    # TIER 1: MULTI-PORT BUNKERING (Always show when required)
+    # =========================================================
+    
+    - id: "multi_port_breakdown"
+      tier: 1
+      title: "⚠️ Multi-Port Bunkering Required"
+      visibility: "conditional"
+      priority: 4
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      max_words: 300
+      
+      content_source:
+        state_path: "multi_bunker_plan"
+        render_as: "port_breakdown_table"
+
+    # =========================================================
     # TIER 2: STRATEGIC PRIORITIES
     # =========================================================
     
@@ -126,18 +142,6 @@ template:
     # TIER 3: EXPANDABLE DETAILS (Conditional on synthesis flags)
     # =========================================================
     
-    - id: "multi_port_breakdown"
-      tier: 3
-      title: "Multi-Port Bunkering Plan"
-      visibility: "conditional"
-      collapsed: true
-      priority: 1
-      condition: "synthesized_insights.details_to_surface.show_multi_port_analysis && multi_bunker_plan"
-      
-      content_source:
-        state_path: "multi_bunker_plan"
-        render_as: "port_breakdown_table"
-
     - id: "alternative_options"
       tier: 3
       title: "Alternative Ports"

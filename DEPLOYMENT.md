@@ -6,12 +6,39 @@ This guide explains how to deploy the FuelSense 360 frontend application to Netl
 
 ```
 FuelSense/
-├── frontend/          # Next.js application
-│   ├── app/          # Next.js app directory
-│   ├── components/   # React components
-│   ├── lib/          # Utilities and tools
-│   └── package.json  # Frontend dependencies
-└── netlify.toml      # Netlify configuration (root level)
+├── frontend/                    # Next.js application (deployment target)
+│   ├── app/                     # Next.js App Router
+│   │   ├── api/                 # API routes
+│   │   │   ├── chat/            # Basic chat endpoint
+│   │   │   ├── chat-langgraph/  # LangGraph-based chat
+│   │   │   ├── chat-multi-agent/# Multi-agent orchestration
+│   │   │   └── monitoring/      # Performance monitoring
+│   │   ├── chat/                # Chat page
+│   │   ├── chat-multi-agent/    # Multi-agent chat page
+│   │   └── analytics/           # Analytics dashboard
+│   ├── components/              # React components
+│   │   ├── cards/               # Response card components
+│   │   ├── template-response/   # Template rendering
+│   │   └── ui/                  # Shadcn UI components
+│   ├── lib/                     # Core libraries
+│   │   ├── config/              # Configuration loaders
+│   │   ├── data/                # Static data (ports, prices, vessels)
+│   │   ├── engines/             # Business logic engines
+│   │   ├── formatters/          # Response formatters
+│   │   ├── multi-agent/         # Multi-agent orchestration
+│   │   ├── registry/            # Agent/tool registries
+│   │   ├── tools/               # Agent tools
+│   │   └── validators/          # Input validation
+│   ├── config/                  # YAML configurations
+│   │   ├── agents/              # Agent configs
+│   │   └── workflows/           # Workflow definitions
+│   ├── tests/                   # Test suites
+│   ├── package.json             # Frontend dependencies
+│   └── netlify.toml             # Netlify config (frontend)
+├── config/                      # Root-level configurations
+│   ├── prompts/                 # LLM prompts
+│   └── response-templates/      # Response templates
+└── netlify.toml                 # Netlify configuration (root level)
 ```
 
 ## Deployment Steps
