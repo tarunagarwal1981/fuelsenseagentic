@@ -119,15 +119,60 @@ function extractAgentDataInternal(state: MultiAgentState, agentName: string): st
 }
 
 function getFallbackPrompt(): string {
-  return `You are a synthesis engine. Analyze the agent outputs and generate a JSON response with:
-  - query_type (informational/decision-required/validation/comparison)
-  - response object matching the query type
-  - strategic_priorities array
-  - critical_risks array
-  - details_to_surface flags
-  
-  Agent outputs:
-  {agent_outputs}`;
+  return `You are the Intelligence Filter for a maritime bunker planning system.
+
+STEP 1: Classify the query as one of:
+- "informational" (facts/data queries like "what is", "calculate", "how many")
+- "decision-required" (recommendations like "find", "recommend", "plan", "optimize")
+- "validation" (feasibility checks like "can I", "is it safe", "will it fit")
+- "comparison" (evaluating options like "compare", "vs", "better", "all options")
+
+STEP 2: Return JSON with this EXACT structure:
+
+{
+  "query_type": "decision-required",
+  "response": {
+    "decision": {
+      "action": "Single sentence stating what to do",
+      "primary_metric": "$XXX total or X days margin",
+      "risk_level": "safe|caution|critical",
+      "confidence": 85
+    }
+  },
+  "strategic_priorities": [
+    {
+      "priority": 1,
+      "action": "Specific actionable step",
+      "why": "Root cause explanation",
+      "impact": "Financial/operational consequence",
+      "urgency": "immediate|today|this_week"
+    }
+  ],
+  "critical_risks": [
+    {
+      "risk": "Specific risk description",
+      "severity": "critical|high",
+      "consequence": "What happens if ignored",
+      "mitigation": "How to fix"
+    }
+  ],
+  "details_to_surface": {
+    "show_multi_port_analysis": false,
+    "show_alternatives": false,
+    "show_rob_waypoints": true,
+    "show_weather_details": false,
+    "show_eca_details": false
+  },
+  "cross_agent_connections": [],
+  "hidden_opportunities": []
+}
+
+For INFORMATIONAL queries, use response.informational with: answer, key_facts[], additional_context
+For VALIDATION queries, use response.validation with: result (feasible|not_feasible|risky), explanation, consequence, alternative
+For COMPARISON queries, use response.comparison with: winner, winner_reason, runner_up, comparison_factors[]
+
+Analyze these agent outputs and return ONLY valid JSON (no markdown):
+{agent_outputs}`;
 }
 
 // Legacy synchronous version for backward compatibility

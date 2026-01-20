@@ -188,19 +188,10 @@ template:
         render_as: "eca_switching_timeline"
 
   # ===========================================================================
-  # BUSINESS RULES
+  # BUSINESS RULES (disabled - handled by BunkerResponseViewer component)
   # ===========================================================================
   
-  business_rules:
-    - name: "always_show_map_for_routes"
-      description: "Map is non-collapsible when route exists"
-      condition: "route_data"
-      action:
-        render_section: "route_map"
-        allow_collapse: false
-    
-    - name: "respect_synthesis_filtering"
-      description: "Synthesis filtering takes precedence"
-      condition: "synthesized_insights.details_to_surface"
-      action:
-        use_synthesis_flags: true
+  # Note: Business rules are now handled programmatically in the 
+  # BunkerResponseViewer component and template-aware-formatter.ts
+  # This avoids YAML validation issues and provides more flexibility.
+  business_rules: []
