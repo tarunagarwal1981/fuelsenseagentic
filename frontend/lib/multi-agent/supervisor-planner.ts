@@ -298,9 +298,23 @@ function validatePlan(
       throw new Error(`Agent ${agentName} not found in registry`);
     }
     
-    // Check all tools exist in agent's available tools
+    // Handle deterministic agents gracefully
+    // Deterministic agents don't use LLM tool-calling, so clear any suggested tools
+    if (AgentRegistry.isDeterministicAgent(agentName)) {
+      if ((toolNames as string[]).length > 0) {
+        console.warn(
+          `⚠️ [SUPERVISOR-PLANNER] Agent ${agentName} is deterministic - ` +
+          `ignoring ${(toolNames as string[]).length} LLM-suggested tools: ${(toolNames as string[]).join(', ')}`
+        );
+      }
+      // Clear tool assignments for deterministic agents
+      plan.agent_tool_assignments[agentName] = [];
+      continue; // Skip validation for this agent
+    }
+    
+    // Check all tools exist in agent's available tools (non-deterministic agents only)
     const availableToolNames = agent.available_tools.map(t => t.tool_name);
-    for (const toolName of toolNames) {
+    for (const toolName of toolNames as string[]) {
       if (!availableToolNames.includes(toolName)) {
         throw new Error(
           `Tool ${toolName} not available for agent ${agentName}. Available: ${availableToolNames.join(', ')}`

@@ -9,6 +9,10 @@ export const FEATURE_FLAGS: Record<string, boolean> = {
   // Response Formatter - ENABLED
   USE_RESPONSE_FORMATTER: true,
   
+  // Synthesis - ENABLED
+  USE_SYNTHESIS: true,  // Master switch for cross-agent synthesis
+  SYNTHESIS_DEBUG: false,  // Extra debug logging for synthesis
+  
   // Individual component flags (all start FALSE)
   SHOW_COMPLIANCE_CARD: false,
   SHOW_WEATHER_CARD: false,

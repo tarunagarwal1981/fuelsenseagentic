@@ -1,0 +1,27 @@
+template:
+  query_type: "route-only"
+  name: "Route Calculation Response"
+  version: "1.0.0"
+  description: "Simple response for route-only queries"
+  
+  sections:
+    - id: "route_summary"
+      title: "📍 Route Summary"
+      tier: 1
+      priority: 1
+      visibility: "always"
+      max_words: 100
+      
+      content_source:
+        state_path: "route_data"
+    
+    - id: "route_waypoints"
+      title: "🗺️ Route Waypoints"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      
+      content_source:
+        state_path: "route_data.waypoints"
+        format: "waypoints_list"

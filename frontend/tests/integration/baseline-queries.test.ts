@@ -134,6 +134,7 @@ function buildInitialState(query: string): MultiAgentState {
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
+        multi_bunker_plan: null,
     compliance_data: null,
     vessel_consumption: null,
     rob_tracking: null,
@@ -145,6 +146,7 @@ function buildInitialState(query: string): MultiAgentState {
     vessel_profile: null,
     final_recommendation: null,
     formatted_response: null,
+    synthesized_insights: null,
     agent_errors: {},
     agent_status: {},
   };

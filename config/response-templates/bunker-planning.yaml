@@ -1,0 +1,421 @@
+template:
+  query_type: "bunker-planning"
+  name: "Bunker Planning Response"
+  version: "2.0.0"
+  description: "Comprehensive bunker planning with strategic synthesis"
+  
+  # ===========================================================================
+  # TIER 1: EXECUTIVE SUMMARY (Always Visible - ~300 words)
+  # ===========================================================================
+  
+  sections:
+    # NEW: Strategic insight from synthesis (shows first if available)
+    - id: "executive_insight"
+      title: "🎯 Key Strategic Insight"
+      tier: 1
+      priority: 0
+      visibility: "conditional"
+      condition: "synthesized_insights && synthesized_insights.executive_insight"
+      max_words: 75
+      
+      content_source:
+        state_path: "synthesized_insights.executive_insight"
+        fallback: ""
+    
+    # NEW: Strategic priorities from synthesis
+    - id: "strategic_priorities"
+      title: "📋 Recommended Actions"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "synthesized_insights && synthesized_insights.strategic_priorities && synthesized_insights.strategic_priorities.length > 0"
+      max_words: 250
+      
+      content_source:
+        state_path: "synthesized_insights.strategic_priorities"
+        format: "priority_list"
+        fallback: ""
+    
+    # EXISTING: Primary recommendation (priority adjusted)
+    - id: "primary_recommendation"
+      title: "🎯 Bunker Recommendation"
+      tier: 1
+      priority: 2
+      visibility: "always"
+      max_words: 150
+      
+      content_source:
+        state_path: "bunker_analysis"
+        template: |
+          **Recommended Port:** {port_name} ({port_code})
+          **Total Quantity:** {total_quantity} MT ({vlsfo_qty} MT VLSFO + {mgo_qty} MT MGO)
+          **Estimated Cost:** ${total_cost:,.0f}
+          
+          **Why this port:**
+          - {reason_1}
+          - {reason_2}
+          - {reason_3}
+    
+    # EXISTING: Critical safety alert (priority adjusted)
+    - id: "critical_safety_alert"
+      title: "⚠️ CRITICAL SAFETY ALERT"
+      tier: 1
+      priority: 3
+      visibility: "conditional"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      
+      content_source:
+        state_path: "rob_safety_status"
+        template: |
+          **WARNING:** Safety concerns detected for this voyage.
+          
+          {violations_list}
+          
+          **Action Required:** {action_required}
+    
+    # NEW: Multi-Port Bunker Strategy (when single stop insufficient)
+    - id: "multi_port_bunker_plan"
+      title: "🔀 Multi-Port Bunker Strategy Required"
+      tier: 1
+      priority: 3.5
+      visibility: "conditional"
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      
+      content_source:
+        state_path: ["multi_bunker_plan", "bunker_analysis", "vessel_profile"]
+        format: "multi_bunker_recommendation"
+    
+    # NEW: Multi-Port Operational Warning
+    - id: "multi_port_operational_warning"
+      title: "📋 Operational Considerations"
+      tier: 1
+      priority: 3.6
+      visibility: "conditional"
+      condition: "multi_bunker_plan && multi_bunker_plan.required && multi_bunker_plan.best_plan"
+      
+      content_source:
+        template: |
+          **OPERATIONAL NOTE:** Multi-port bunkering requires additional coordination:
+          
+          - ⚓ **Fuel Availability:** Confirm bunker availability at all ports before departing
+          - 📅 **Schedule Coordination:** Additional port calls affect voyage timeline
+          - 💵 **Port Costs:** Port fees and pilotage not included in fuel cost estimates
+          - 📞 **Broker Contact:** Verify pricing and availability with your bunker broker
+          
+          *Recommendation: Confirm arrangements before committing to cargo fixture.*
+    
+    # NEW: ROB Safety Comparison (P0-5)
+    - id: "rob_safety_comparison"
+      title: "⛽ Fuel Safety Analysis"
+      tier: 1
+      priority: 4
+      visibility: "conditional"
+      condition: "rob_tracking"
+      style: "comparison_table"
+      
+      content_source:
+        state_path: ["rob_tracking", "vessel_profile", "bunker_analysis", "route_data"]
+        format: "rob_comparison"
+        template: |
+          | Scenario | VLSFO | LSMGO | Status |
+          |----------|-------|-------|--------|
+          | **Current ROB** | {current_rob_vlsfo} MT | {current_rob_lsmgo} MT | Starting point |
+          | **Voyage Consumption** | {voyage_vlsfo} MT | {voyage_lsmgo} MT | {distance}nm voyage |
+          | **Without Bunkering** | {without_vlsfo} MT | {without_lsmgo} MT | {without_status} |
+          | **With Recommended Bunker** | {with_vlsfo} MT | {with_lsmgo} MT | {with_status} |
+          
+          {safety_message}
+    
+    # EXISTING: Cost summary (priority adjusted)
+    - id: "cost_summary"
+      title: "💰 Cost Summary"
+      tier: 1
+      priority: 4
+      visibility: "always"
+      max_words: 80
+      
+      content_source:
+        state_path: "bunker_analysis"
+        template: |
+          **Fuel Cost:** ${fuel_cost:,.0f}
+          **Deviation Cost:** ${deviation_cost:,.0f}
+          **Total:** ${total_cost:,.0f}
+          
+          *Savings vs next best: ${savings:,.0f}*
+    
+    # EXISTING: Alternative port (priority adjusted)
+    - id: "alternative_port"
+      title: "🔄 Alternative Option"
+      tier: 1
+      priority: 5
+      visibility: "conditional"
+      condition: "bunker_analysis && bunker_analysis.alternatives && bunker_analysis.alternatives.length > 0"
+      max_words: 80
+      
+      content_source:
+        state_path: "bunker_analysis.alternatives[0]"
+        template: |
+          **{port_name}** - ${total_cost:,.0f}
+          Trade-off: {tradeoff}
+  
+  # ===========================================================================
+  # TIER 2: KEY INSIGHTS (Expandable - ~500 words total)
+  # ===========================================================================
+  
+    # NEW: Cross-agent connections from synthesis
+    - id: "cross_agent_connections"
+      title: "🔗 How Everything Connects"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.cross_agent_connections && synthesized_insights.cross_agent_connections.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.cross_agent_connections"
+        format: "connection_list"
+        fallback: ""
+    
+    # NEW: Hidden opportunities from synthesis
+    - id: "hidden_opportunities"
+      title: "💡 Opportunities You Might Miss"
+      tier: 2
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.hidden_opportunities && synthesized_insights.hidden_opportunities.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.hidden_opportunities"
+        format: "opportunity_list"
+        fallback: ""
+    
+    # NEW: Risk alerts from synthesis
+    - id: "risk_alerts"
+      title: "⚠️ Risk Alerts"
+      tier: 2
+      priority: 3
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.risk_alerts"
+        format: "risk_list"
+        fallback: ""
+    
+    # EXISTING: Why this recommendation (priority adjusted)
+    - id: "why_this_recommendation"
+      title: "📊 Why This Recommendation?"
+      tier: 2
+      priority: 4
+      visibility: "expandable"
+      collapsed: true
+      max_words: 300
+      
+      content_source:
+        state_path: ["vessel_profile", "route_data", "eca_consumption"]
+        template: |
+          **Your Vessel:**
+          - Current ROB: {current_rob_vlsfo} MT VLSFO, {current_rob_lsmgo} MT LSMGO
+          - Tank Capacity: {capacity_vlsfo} MT VLSFO, {capacity_lsmgo} MT LSMGO
+          - Consumption: {consumption_vlsfo} MT/day VLSFO, {consumption_lsmgo} MT/day LSMGO
+          
+          **Voyage Requirements:**
+          - Distance: {distance:,.0f} nm (~{duration} days)
+          - Base Consumption: {total_consumption:,.0f} MT
+          - ECA Requirement: {eca_mgo_required:,.0f} MT MGO
+          - Safety Margin: {safety_margin} days = {safety_margin_mt:,.0f} MT
+          
+          **ROB Analysis:**
+          ✅ With recommended bunker: Safe arrival with {final_safety_margin} days reserve
+          ❌ Without bunker: Fuel depleted at {depletion_point}
+    
+    # EXISTING: ROB tracking summary (priority adjusted)
+    - id: "rob_tracking_summary"
+      title: "⛽ ROB Tracking Summary"
+      tier: 2
+      priority: 5
+      visibility: "expandable"
+      collapsed: true
+      condition: "rob_tracking"
+      max_words: 200
+      
+      content_source:
+        state_path: "rob_tracking"
+        template: |
+          **Voyage Safety:** {overall_safe ? '✅ Safe' : '⚠️ Warning'}
+          **Minimum Safety Margin:** {minimum_rob_days:.1f} days
+          
+          **Key Points:**
+          - Departure: {departure_rob_vlsfo:.0f} MT VLSFO
+          - At Bunker Port: {bunker_port_rob_vlsfo:.0f} MT VLSFO ({safety_margin:.1f} days)
+          - After Bunkering: {after_bunker_rob_vlsfo:.0f} MT VLSFO
+          - At Destination: {destination_rob_vlsfo:.0f} MT VLSFO ({final_margin:.1f} days)
+    
+    # EXISTING: ECA compliance summary (priority adjusted)
+    - id: "eca_compliance_summary"
+      title: "⚖️ ECA Compliance"
+      tier: 2
+      priority: 6
+      visibility: "expandable"
+      collapsed: true
+      condition: "compliance_data && compliance_data.eca_zones && compliance_data.eca_zones.has_eca_zones"
+      max_words: 200
+      
+      content_source:
+        state_path: "compliance_data.eca_zones"
+        template: |
+          **ECA Zones Crossed:** {zones_count}
+          **Total MGO Required:** {total_mgo_mt:.0f} MT
+          
+          **Zones:**
+          {zones_list}
+          
+          *Fuel switching managed by crew as per standard procedures*
+  
+  # ===========================================================================
+  # TIER 3: TECHNICAL DETAILS (Expandable - full detail)
+  # ===========================================================================
+  
+    - id: "complete_rob_tracking"
+      title: "⛽ Complete ROB Tracking (All Waypoints)"
+      tier: 3
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      condition: "rob_waypoints && rob_waypoints.length > 0"
+      
+      content_source:
+        state_path: "rob_waypoints"
+        format: "table"
+    
+    - id: "all_port_options"
+      title: "📍 All Port Options ({count} ports)"
+      tier: 3
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      condition: "bunker_ports && bunker_ports.length > 2"
+      
+      content_source:
+        state_path: "bunker_ports"
+        format: "comparison_table"
+    
+    - id: "eca_fuel_switching_timeline"
+      title: "🔄 Detailed Fuel Switching Timeline"
+      tier: 3
+      priority: 3
+      visibility: "expandable"
+      collapsed: true
+      condition: "compliance_data && compliance_data.eca_zones && compliance_data.eca_zones.switching_points"
+      
+      content_source:
+        state_path: "compliance_data.eca_zones.switching_points"
+        format: "timeline"
+    
+    - id: "weather_impact_details"
+      title: "🌊 Weather Impact Details"
+      tier: 3
+      priority: 4
+      visibility: "expandable"
+      collapsed: true
+      condition: "weather_forecast"
+      
+      content_source:
+        state_path: "weather_forecast"
+        format: "detailed_weather"
+    
+    # NEW: Synthesis metadata (for debugging/transparency)
+    - id: "synthesis_metadata"
+      title: "🧠 Synthesis Details"
+      tier: 3
+      priority: 5
+      visibility: "expandable"
+      collapsed: true
+      condition: "synthesized_insights && synthesized_insights.synthesis_metadata"
+      
+      content_source:
+        state_path: "synthesized_insights.synthesis_metadata"
+  
+  # ===========================================================================
+  # BUSINESS RULES (Dynamic Behavior)
+  # ===========================================================================
+  
+  business_rules:
+    # EXISTING: Surface critical safety warnings
+    - name: "surface_critical_safety_warnings"
+      description: "Move safety warnings to top if voyage is unsafe"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      action: "move_to_tier_1"
+      target: "critical_safety_alert"
+    
+    # EXISTING: Hide empty alternatives
+    - name: "hide_empty_alternatives"
+      description: "Don't show alternative section if no alternatives exist"
+      condition: "!bunker_analysis || !bunker_analysis.alternatives || bunker_analysis.alternatives.length === 0"
+      action: "hide"
+      target: "alternative_port"
+    
+    # EXISTING: Auto-expand safety details if warning
+    - name: "auto_expand_safety_details_if_warning"
+      description: "Auto-expand ROB tracking if there are safety warnings"
+      condition: "rob_safety_status && !rob_safety_status.overall_safe"
+      action: "expand"
+      target: "rob_tracking_summary"
+    
+    # EXISTING: Show ECA only if zones exist
+    - name: "show_eca_only_if_zones_exist"
+      description: "Only show ECA section if route crosses ECA zones"
+      condition: "!compliance_data || !compliance_data.eca_zones || !compliance_data.eca_zones.has_eca_zones"
+      action: "hide"
+      target: "eca_compliance_summary"
+    
+    # NEW: Prioritize synthesis insights
+    - name: "prioritize_synthesis_insights"
+      description: "If synthesis ran, show strategic insight first"
+      condition: "synthesized_insights && synthesized_insights.executive_insight"
+      action: "move_to_tier_1"
+      target: "executive_insight"
+    
+    # NEW: Surface critical risks
+    - name: "surface_critical_risks"
+      description: "Show critical risk alerts prominently"
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+      action: "expand"
+      target: "risk_alerts"
+    
+    # NEW: Expand connections if critical risks
+    - name: "expand_connections_on_critical"
+      description: "Expand cross-agent connections if critical risks detected"
+      condition: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+      action: "expand"
+      target: "cross_agent_connections"
+    
+    # P0-5: Surface ROB safety comparison when unsafe
+    - name: "surface_rob_safety_critical"
+      description: "Move ROB safety comparison to top of Tier 1 if unsafe without bunker"
+      condition: "rob_tracking && !rob_tracking.overall_safe"
+      action: "move_to_tier_1"
+      target: "rob_safety_comparison"
+    
+    # P0-5: Expand ROB details if recommended bunker still insufficient
+    - name: "expand_rob_if_still_unsafe"
+      description: "Show full ROB details if recommended bunker quantity is insufficient"
+      condition: "rob_tracking && rob_tracking.with_bunker_still_unsafe"
+      action: "expand"
+      target: "complete_rob_tracking"
+    
+    # Multi-Port: Surface multi-port plan when required
+    - name: "surface_multi_port_plan"
+      description: "Move multi-port bunker plan to top when capacity constraint detected"
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      action: "move_to_tier_1"
+      target: "multi_port_bunker_plan"
+    
+    # Multi-Port: Show warning alongside plan
+    - name: "show_multi_port_warning"
+      description: "Ensure operational warning is visible when multi-port plan is shown"
+      condition: "multi_bunker_plan && multi_bunker_plan.required && multi_bunker_plan.best_plan"
+      action: "expand"
+      target: "multi_port_operational_warning"

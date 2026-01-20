@@ -30,7 +30,7 @@ import {
 } from './monitoring';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
-import { AgentRegistry } from './registry';
+import { AgentRegistry, zodSchemaToJsonSchema } from './registry';
 import { generateExecutionPlan, type SupervisorPlan } from './supervisor-planner';
 
 // Import tool execute functions
@@ -57,8 +57,12 @@ import {
 import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/lib/engines/eca-consumption-engine';
 import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
 import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
+import { planMultiPortBunker, needsMultiPortBunkering } from '@/lib/engines/multi-port-bunker-planner';
+import type { MultiBunkerAnalysis } from './state';
 import { formatResponse } from '../formatters/response-formatter';
+import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
+import { generateSynthesis } from './synthesis/synthesis-engine';
 import type { FormattedResponse } from '../formatters/response-formatter';
 import type { Port } from '@/lib/types';
 
@@ -71,6 +75,7 @@ import { portWeatherInputSchema } from '@/lib/tools/port-weather';
 import { portFinderInputSchema } from '@/lib/tools/port-finder';
 import { priceFetcherInputSchema } from '@/lib/tools/price-fetcher';
 import { bunkerAnalyzerInputSchema } from '@/lib/tools/bunker-analyzer';
+import { ecaZoneValidatorInputSchema } from '@/lib/tools/eca-zone-validator';
 
 // Import weather agent tools from tools.ts
 import {
@@ -458,6 +463,22 @@ export async function supervisorAgentNode(
   if (USE_REGISTRY_PLANNING) {
     try {
       const availableAgents = AgentRegistry.getAllAgents();
+      
+      // Log tool binding info for LLM planning
+      const toolsForBinding = AgentRegistry.getToolsForLLMBinding();
+      console.log(`🔧 [SUPERVISOR] Registry has ${toolsForBinding.length} tools for LLM binding`);
+      if (toolsForBinding.length > 0) {
+        console.log(`   Tools: ${toolsForBinding.map(t => t.function.name).join(', ')}`);
+      }
+      
+      // Log deterministic agents (they won't have tool bindings)
+      const deterministicAgents = availableAgents
+        .filter(a => AgentRegistry.isDeterministicAgent(a.agent_name))
+        .map(a => a.agent_name);
+      if (deterministicAgents.length > 0) {
+        console.log(`   Deterministic agents (no tool binding): ${deterministicAgents.join(', ')}`);
+      }
+      
       executionPlan = await generateExecutionPlan(userQuery, state, availableAgents);
       planningSource = 'registry_llm';
       console.log('✅ [SUPERVISOR] Generated execution plan:', {
@@ -2056,15 +2077,6 @@ export async function bunkerAgentNode(
     
     const ecaData = state.compliance_data?.eca_zones;
     const requiresMGO = ecaData?.has_eca_zones || false;
-    const mgoRequired = ecaData?.fuel_requirements.mgo_with_safety_margin_mt || 0;
-
-    if (requiresMGO && mgoRequired > 0 && ecaData) {
-      console.log(`🌍 [BUNKER-WORKFLOW] ECA zones detected - requires ${mgoRequired.toFixed(1)} MT MGO`);
-      console.log(`   Zones crossed: ${ecaData.eca_zones_crossed.length}`);
-      for (const zone of ecaData.eca_zones_crossed) {
-        console.log(`   - ${zone.zone_name}: ${zone.distance_in_zone_nm.toFixed(1)} nm`);
-      }
-    }
     
     // Check if user wants weather safety analysis
     const needsWeatherSafety = 
@@ -2073,18 +2085,35 @@ export async function bunkerAgentNode(
       userQuery.toLowerCase().includes('weather');
     console.log(`🌊 [BUNKER-WORKFLOW] Weather safety check: ${needsWeatherSafety ? 'YES' : 'NO'}`);
 
-    // Adjusted fuel requirements (for analyzer and ROB-with-bunker)
-    const primaryFuelType = fuelRequirements.fuel_types[0] || 'VLSFO';
-    const totalFuelNeeded = fuelRequirements.quantities[primaryFuelType] || fuelRequirements.total_quantity || 1000;
-    let vlsfoRequired = totalFuelNeeded;
-    let mgoRequiredForECA = 0;
-    if (requiresMGO && mgoRequired > 0) {
-      vlsfoRequired = Math.max(0, totalFuelNeeded - mgoRequired);
-      mgoRequiredForECA = mgoRequired;
-      if (ecaData) {
-        console.log(`   [BUNKER-WORKFLOW] Adjusted fuel requirements: VLSFO ${vlsfoRequired.toFixed(0)} MT, MGO ${mgoRequired.toFixed(0)} MT (ECA)`);
+    // ========================================================================
+    // FUEL REQUIREMENTS CALCULATION
+    // ========================================================================
+    // 
+    // CRITICAL: Do NOT use arbitrary fallback (like 1000 MT).
+    // Calculate from actual voyage consumption after ROB tracking runs.
+    // This section just captures user-specified quantities if any.
+    // Actual requirements are calculated AFTER calculateROBForVoyage() below.
+    //
+    const userSpecifiedVlsfo = fuelRequirements.quantities['VLSFO'] || 0;
+    const userSpecifiedMgo = fuelRequirements.quantities['MGO'] || fuelRequirements.quantities['LSGO'] || 0;
+    
+    // ECA MGO requirement (from compliance data)
+    const ecaMgoRequired = ecaData?.fuel_requirements.mgo_with_safety_margin_mt || 0;
+    
+    if (requiresMGO && ecaMgoRequired > 0 && ecaData) {
+      console.log(`🌍 [BUNKER-WORKFLOW] ECA zones detected - requires ${ecaMgoRequired.toFixed(1)} MT MGO`);
+      console.log(`   Zones crossed: ${ecaData.eca_zones_crossed.length}`);
+      for (const zone of ecaData.eca_zones_crossed) {
+        console.log(`   - ${zone.zone_name}: ${zone.distance_in_zone_nm.toFixed(1)} nm`);
       }
     }
+    
+    // Safety margin constant (1.15 = 15% extra fuel for safety)
+    const FUEL_SAFETY_MARGIN = 1.15;
+    
+    // These will be calculated after ROB tracking
+    let vlsfoRequired = 0;
+    let lsmgoRequired = 0;
 
     // === Load vessel data from database ===
     const resolvedVesselName = state.vessel_name || extractVesselNameFromQuery(userQuery);
@@ -2153,6 +2182,9 @@ export async function bunkerAgentNode(
       segments_in_eca: number;
     } | null = null;
 
+    // Store ROB without bunker separately for comparison (P0-5)
+    let robWithoutBunker: ROBTrackingOutput | null = null;
+    
     try {
       const { rob, ecaConsumption } = calculateROBForVoyage(
         state.route_data!,
@@ -2163,6 +2195,7 @@ export async function bunkerAgentNode(
         ecaSegments
       );
       robTrackingResult = rob;
+      robWithoutBunker = rob;  // Store for comparison
       robSafetyStatus = formatROBSafetyStatus(rob, consumptionVlsfo, consumptionLsmgo);
       if (ecaConsumption) {
         ecaConsumptionResult = ecaConsumption;
@@ -2186,6 +2219,105 @@ export async function bunkerAgentNode(
     }
 
     // ========================================================================
+    // CALCULATE ACTUAL FUEL REQUIREMENTS (P0-1, P0-2, P0-3 fixes)
+    // ========================================================================
+    //
+    // Now that we have ROB tracking results, calculate the actual fuel needed:
+    // 1. Use ECA consumption if available (most accurate)
+    // 2. Fall back to voyage-based calculation if ECA not available
+    // 3. Calculate shortfall = consumption - current ROB
+    // 4. Apply safety margin and tank capacity constraints
+    //
+    
+    const voyageDurationDays = (state.route_data?.estimated_hours || 0) / 24;
+    
+    // Calculate voyage fuel consumption
+    let voyageVlsfoConsumption = 0;
+    let voyageLsmgoConsumption = 0;
+    
+    if (ecaConsumptionResult) {
+      // Best case: Use ECA engine calculation (most accurate)
+      voyageVlsfoConsumption = ecaConsumptionResult.total_consumption_mt.VLSFO;
+      voyageLsmgoConsumption = ecaConsumptionResult.total_consumption_mt.LSMGO;
+      console.log(`📊 [BUNKER-WORKFLOW] Voyage consumption (from ECA engine):`);
+    } else if (voyageDurationDays > 0) {
+      // Fallback: Calculate from vessel consumption rates
+      voyageVlsfoConsumption = voyageDurationDays * consumptionVlsfo;
+      voyageLsmgoConsumption = voyageDurationDays * consumptionLsmgo;
+      console.log(`📊 [BUNKER-WORKFLOW] Voyage consumption (from vessel rates):`);
+    } else {
+      // Last resort: Use arbitrary minimum
+      voyageVlsfoConsumption = 500; // Minimum reasonable voyage consumption
+      voyageLsmgoConsumption = 50;
+      console.warn(`⚠️ [BUNKER-WORKFLOW] Could not calculate voyage consumption, using minimums`);
+    }
+    console.log(`   - VLSFO: ${voyageVlsfoConsumption.toFixed(1)} MT`);
+    console.log(`   - LSMGO: ${voyageLsmgoConsumption.toFixed(1)} MT`);
+    
+    // === EARLY DETECTION: Multi-port bunkering needed? ===
+    const voyageConsumption = { VLSFO: voyageVlsfoConsumption, LSMGO: voyageLsmgoConsumption };
+    const needsMultiPort = needsMultiPortBunkering(
+      voyageConsumption,
+      vp.capacity,
+      vp.initial_rob,
+      3, // safety margin days
+      voyageDurationDays
+    );
+    
+    if (needsMultiPort) {
+      console.log(`⚠️ [BUNKER-WORKFLOW] Multi-port bunkering may be required!`);
+      console.log(`   Voyage consumption: ${(voyageVlsfoConsumption + voyageLsmgoConsumption).toFixed(0)} MT total`);
+      console.log(`   Vessel capacity: ${(vp.capacity.VLSFO + vp.capacity.LSMGO).toFixed(0)} MT total`);
+    }
+    
+    // Calculate shortfall (how much more fuel is needed)
+    const vlsfoShortfall = Math.max(0, voyageVlsfoConsumption - vp.initial_rob.VLSFO);
+    const lsmgoShortfall = Math.max(0, voyageLsmgoConsumption - vp.initial_rob.LSMGO);
+    
+    // Apply safety margin
+    const vlsfoWithSafety = vlsfoShortfall * FUEL_SAFETY_MARGIN;
+    const lsmgoWithSafety = lsmgoShortfall * FUEL_SAFETY_MARGIN;
+    
+    // Apply tank capacity constraint (don't exceed available space)
+    const vlsfoAvailableCapacity = vp.capacity.VLSFO - vp.initial_rob.VLSFO;
+    const lsmgoAvailableCapacity = vp.capacity.LSMGO - vp.initial_rob.LSMGO;
+    
+    vlsfoRequired = Math.min(vlsfoWithSafety, vlsfoAvailableCapacity);
+    lsmgoRequired = Math.min(lsmgoWithSafety, lsmgoAvailableCapacity);
+    
+    // Add ECA MGO requirement if applicable
+    if (ecaMgoRequired > 0 && lsmgoRequired < ecaMgoRequired) {
+      lsmgoRequired = Math.min(ecaMgoRequired, lsmgoAvailableCapacity);
+    }
+    
+    // Override with user-specified quantities if provided
+    if (userSpecifiedVlsfo > 0) {
+      vlsfoRequired = Math.min(userSpecifiedVlsfo, vlsfoAvailableCapacity);
+      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified VLSFO quantity: ${vlsfoRequired.toFixed(0)} MT`);
+    }
+    if (userSpecifiedMgo > 0) {
+      lsmgoRequired = Math.min(userSpecifiedMgo, lsmgoAvailableCapacity);
+      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified MGO quantity: ${lsmgoRequired.toFixed(0)} MT`);
+    }
+    
+    console.log(`📊 [BUNKER-WORKFLOW] Bunker requirements calculated:`);
+    console.log(`   - VLSFO needed: ${vlsfoRequired.toFixed(0)} MT (shortfall: ${vlsfoShortfall.toFixed(0)}, capacity: ${vlsfoAvailableCapacity.toFixed(0)})`);
+    console.log(`   - LSMGO needed: ${lsmgoRequired.toFixed(0)} MT (shortfall: ${lsmgoShortfall.toFixed(0)}, capacity: ${lsmgoAvailableCapacity.toFixed(0)})`);
+    
+    // Minimum viable bunker (at least enough for 3 days safety margin)
+    const minVlsfoSafety = consumptionVlsfo * 3;
+    const minLsmgoSafety = consumptionLsmgo * 3;
+    
+    if (vlsfoRequired < minVlsfoSafety && vlsfoShortfall > 0) {
+      vlsfoRequired = Math.min(minVlsfoSafety, vlsfoAvailableCapacity);
+      console.log(`   ℹ️ Adjusted VLSFO to minimum safety margin: ${vlsfoRequired.toFixed(0)} MT`);
+    }
+    if (lsmgoRequired < minLsmgoSafety && lsmgoShortfall > 0) {
+      lsmgoRequired = Math.min(minLsmgoSafety, lsmgoAvailableCapacity);
+      console.log(`   ℹ️ Adjusted LSMGO to minimum safety margin: ${lsmgoRequired.toFixed(0)} MT`);
+    }
+
+    // ========================================================================
     // STEP 1: Find Bunker Ports
     // ========================================================================
     
@@ -2200,7 +2332,7 @@ export async function bunkerAgentNode(
           ? [...fuelRequirements.fuel_types]
           : ['VLSFO'];
         
-        if (requiresMGO && mgoRequired > 0 && !fuelTypesForPorts.includes('MGO')) {
+        if (requiresMGO && ecaMgoRequired > 0 && !fuelTypesForPorts.includes('MGO')) {
           fuelTypesForPorts.push('MGO');
           console.log(`🔍 [BUNKER-WORKFLOW] Adding MGO to port finder fuel types for ECA compliance`);
         }
@@ -2324,7 +2456,7 @@ export async function bunkerAgentNode(
           ? [...fuelRequirements.fuel_types]
           : ['VLSFO'];
         
-        if (requiresMGO && mgoRequired > 0 && !fuelTypes.includes('MGO')) {
+        if (requiresMGO && ecaMgoRequired > 0 && !fuelTypes.includes('MGO')) {
           fuelTypes.push('MGO');
           console.log(`💰 [BUNKER-WORKFLOW] Adding MGO to fuel types for ECA compliance`);
         }
@@ -2364,15 +2496,16 @@ export async function bunkerAgentNode(
       console.log('📊 [BUNKER-WORKFLOW] Analyzing bunker options...');
       
       try {
-        // Use vlsfoRequired/mgoRequiredForECA from outer scope (adjusted for ECA)
+        // Use vlsfoRequired/lsmgoRequired from outer scope (calculated from voyage consumption)
         // Match manual implementation parameter structure exactly
         const analyzerInput = {
           bunker_ports: bunkerPorts.ports,
           port_prices: portPrices,
-          fuel_quantity_mt: vlsfoRequired,  // Use adjusted VLSFO quantity
-          fuel_type: primaryFuelType,
+          fuel_quantity_mt: vlsfoRequired,  // Use calculated VLSFO requirement
+          fuel_type: 'VLSFO',
+          mgo_quantity_mt: lsmgoRequired,   // Use calculated LSMGO requirement
           vessel_speed_knots: 14,                  // Default speed (route_data doesn't store speed)
-          vessel_consumption_mt_per_day: 35,       // Default consumption rate
+          vessel_consumption_mt_per_day: consumptionVlsfo,       // Use actual vessel consumption rate
           port_weather: portWeather,               // Optional weather data
         };
         
@@ -2380,8 +2513,8 @@ export async function bunkerAgentNode(
           ports_count: bunkerPorts.ports.length,
           prices_count: Array.isArray(portPrices) ? portPrices.length : 0,
           fuel_quantity_mt: vlsfoRequired,
-          fuel_type: primaryFuelType,
-          mgo_required_mt: mgoRequiredForECA,
+          fuel_type: 'VLSFO',
+          mgo_required_mt: lsmgoRequired,
           has_weather_data: !!portWeather
         });
         
@@ -2443,10 +2576,16 @@ export async function bunkerAgentNode(
     const foundForRob = (listForPort as any[])?.find((p: any) => (p?.port?.port_code ?? p?.port_code) === bestRec?.port_code);
     const portForRob = foundForRob ? (foundForRob.port ?? foundForRob) : null;
 
+    // Store ROB with bunker separately (P0-5)
+    let robWithBunkerResult: ROBTrackingOutput | null = null;
+    
     if (bestRec && portForRob && typeof (portForRob as any).name === 'string' && state.route_data && vesselProfile) {
       try {
-        const quantityForRob = { VLSFO: vlsfoRequired, LSMGO: mgoRequiredForECA };
+        const quantityForRob = { VLSFO: vlsfoRequired, LSMGO: lsmgoRequired };
         console.log('🔧 [BUNKER-WORKFLOW] Calculating ROB with recommended bunker...');
+        console.log(`   Port: ${bestRec.port_name}`);
+        console.log(`   VLSFO: ${vlsfoRequired.toFixed(0)} MT`);
+        console.log(`   LSMGO: ${lsmgoRequired.toFixed(0)} MT`);
         const { rob: robWithBunker } = calculateROBForVoyage(
           state.route_data,
           state.weather_consumption ?? null,
@@ -2458,10 +2597,133 @@ export async function bunkerAgentNode(
         console.log(`📊 [BUNKER-WORKFLOW] Voyage WITH bunker at ${bestRec.port_name}:`);
         console.log(`  - Final ROB: ${robWithBunker.final_rob.VLSFO} MT VLSFO, ${robWithBunker.final_rob.LSMGO} MT LSMGO`);
         console.log(`  - Safety: ${robWithBunker.overall_safe ? '✅ Safe' : '❌ Unsafe'}`);
+        robWithBunkerResult = robWithBunker;
         robTrackingResult = robWithBunker;
         robSafetyStatus = formatROBSafetyStatus(robWithBunker, consumptionVlsfo, consumptionLsmgo);
       } catch (e: any) {
         console.warn(`⚠️ [BUNKER-WORKFLOW] ROB-with-bunker skipped: ${e?.message || e}`);
+      }
+    }
+    
+    // ========================================================================
+    // BUILD ENHANCED ROB TRACKING STRUCTURE (P0-5)
+    // ========================================================================
+    // This structure provides clear comparison between with/without bunker scenarios
+    // for prominent display in the response
+    //
+    const enhancedRobTracking: any = robTrackingResult ? {
+      // Current vessel state
+      vessel_name: vp.vessel_name,
+      current_rob: vp.initial_rob,
+      
+      // Voyage consumption requirements
+      voyage_consumption: {
+        VLSFO: voyageVlsfoConsumption,
+        LSMGO: voyageLsmgoConsumption,
+        total_days: voyageDurationDays,
+        distance_nm: state.route_data?.distance_nm || 0,
+      },
+      
+      // Scenario 1: WITHOUT bunkering
+      without_bunker: robWithoutBunker ? {
+        final_rob: robWithoutBunker.final_rob,
+        minimum_rob: robWithoutBunker.minimum_rob_reached,
+        minimum_location: robWithoutBunker.minimum_rob_location,
+        overall_safe: robWithoutBunker.overall_safe,
+        waypoints: robWithoutBunker.waypoints,
+        // Calculate when fuel runs out (if unsafe)
+        days_until_empty: !robWithoutBunker.overall_safe 
+          ? Math.max(0, vp.initial_rob.VLSFO / consumptionVlsfo)
+          : null,
+        critical_fuel: robWithoutBunker.final_rob.VLSFO < 0 ? 'VLSFO' : 
+                       robWithoutBunker.final_rob.LSMGO < 0 ? 'LSMGO' : null,
+      } : null,
+      
+      // Scenario 2: WITH recommended bunker
+      with_bunker: robWithBunkerResult ? {
+        final_rob: robWithBunkerResult.final_rob,
+        minimum_rob: robWithBunkerResult.minimum_rob_reached,
+        minimum_location: robWithBunkerResult.minimum_rob_location,
+        overall_safe: robWithBunkerResult.overall_safe,
+        waypoints: robWithBunkerResult.waypoints,
+        bunker_port: bestRec?.port_name || null,
+        bunker_quantity: {
+          VLSFO: vlsfoRequired,
+          LSMGO: lsmgoRequired,
+        },
+      } : null,
+      
+      // Overall safety status (based on with-bunker scenario)
+      overall_safe: robWithBunkerResult?.overall_safe ?? robWithoutBunker?.overall_safe ?? false,
+      
+      // Flag if recommended bunker is still insufficient
+      with_bunker_still_unsafe: robWithBunkerResult ? !robWithBunkerResult.overall_safe : false,
+      
+      // Safety margins
+      safety_margins: {
+        recommended_minimum_days: 3,
+        recommended_minimum_rob: {
+          VLSFO: consumptionVlsfo * 3,
+          LSMGO: consumptionLsmgo * 3,
+        },
+      },
+    } : null;
+    
+    console.log('📊 [BUNKER-WORKFLOW] Enhanced ROB tracking (P0-5):');
+    if (enhancedRobTracking) {
+      console.log('   Without bunker:', {
+        final: enhancedRobTracking.without_bunker?.final_rob,
+        safe: enhancedRobTracking.without_bunker?.overall_safe,
+      });
+      console.log('   With bunker:', {
+        final: enhancedRobTracking.with_bunker?.final_rob,
+        safe: enhancedRobTracking.with_bunker?.overall_safe,
+        port: enhancedRobTracking.with_bunker?.bunker_port,
+      });
+    }
+    
+    // ========================================================================
+    // MULTI-PORT BUNKER PLANNING (when single stop is insufficient)
+    // ========================================================================
+    let multiBunkerPlan: MultiBunkerAnalysis | null = null;
+    
+    // Check if multi-port is needed (capacity constraint OR single-port still unsafe)
+    const withBunkerStillUnsafe = enhancedRobTracking?.with_bunker_still_unsafe ?? false;
+    
+    if ((needsMultiPort || withBunkerStillUnsafe) && bunkerPorts?.ports && priceData && state.route_data) {
+      console.log('🔀 [BUNKER-WORKFLOW] Running multi-port bunker planning...');
+      if (withBunkerStillUnsafe) {
+        console.log('   Reason: Single-stop bunker leaves voyage still unsafe');
+      }
+      
+      try {
+        // Pass forceRequired=true when voyage is still unsafe after single-stop bunker
+        // This ensures multi-port planning runs even if capacity check alone passes
+        multiBunkerPlan = planMultiPortBunker({
+          route_data: state.route_data,
+          vessel_profile: vp,  // Use full VesselProfile (vp), not VesselROBProfile
+          voyage_consumption: voyageConsumption,
+          candidate_ports: bunkerPorts.ports,
+          port_prices: priceData,
+          weather_factor: state.weather_consumption?.consumption_increase_percent 
+            ? 1 + (state.weather_consumption.consumption_increase_percent / 100) 
+            : 1.0,
+          safety_margin_days: 3,
+        }, withBunkerStillUnsafe /* forceRequired */);
+        
+        if (multiBunkerPlan.required && multiBunkerPlan.best_plan) {
+          console.log('✅ [BUNKER-WORKFLOW] Multi-port plan generated:');
+          console.log(`   Best option: ${multiBunkerPlan.best_plan.stops.map(s => s.port_name).join(' → ')}`);
+          console.log(`   Total cost: $${multiBunkerPlan.best_plan.total_cost_usd.toLocaleString()}`);
+          console.log(`   Plans available: ${multiBunkerPlan.plans.length}`);
+        } else if (multiBunkerPlan.required && !multiBunkerPlan.best_plan) {
+          console.log(`⚠️ [BUNKER-WORKFLOW] Multi-port required but no valid plans found: ${multiBunkerPlan.error_message}`);
+        } else {
+          console.log('ℹ️ [BUNKER-WORKFLOW] Multi-port not required after detailed analysis');
+        }
+      } catch (err: any) {
+        console.error('❌ [BUNKER-WORKFLOW] Multi-port planning error:', err.message);
+        // Don't fail the whole workflow - multi-port is an enhancement
       }
     }
     
@@ -2482,6 +2744,12 @@ export async function bunkerAgentNode(
       rob_minimum_days: robSafetyStatus?.minimum_rob_days,
       eca_percentage: ecaSummaryResult?.eca_percentage,
       vessel_name: vp.vessel_name,
+      // Multi-port info
+      multi_port_required: multiBunkerPlan?.required ?? false,
+      multi_port_plans_count: multiBunkerPlan?.plans?.length ?? 0,
+      multi_port_best_option: multiBunkerPlan?.best_plan 
+        ? multiBunkerPlan.best_plan.stops.map(s => s.port_name).join(' → ')
+        : null,
     };
 
     // Add warning if vessel not found
@@ -2489,12 +2757,18 @@ export async function bunkerAgentNode(
       messageContent.warning = vesselNotFoundWarning;
     }
     
+    // Add warning if multi-port required but no plans found
+    if (multiBunkerPlan?.required && !multiBunkerPlan.best_plan) {
+      messageContent.multi_port_warning = multiBunkerPlan.error_message || 'Multi-port bunkering required but no valid plans found';
+    }
+    
     return {
       bunker_ports: portsArray,              // ✅ FIXED: Array of ports, not full object
       port_weather_status: portWeather,       // ✅ Already correct (array)
       port_prices: priceData,                 // ✅ Already correct (PriceFetcherOutput)
       bunker_analysis: analysisData,          // ✅ Already correct (BunkerAnalysis)
-      rob_tracking: robTrackingResult ?? null,
+      multi_bunker_plan: multiBunkerPlan,     // Multi-port bunker plan (when single stop insufficient)
+      rob_tracking: enhancedRobTracking ?? robTrackingResult ?? null,  // P0-5: Enhanced ROB structure
       rob_waypoints: robTrackingResult?.waypoints ?? null,
       rob_safety_status: robSafetyStatus ?? null,
       eca_consumption: ecaConsumptionResult ?? null,
@@ -3018,7 +3292,7 @@ Provide a clear summary of the route information.`;
 }
 
 export async function finalizeNode(state: MultiAgentState) {
-  console.log('📝 [FINALIZE] Node: Synthesizing final recommendation...');
+  console.log('📝 [FINALIZE] Node: Starting finalization...');
   
   // === DEBUG: State inspection ===
   console.log('🔍 [FINALIZE-DEBUG] State inspection:');
@@ -3029,18 +3303,45 @@ export async function finalizeNode(state: MultiAgentState) {
   console.log(`  - eca_summary: ${state.eca_summary ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
   console.log(`  - vessel_profile: ${state.vessel_profile ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
   console.log(`  - bunker_analysis: ${state.bunker_analysis ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
+  console.log(`  - agent_status: ${state.agent_status ? `✅ EXISTS (${Object.keys(state.agent_status).length} agents)` : '❌ NULL/UNDEFINED'}`);
   
   if (state.rob_tracking) {
     console.log('📊 [FINALIZE-DEBUG] ROB Tracking Details:');
-    console.log(`  - Final ROB: ${state.rob_tracking.final_rob.VLSFO} MT VLSFO, ${state.rob_tracking.final_rob.LSMGO} MT LSMGO`);
-    console.log(`  - Overall Safe: ${state.rob_tracking.overall_safe}`);
-    console.log(`  - Waypoints: ${state.rob_tracking.waypoints.length}`);
+    
+    // Handle both old and new (P0-5 enhanced) ROB tracking structures
+    const robTracking = state.rob_tracking as any;
+    
+    // Check for new P0-5 enhanced structure
+    if (robTracking.with_bunker || robTracking.without_bunker) {
+      // New enhanced structure
+      const withBunker = robTracking.with_bunker;
+      const withoutBunker = robTracking.without_bunker;
+      
+      if (withoutBunker?.final_rob) {
+        console.log(`  - Without Bunker Final ROB: ${withoutBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withoutBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
+        console.log(`  - Without Bunker Safe: ${withoutBunker.overall_safe}`);
+      }
+      if (withBunker?.final_rob) {
+        console.log(`  - With Bunker Final ROB: ${withBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
+        console.log(`  - With Bunker Safe: ${withBunker.overall_safe}`);
+      }
+      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
+      console.log(`  - Still Unsafe After Bunker: ${robTracking.with_bunker_still_unsafe}`);
+    } else if (robTracking.final_rob) {
+      // Old structure (backwards compatibility)
+      console.log(`  - Final ROB: ${robTracking.final_rob.VLSFO} MT VLSFO, ${robTracking.final_rob.LSMGO} MT LSMGO`);
+      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
+      console.log(`  - Waypoints: ${robTracking.waypoints?.length || 0}`);
+    } else {
+      console.log(`  - Structure: Unknown (keys: ${Object.keys(robTracking).join(', ')})`);
+    }
   }
-  
+
   if (state.rob_waypoints) {
     console.log('📍 [FINALIZE-DEBUG] ROB Waypoints:');
     state.rob_waypoints.forEach((wp, idx) => {
-      console.log(`  ${idx + 1}. ${wp.location}: ${wp.rob_after_action.VLSFO.toFixed(1)} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
+      const vlsfo = wp.rob_after_action?.VLSFO;
+      console.log(`  ${idx + 1}. ${wp.location}: ${vlsfo !== undefined ? vlsfo.toFixed(1) : 'N/A'} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
     });
   }
   // === END DEBUG ===
@@ -3048,21 +3349,73 @@ export async function finalizeNode(state: MultiAgentState) {
   const agentStartTime = Date.now();
 
   try {
-    // STEP 1: Generate current/legacy text output (ALWAYS)
-    // This ensures backwards compatibility
-    const legacyTextOutput = await generateLegacyTextOutput(state);
+    // ========================================================================
+    // PHASE 1: CROSS-AGENT SYNTHESIS
+    // ========================================================================
     
-    // STEP 2: Generate new formatted response (OPTIONAL)
-    let formattedResponse: FormattedResponse | null = null;
+    console.log('🧠 [FINALIZE] Phase 1: Cross-agent synthesis');
+    
+    // Create mutable state copy for adding synthesis insights
+    let updatedState = { ...state };
+    
+    // Try to generate synthesis
+    try {
+      const synthesisResult = await generateSynthesis(state);
+      
+      if (synthesisResult.success && synthesisResult.synthesized_insights) {
+        console.log('✅ [FINALIZE] Synthesis successful');
+        console.log(`   Cost: $${synthesisResult.cost_usd?.toFixed(4) || '0.0000'}`);
+        console.log(`   Duration: ${synthesisResult.duration_ms}ms`);
+        
+        // Add synthesis to state
+        updatedState.synthesized_insights = synthesisResult.synthesized_insights;
+        
+      } else {
+        console.log(`⏭️ [FINALIZE] Synthesis skipped: ${synthesisResult.error || 'Unknown reason'}`);
+      }
+      
+    } catch (synthesisError: unknown) {
+      const message = synthesisError instanceof Error ? synthesisError.message : String(synthesisError);
+      console.error('❌ [FINALIZE] Synthesis error (non-fatal):', message);
+      // Continue without synthesis - graceful degradation
+    }
+    
+    // ========================================================================
+    // PHASE 2: TEMPLATE FORMATTING
+    // ========================================================================
+    
+    console.log('🎨 [FINALIZE] Phase 2: Template formatting');
+    
+    // Generate legacy text output (backwards compatible)
+    const legacyTextOutput = await generateLegacyTextOutput(updatedState);
+    
+    // Generate new formatted response (OPTIONAL)
+    let formattedResponse: TemplateFormattedResponse | null = null;
     
     if (isFeatureEnabled('USE_RESPONSE_FORMATTER')) {
-      console.log('🎛️ [FINALIZE] Response formatter enabled, generating structured output...');
+      console.log('🎛️ [FINALIZE] Template-aware formatter enabled, generating structured output...');
       
       try {
-        formattedResponse = formatResponse(state);
-        console.log('✅ [FINALIZE] Structured response generated successfully');
-      } catch (error: any) {
-        console.error('❌ [FINALIZE] Error generating structured response:', error.message);
+        // Use template-aware formatter with YAML templates and business rules
+        // Pass updatedState so formatter has access to synthesis data
+        formattedResponse = formatResponseWithTemplate(updatedState);
+        console.log('✅ [FINALIZE] Template response generated successfully');
+        
+        // Log template metadata
+        if (formattedResponse.template_metadata) {
+          console.log(`   Template: ${formattedResponse.template_metadata.template_name} v${formattedResponse.template_metadata.version}`);
+          console.log(`   Sections: ${formattedResponse.template_metadata.sections_count}`);
+          console.log(`   Rules Applied: ${formattedResponse.template_metadata.rules_applied}`);
+        }
+        
+        // Check if synthesis data was used
+        if (updatedState.synthesized_insights) {
+          console.log('   ✅ Synthesis insights included in response');
+        }
+        
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('❌ [FINALIZE] Template formatter error:', message);
         console.error('   Falling back to legacy text output only');
         // Continue with legacyTextOutput - no failure
       }
@@ -3070,8 +3423,10 @@ export async function finalizeNode(state: MultiAgentState) {
       console.log('ℹ️ [FINALIZE] Response formatter disabled, using legacy text only');
     }
     
-    // STEP 3: Return BOTH formats
-    // Frontend can choose which to use
+    // ========================================================================
+    // PHASE 3: RETURN RESULTS
+    // ========================================================================
+    
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
     recordAgentExecution('finalize', agentDuration, true);
@@ -3081,6 +3436,7 @@ export async function finalizeNode(state: MultiAgentState) {
     return {
       final_recommendation: legacyTextOutput,  // ALWAYS present (backwards compatible)
       formatted_response: formattedResponse,   // OPTIONAL (may be null)
+      synthesized_insights: updatedState.synthesized_insights, // Include synthesis in output
       messages: [
         new AIMessage({
           content: legacyTextOutput  // Use legacy for message
@@ -3119,7 +3475,8 @@ AgentRegistry.registerAgent({
         'No origin or destination specified'
       ],
       prerequisites: ['origin_port', 'destination_port'],
-      produces: ['route_data']
+      produces: ['route_data'],
+      schema: zodSchemaToJsonSchema(routeCalculatorInputSchema)
     },
     {
       tool_name: 'calculate_weather_timeline',
@@ -3135,7 +3492,8 @@ AgentRegistry.registerAgent({
         'Query does not need weather analysis'
       ],
       prerequisites: ['route_data', 'vessel_speed'],
-      produces: ['vessel_timeline']
+      produces: ['vessel_timeline'],
+      schema: zodSchemaToJsonSchema(weatherTimelineInputSchema)
     }
   ],
   prerequisites: ['origin_port', 'destination_port'],
@@ -3161,7 +3519,8 @@ AgentRegistry.registerAgent({
         'Query does not involve maritime route planning'
       ],
       prerequisites: ['route_data'],
-      produces: ['compliance_data.eca_zones']
+      produces: ['compliance_data.eca_zones'],
+      schema: zodSchemaToJsonSchema(ecaZoneValidatorInputSchema)
     }
   ],
   prerequisites: ['route_data'],
@@ -3195,7 +3554,8 @@ AgentRegistry.registerAgent({
         'Query does not require weather analysis'
       ],
       prerequisites: ['vessel_timeline'],
-      produces: ['weather_forecast']
+      produces: ['weather_forecast'],
+      schema: zodSchemaToJsonSchema(marineWeatherInputSchema)
     },
     {
       tool_name: 'calculate_weather_consumption',
@@ -3211,7 +3571,8 @@ AgentRegistry.registerAgent({
         'Query is only about route or basic weather'
       ],
       prerequisites: ['weather_forecast', 'vessel_consumption'],
-      produces: ['weather_consumption']
+      produces: ['weather_consumption'],
+      schema: zodSchemaToJsonSchema(weatherConsumptionInputSchema)
     },
     {
       tool_name: 'check_bunker_port_weather',
@@ -3225,7 +3586,8 @@ AgentRegistry.registerAgent({
         'Query does not involve bunker operations'
       ],
       prerequisites: ['bunker_ports'],
-      produces: ['port_weather_status']
+      produces: ['port_weather_status'],
+      schema: zodSchemaToJsonSchema(portWeatherInputSchema)
     }
   ],
   prerequisites: ['vessel_timeline'],

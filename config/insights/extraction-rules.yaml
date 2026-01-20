@@ -1,0 +1,104 @@
+# Insight Extraction Rules
+# Auto-identify and surface critical insights from agent data
+#
+# Rule Structure:
+#   id: Unique identifier
+#   category: Category for grouping/filtering
+#   priority: critical | high | medium | low
+#   condition: Expression to evaluate against state
+#   template: Message template with {placeholders}
+
+insights:
+  # ===========================================================================
+  # COST OPTIMIZATION INSIGHTS
+  # ===========================================================================
+  
+  - id: "significant_cost_savings"
+    category: "cost_optimization"
+    priority: "high"
+    condition: "bunker_analysis.max_savings_usd > 5000"
+    template: "💰 **Savings Opportunity:** Choosing optimal port saves ${savings:,.0f} vs worst option"
+  
+  - id: "low_deviation_cost"
+    category: "cost_optimization"
+    priority: "medium"
+    condition: "bunker_analysis.best_option.deviation_cost_usd < 1000"
+    template: "✅ **Minimal Deviation:** Route deviation cost only ${deviation:,.0f}"
+
+  # ===========================================================================
+  # SAFETY CRITICAL INSIGHTS
+  # ===========================================================================
+  
+  - id: "negative_rob"
+    category: "safety_critical"
+    priority: "critical"
+    condition: "rob_tracking.minimum_rob_mt < 0"
+    template: "🚨 **CRITICAL:** Vessel will run out of fuel during voyage without bunkering"
+  
+  - id: "very_low_safety_margin"
+    category: "safety_critical"
+    priority: "critical"
+    condition: "rob_safety_status.minimum_rob_days < 3"
+    template: "🚨 **CRITICAL:** Arrival margin only {margin:.1f} days (minimum 3 days required)"
+  
+  - id: "low_safety_margin"
+    category: "safety_warning"
+    priority: "high"
+    condition: "rob_safety_status.minimum_rob_days >= 3 && rob_safety_status.minimum_rob_days < 5"
+    template: "⚠️ **Low Safety Margin:** Arrival margin is {margin:.1f} days (recommended: 5+ days)"
+  
+  - id: "rob_violations"
+    category: "safety_warning"
+    priority: "high"
+    condition: "rob_safety_status.violations.length > 0"
+    template: "⚠️ **ROB Warning:** {violation_count} safety violations detected along route"
+
+  # ===========================================================================
+  # COMPLIANCE INSIGHTS
+  # ===========================================================================
+  
+  - id: "eca_zones_detected"
+    category: "compliance_info"
+    priority: "medium"
+    condition: "compliance_data.eca_zones.has_eca_zones"
+    template: "⚖️ **ECA Compliance:** Route crosses {zone_count} ECA zones requiring {mgo_qty:.0f} MT MGO"
+  
+  - id: "multiple_fuel_switches"
+    category: "compliance_warning"
+    priority: "medium"
+    condition: "compliance_data.eca_zones.fuel_requirements.switching_points.length > 2"
+    template: "🔄 **Fuel Switching:** {switch_count} fuel type changes required during voyage"
+
+  # ===========================================================================
+  # OPERATIONAL INSIGHTS
+  # ===========================================================================
+  
+  - id: "departure_port_optimal"
+    category: "operational"
+    priority: "low"
+    condition: "bunker_analysis.best_option.distance_from_route_nm < 5"
+    template: "✅ **Optimal Location:** Bunkering port on-route with minimal deviation"
+  
+  - id: "weather_consumption_impact"
+    category: "operational_warning"
+    priority: "medium"
+    condition: "weather_consumption.additional_fuel_needed_mt > 10"
+    template: "🌊 **Weather Impact:** Adverse conditions add {extra_fuel:.0f} MT to fuel consumption"
+  
+  - id: "port_weather_unsafe"
+    category: "operational_warning"
+    priority: "high"
+    condition: "port_weather_status.unsafe_count > 0"
+    template: "⚠️ **Port Weather:** {unsafe_count} port(s) have unsafe bunkering conditions"
+  
+  - id: "long_voyage"
+    category: "operational_info"
+    priority: "low"
+    condition: "route_data.estimated_hours > 336"
+    template: "📍 **Long Voyage:** {days:.0f} day journey - fuel planning critical"
+  
+  - id: "multiple_port_options"
+    category: "operational_info"
+    priority: "low"
+    condition: "bunker_ports.length > 5"
+    template: "📊 **Options Available:** {port_count} bunker ports analyzed along route"
