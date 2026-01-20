@@ -1,0 +1,206 @@
+template:
+  query_type: "bunker-planning"
+  name: "Map-First Progressive Disclosure v4"
+  version: "4.0.0"
+  description: "Query-type-aware response with filtered details"
+  
+  sections:
+    # =========================================================
+    # TIER 0: ROUTE MAP (Always visible when route exists)
+    # =========================================================
+    
+    - id: "route_map"
+      tier: 0
+      visibility: "always"
+      priority: 0
+      condition: "route_data"
+      
+      content_source:
+        component: "MapViewer"
+        props:
+          route: "route_data"
+          originPort: "origin_port"
+          destinationPort: "destination_port"
+          bunkerPorts: "bunker_ports"
+          ecaZones: "compliance_data.eca_zones"
+      
+      notes: |
+        Map is PRIMARY interface for geographic context.
+        Always visible, never collapsed.
+
+    # =========================================================
+    # TIER 1: PRIMARY RESPONSE (Query-type specific)
+    # =========================================================
+    
+    - id: "informational_response"
+      tier: 1
+      title: "Answer"
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'informational'"
+      max_words: 150
+      
+      content_source:
+        state_path: "synthesized_insights.response.informational"
+        render_as: "informational_card"
+    
+    - id: "executive_decision"
+      tier: 1
+      title: "Recommendation"
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'decision-required'"
+      max_words: 100
+      
+      content_source:
+        state_path: "synthesized_insights.response.decision"
+        render_as: "decision_card"
+    
+    - id: "validation_result"
+      tier: 1
+      title: "Validation Result"
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'validation'"
+      max_words: 150
+      
+      content_source:
+        state_path: "synthesized_insights.response.validation"
+        render_as: "validation_card"
+    
+    - id: "comparison_result"
+      tier: 1
+      title: "Comparison"
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'comparison'"
+      max_words: 150
+      
+      content_source:
+        state_path: "synthesized_insights.response.comparison"
+        render_as: "comparison_card"
+    
+    - id: "basic_recommendation_fallback"
+      tier: 1
+      title: "Recommendation"
+      visibility: "conditional"
+      priority: 99
+      condition: "!synthesized_insights && bunker_analysis"
+      
+      content_source:
+        state_path: "bunker_analysis.best_option"
+        render_as: "basic_recommendation"
+
+    # =========================================================
+    # TIER 2: STRATEGIC PRIORITIES
+    # =========================================================
+    
+    - id: "strategic_priorities"
+      tier: 2
+      title: "Action Items"
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.strategic_priorities.length > 0"
+      max_items: 3
+      
+      content_source:
+        state_path: "synthesized_insights.strategic_priorities"
+        render_as: "priority_cards"
+
+    # =========================================================
+    # TIER 2: CRITICAL RISKS
+    # =========================================================
+    
+    - id: "critical_risks"
+      tier: 2
+      title: "Critical Risks"
+      visibility: "conditional"
+      priority: 2
+      condition: "synthesized_insights.critical_risks.length > 0"
+      
+      content_source:
+        state_path: "synthesized_insights.critical_risks"
+        render_as: "risk_alert_cards"
+
+    # =========================================================
+    # TIER 3: EXPANDABLE DETAILS (Conditional on synthesis flags)
+    # =========================================================
+    
+    - id: "multi_port_breakdown"
+      tier: 3
+      title: "Multi-Port Bunkering Plan"
+      visibility: "conditional"
+      collapsed: true
+      priority: 1
+      condition: "synthesized_insights.details_to_surface.show_multi_port_analysis && multi_bunker_plan"
+      
+      content_source:
+        state_path: "multi_bunker_plan"
+        render_as: "port_breakdown_table"
+
+    - id: "alternative_options"
+      tier: 3
+      title: "Alternative Ports"
+      visibility: "conditional"
+      collapsed: true
+      priority: 2
+      condition: "synthesized_insights.details_to_surface.show_alternatives && bunker_analysis.alternatives.length > 0"
+      max_items: 2
+      
+      content_source:
+        state_path: "bunker_analysis.alternatives"
+        render_as: "alternative_cards"
+
+    - id: "rob_waypoint_tracking"
+      tier: 3
+      title: "Fuel Tracking by Waypoint"
+      visibility: "conditional"
+      collapsed: true
+      priority: 3
+      condition: "synthesized_insights.details_to_surface.show_rob_waypoints && rob_waypoints"
+      
+      content_source:
+        state_path: "rob_waypoints"
+        render_as: "rob_timeline_table"
+
+    - id: "weather_impact_details"
+      tier: 3
+      title: "Weather Impact Analysis"
+      visibility: "conditional"
+      collapsed: true
+      priority: 4
+      condition: "synthesized_insights.details_to_surface.show_weather_details && weather_forecast"
+      
+      content_source:
+        state_path: "weather_forecast"
+        render_as: "weather_summary"
+
+    - id: "eca_compliance_details"
+      tier: 3
+      title: "ECA Compliance Details"
+      visibility: "conditional"
+      collapsed: true
+      priority: 5
+      condition: "synthesized_insights.details_to_surface.show_eca_details && compliance_data.eca_zones"
+      
+      content_source:
+        state_path: "compliance_data.eca_zones"
+        render_as: "eca_switching_timeline"
+
+  # ===========================================================================
+  # BUSINESS RULES
+  # ===========================================================================
+  
+  business_rules:
+    - name: "always_show_map_for_routes"
+      description: "Map is non-collapsible when route exists"
+      condition: "route_data"
+      action:
+        render_section: "route_map"
+        allow_collapse: false
+    
+    - name: "respect_synthesis_filtering"
+      description: "Synthesis filtering takes precedence"
+      condition: "synthesized_insights.details_to_surface"
+      action:
+        use_synthesis_flags: true

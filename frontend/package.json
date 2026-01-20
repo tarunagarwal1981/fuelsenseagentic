@@ -11,7 +11,13 @@
     "test:registry": "tsx lib/multi-agent/__tests__/registry.test.ts",
     "test:planning": "tsx lib/multi-agent/__tests__/planning.test.ts",
     "test:query": "tsx lib/multi-agent/__tests__/query-test.ts",
-    "test:baseline": "tsx tests/integration/baseline-queries.test.ts"
+    "test:baseline": "tsx tests/integration/baseline-queries.test.ts",
+    "test:synthesis": "tsx lib/multi-agent/synthesis/__tests__/synthesis-v3.test.ts",
+    "test:template-formatter": "tsx lib/formatters/__tests__/template-formatter-v4.test.ts",
+    "test:components": "tsx components/cards/__tests__/cards.test.ts",
+    "test:synthesis-queries": "tsx tests/synthesis-test-queries.ts",
+    "test:all": "npm run type-check && npm run test:synthesis && npm run test:template-formatter && npm run test:components",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -19,6 +25,7 @@
     "@langchain/core": "^1.1.7",
     "@langchain/langgraph": "^1.0.7",
     "@langchain/openai": "^1.0.0",
+    "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
@@ -44,6 +51,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
     "@types/react": "^19",

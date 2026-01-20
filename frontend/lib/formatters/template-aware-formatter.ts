@@ -43,6 +43,7 @@ export interface TemplateFormattedResponse extends FormattedResponse {
   
   // Organized sections by tier
   sections_by_tier?: {
+    tier_0_map: RenderedSection[];  // Always visible map/component
     tier_1_visible: RenderedSection[];
     tier_2_expandable: RenderedSection[];
     tier_3_technical: RenderedSection[];
@@ -55,7 +56,7 @@ export interface TemplateFormattedResponse extends FormattedResponse {
 export interface RenderedSection {
   id: string;
   title: string;
-  tier: 1 | 2 | 3;
+  tier: 0 | 1 | 2 | 3;  // 0 = map (always visible), 1 = primary, 2 = priorities/risks, 3 = expandable details
   priority: number;
   visible: boolean;
   collapsed: boolean;
@@ -113,7 +114,7 @@ export function formatResponseWithTemplate(
   
   // Step 5: Render sections by tier
   const sectionsByTier = renderSectionsByTier(state, workingTemplate);
-  console.log(`📊 [TEMPLATE-FORMATTER] Rendered: T1=${sectionsByTier.tier_1_visible.length}, T2=${sectionsByTier.tier_2_expandable.length}, T3=${sectionsByTier.tier_3_technical.length}`);
+  console.log(`📊 [TEMPLATE-FORMATTER] Rendered: T0=${sectionsByTier.tier_0_map.length}, T1=${sectionsByTier.tier_1_visible.length}, T2=${sectionsByTier.tier_2_expandable.length}, T3=${sectionsByTier.tier_3_technical.length}`);
   
   // Step 6: Build text output from sections
   const textOutput = buildTextFromSections(sectionsByTier);
@@ -140,6 +141,7 @@ export function formatResponseWithTemplate(
       template_name: template.template.name,
       version: template.template.version,
       sections_count: 
+        sectionsByTier.tier_0_map.length +
         sectionsByTier.tier_1_visible.length +
         sectionsByTier.tier_2_expandable.length +
         sectionsByTier.tier_3_technical.length,
@@ -250,12 +252,165 @@ function applyBusinessRules(
 }
 
 /**
+ * Get value from state object using dot notation path
+ */
+function getValueByPath(obj: any, path: string): any {
+  const parts = path.split('.');
+  let current = obj;
+  
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    current = current[part];
+  }
+  
+  return current;
+}
+
+/**
  * Evaluate condition expression against state
  */
 function evaluateCondition(condition: string, state: MultiAgentState): boolean {
   try {
-    // Handle common condition patterns
-    // In production, use a proper expression evaluator or sandboxed eval
+    // ========================================================================
+    // QUERY TYPE CONDITIONS (v4 template)
+    // ========================================================================
+    
+    // Pattern: "synthesized_insights.query_type === 'informational'"
+    if (condition.includes('synthesized_insights.query_type')) {
+      const queryType = state.synthesized_insights?.query_type;
+      
+      if (condition.includes("=== 'informational'")) {
+        return queryType === 'informational';
+      }
+      if (condition.includes("=== 'decision-required'")) {
+        return queryType === 'decision-required';
+      }
+      if (condition.includes("=== 'validation'")) {
+        return queryType === 'validation';
+      }
+      if (condition.includes("=== 'comparison'")) {
+        return queryType === 'comparison';
+      }
+    }
+    
+    // ========================================================================
+    // DETAILS TO SURFACE FLAGS (v4 template)
+    // ========================================================================
+    
+    // Pattern: "synthesized_insights.details_to_surface.show_X && something"
+    if (condition.includes('details_to_surface.show_')) {
+      const flags = state.synthesized_insights?.details_to_surface;
+      if (!flags) return false;
+      
+      // Check each flag
+      if (condition.includes('show_multi_port_analysis')) {
+        const flagValue = flags.show_multi_port_analysis;
+        // If condition has && check both parts
+        if (condition.includes('&&')) {
+          const secondPart = condition.split('&&')[1]?.trim();
+          if (secondPart) {
+            const secondValue = getValueByPath(state, secondPart);
+            return flagValue && !!secondValue;
+          }
+        }
+        return flagValue;
+      }
+      if (condition.includes('show_alternatives')) {
+        const flagValue = flags.show_alternatives;
+        if (condition.includes('&&')) {
+          const secondPart = condition.split('&&')[1]?.trim();
+          if (secondPart && secondPart.includes('.length')) {
+            // Handle array length check
+            const pathMatch = secondPart.match(/([a-zA-Z_.]+)\.length/);
+            if (pathMatch) {
+              const arr = getValueByPath(state, pathMatch[1]);
+              return flagValue && Array.isArray(arr) && arr.length > 0;
+            }
+          }
+        }
+        return flagValue;
+      }
+      if (condition.includes('show_rob_waypoints')) {
+        const flagValue = flags.show_rob_waypoints;
+        if (condition.includes('&&')) {
+          const secondPart = condition.split('&&')[1]?.trim();
+          if (secondPart) {
+            const secondValue = getValueByPath(state, secondPart);
+            return flagValue && !!secondValue;
+          }
+        }
+        return flagValue;
+      }
+      if (condition.includes('show_weather_details')) {
+        const flagValue = flags.show_weather_details;
+        if (condition.includes('&&')) {
+          const secondPart = condition.split('&&')[1]?.trim();
+          if (secondPart) {
+            const secondValue = getValueByPath(state, secondPart);
+            return flagValue && !!secondValue;
+          }
+        }
+        return flagValue;
+      }
+      if (condition.includes('show_eca_details')) {
+        const flagValue = flags.show_eca_details;
+        if (condition.includes('&&')) {
+          const secondPart = condition.split('&&')[1]?.trim();
+          if (secondPart) {
+            const secondValue = getValueByPath(state, secondPart);
+            return flagValue && !!secondValue;
+          }
+        }
+        return flagValue;
+      }
+    }
+    
+    // ========================================================================
+    // NEGATION PATTERNS (v4 template)
+    // ========================================================================
+    
+    // Pattern: "!synthesized_insights && bunker_analysis"
+    if (condition.startsWith('!synthesized_insights') && condition.includes('&&')) {
+      const hasSynthesis = !!state.synthesized_insights;
+      if (hasSynthesis) return false;
+      
+      const secondPart = condition.split('&&')[1]?.trim();
+      if (secondPart) {
+        const secondValue = getValueByPath(state, secondPart);
+        return !!secondValue;
+      }
+      return !hasSynthesis;
+    }
+    
+    // ========================================================================
+    // ARRAY LENGTH PATTERNS (v4 template)
+    // ========================================================================
+    
+    // Pattern: "something.length > 0"
+    if (condition.includes('.length > 0') && !condition.includes('&&')) {
+      const match = condition.match(/^([a-zA-Z_.]+)\.length\s*>\s*0$/);
+      if (match) {
+        const path = match[1];
+        const value = getValueByPath(state, path);
+        return Array.isArray(value) && value.length > 0;
+      }
+    }
+    
+    // ========================================================================
+    // SIMPLE PATH EXISTENCE (v4 template)
+    // ========================================================================
+    
+    // Pattern: "route_data" or "bunker_analysis" (simple existence check)
+    if (/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(condition) && !condition.includes('===')) {
+      const value = getValueByPath(state, condition);
+      return !!value;
+    }
+    
+    // ========================================================================
+    // LEGACY PATTERNS (existing conditions)
+    // ========================================================================
     
     // Pattern: "rob_safety_status && !rob_safety_status.overall_safe"
     if (condition.includes('rob_safety_status') && condition.includes('!') && condition.includes('overall_safe')) {
@@ -313,9 +468,15 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
     // SYNTHESIZED INSIGHTS CONDITIONS
     // ========================================================================
     
-    // Pattern: "synthesized_insights && synthesized_insights.executive_insight"
+    // Pattern: "synthesized_insights && synthesized_insights.executive_insight" (legacy - now maps to response)
     if (condition.includes('synthesized_insights') && condition.includes('executive_insight') && !condition.includes('some(')) {
-      return !!(state.synthesized_insights?.executive_insight);
+      // V3: executive_insight is now derived from response object
+      return !!(state.synthesized_insights?.response);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.response" (v3)
+    if (condition.includes('synthesized_insights') && condition.includes('response') && !condition.includes('length')) {
+      return !!(state.synthesized_insights?.response);
     }
     
     // Pattern: "synthesized_insights && synthesized_insights.strategic_priorities && synthesized_insights.strategic_priorities.length > 0"
@@ -336,24 +497,46 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
                 state.synthesized_insights.hidden_opportunities.length > 0);
     }
     
-    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.length > 0"
+    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.length > 0" (legacy - now critical_risks)
     if (condition.includes('synthesized_insights') && condition.includes('risk_alerts') && condition.includes('length') && !condition.includes('some(')) {
-      return !!(state.synthesized_insights?.risk_alerts && 
-                state.synthesized_insights.risk_alerts.length > 0);
+      // V3: risk_alerts renamed to critical_risks
+      return !!(state.synthesized_insights?.critical_risks && 
+                state.synthesized_insights.critical_risks.length > 0);
     }
     
-    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')"
+    // Pattern: "synthesized_insights && synthesized_insights.critical_risks && synthesized_insights.critical_risks.length > 0" (v3)
+    if (condition.includes('synthesized_insights') && condition.includes('critical_risks') && condition.includes('length') && !condition.includes('some(')) {
+      return !!(state.synthesized_insights?.critical_risks && 
+                state.synthesized_insights.critical_risks.length > 0);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.risk_alerts && synthesized_insights.risk_alerts.some(r => r.severity === 'critical')" (legacy)
     if (condition.includes('synthesized_insights') && condition.includes('risk_alerts') && condition.includes("severity === 'critical'")) {
-      const riskAlerts = state.synthesized_insights?.risk_alerts;
-      if (!riskAlerts || !Array.isArray(riskAlerts)) {
+      // V3: risk_alerts renamed to critical_risks
+      const criticalRisks = state.synthesized_insights?.critical_risks;
+      if (!criticalRisks || !Array.isArray(criticalRisks)) {
         return false;
       }
-      return riskAlerts.some((r: any) => r.severity === 'critical');
+      return criticalRisks.some((r: { severity: string }) => r.severity === 'critical');
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.critical_risks && synthesized_insights.critical_risks.some(r => r.severity === 'critical')" (v3)
+    if (condition.includes('synthesized_insights') && condition.includes('critical_risks') && condition.includes("severity === 'critical'")) {
+      const criticalRisks = state.synthesized_insights?.critical_risks;
+      if (!criticalRisks || !Array.isArray(criticalRisks)) {
+        return false;
+      }
+      return criticalRisks.some((r: { severity: string }) => r.severity === 'critical');
     }
     
     // Pattern: "synthesized_insights && synthesized_insights.synthesis_metadata"
     if (condition.includes('synthesized_insights') && condition.includes('synthesis_metadata')) {
       return !!(state.synthesized_insights?.synthesis_metadata);
+    }
+    
+    // Pattern: "synthesized_insights && synthesized_insights.details_to_surface" (v3)
+    if (condition.includes('synthesized_insights') && condition.includes('details_to_surface')) {
+      return !!(state.synthesized_insights?.details_to_surface);
     }
     
     // ========================================================================
@@ -497,11 +680,13 @@ function renderSectionsByTier(
   state: MultiAgentState,
   template: ResponseTemplate
 ): {
+  tier_0_map: RenderedSection[];
   tier_1_visible: RenderedSection[];
   tier_2_expandable: RenderedSection[];
   tier_3_technical: RenderedSection[];
 } {
   const result = {
+    tier_0_map: [] as RenderedSection[],
     tier_1_visible: [] as RenderedSection[],
     tier_2_expandable: [] as RenderedSection[],
     tier_3_technical: [] as RenderedSection[],
@@ -511,6 +696,24 @@ function renderSectionsByTier(
     // Check if section should be rendered
     if (!shouldRenderSection(section, state)) {
       console.log(`⏭️ [SECTION] Skipping "${section.id}" (condition not met)`);
+      continue;
+    }
+    
+    // Tier 0 sections (map components) don't have text content
+    if (section.tier === 0) {
+      const renderedSection: RenderedSection = {
+        id: section.id,
+        title: section.title || 'Map',
+        tier: 0,
+        priority: section.priority,
+        visible: true,
+        collapsed: false,
+        content: '[Map Component]',  // Placeholder - actual map rendered by React
+        word_count: 0,
+        truncated: false,
+      };
+      result.tier_0_map.push(renderedSection);
+      console.log(`✅ [SECTION] Rendered tier 0: ${section.id}`);
       continue;
     }
     
@@ -534,7 +737,7 @@ function renderSectionsByTier(
     
     const renderedSection: RenderedSection = {
       id: section.id,
-      title: section.title,
+      title: section.title || section.id,
       tier: section.tier,
       priority: section.priority,
       visible: section.visibility === 'always',
@@ -555,6 +758,7 @@ function renderSectionsByTier(
   }
   
   // Sort each tier by priority
+  result.tier_0_map.sort((a, b) => a.priority - b.priority);
   result.tier_1_visible.sort((a, b) => a.priority - b.priority);
   result.tier_2_expandable.sort((a, b) => a.priority - b.priority);
   result.tier_3_technical.sort((a, b) => a.priority - b.priority);
@@ -564,6 +768,12 @@ function renderSectionsByTier(
 
 /**
  * Check if section should be rendered
+ * 
+ * Respects:
+ * 1. Business rule hiding (__hidden__ marker)
+ * 2. Tier 0 always renders (map)
+ * 3. Template conditions
+ * 4. Synthesis filtering for tier 3 details
  */
 function shouldRenderSection(section: TemplateSection, state: MultiAgentState): boolean {
   // Check for hidden marker from business rules
@@ -571,9 +781,46 @@ function shouldRenderSection(section: TemplateSection, state: MultiAgentState): 
     return false;
   }
   
-  if (section.visibility === 'conditional' && section.condition) {
-    return evaluateCondition(section.condition, state);
+  // Always render tier 0 (map)
+  if (section.tier === 0) {
+    console.log(`✅ [TEMPLATE] Rendering tier 0: ${section.id}`);
+    return true;
   }
+  
+  // Check template condition first
+  if (section.condition) {
+    const conditionMet = evaluateCondition(section.condition, state);
+    if (!conditionMet) {
+      console.log(`🚫 [TEMPLATE] Condition not met for ${section.id}: ${section.condition}`);
+      return false;
+    }
+  }
+  
+  // CRITICAL: Respect synthesis filtering for tier 3 details
+  if (section.tier === 3 && state.synthesized_insights?.details_to_surface) {
+    const flags = state.synthesized_insights.details_to_surface;
+    
+    // Map section IDs to synthesis flags
+    const flagMapping: Record<string, keyof typeof flags> = {
+      'multi_port_breakdown': 'show_multi_port_analysis',
+      'alternative_options': 'show_alternatives',
+      'rob_waypoint_tracking': 'show_rob_waypoints',
+      'weather_impact_details': 'show_weather_details',
+      'eca_compliance_details': 'show_eca_details',
+    };
+    
+    const relevantFlag = flagMapping[section.id];
+    if (relevantFlag) {
+      const shouldShow = flags[relevantFlag];
+      if (!shouldShow) {
+        console.log(`🚫 [TEMPLATE] Synthesis filtered out ${section.id} (${relevantFlag} = false)`);
+        return false;
+      } else {
+        console.log(`✅ [TEMPLATE] Synthesis allows ${section.id} (${relevantFlag} = true)`);
+      }
+    }
+  }
+  
   return true;
 }
 
@@ -587,6 +834,15 @@ function renderSectionContent(section: TemplateSection, state: MultiAgentState):
   try {
     const statePath = section.content_source.state_path;
     const format = section.content_source.format;
+    
+    // If no state_path (e.g., component-based sections), use fallback
+    if (!statePath) {
+      const fallbackContent = formatDefaultContent(section, null, state);
+      if (fallbackContent && fallbackContent.trim() !== '') {
+        return fallbackContent;
+      }
+      return section.content_source.fallback || '';
+    }
     
     // Use content extractors for data extraction and formatting
     const content = extractContent(statePath, state, format);
