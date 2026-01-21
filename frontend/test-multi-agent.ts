@@ -71,6 +71,13 @@ async function testMultiAgent() {
           weather_agent: 0,
           bunker_agent: 0,
         },
+        // Agentic supervisor state
+        reasoning_history: [],
+        current_thought: null,
+        next_action: null,
+        recovery_attempts: 0,
+        needs_clarification: false,
+        clarification_question: null,
       };
       
       const result = await multiAgentApp.invoke(initialState, {
