@@ -120,5 +120,26 @@ export const PortLogger = {
   logMapDisplay: (message: string, data?: any) => {
     formatLog('MAP-DISPLAY', message, data);
   },
+
+  /**
+   * Log API fallback usage
+   */
+  logAPIFallback: (query: string, reason: string) => {
+    formatLog('API-FALLBACK', `Query: "${query}" - Reason: ${reason}`);
+  },
+
+  /**
+   * Log hybrid resolution (combined deterministic + API results)
+   */
+  logHybridResolution: (origin: string, destination: string, sources: { origin: string; destination: string }) => {
+    formatLog('HYBRID-RESOLVE', `${origin} (${sources.origin}) → ${destination} (${sources.destination})`);
+  },
+
+  /**
+   * Log extraction failure with partial results
+   */
+  logExtractionFailure: (query: string, partial: { origin: string | null; destination: string | null }) => {
+    formatLog('EXTRACTION-FAIL', `Query: "${query}" - Partial: origin=${partial.origin || 'null'}, dest=${partial.destination || 'null'}`);
+  },
 };
 

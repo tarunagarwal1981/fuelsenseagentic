@@ -1247,20 +1247,35 @@ function extractRouteDataFromMessages(messages: any[]): { route_data?: any; vess
 /**
  * Extract ports from query using database lookup with LLM fallback for complex queries
  * Fast, free, and accurate - searches port database, uses LLM for complex queries
+ * 
+ * IMPORTANT: No silent defaults - throws clear error if ports cannot be identified
  */
 async function extractPortsFromQuery(query: string): Promise<{ origin: string; destination: string }> {
   const { origin, destination } = await lookupPorts(query);
   
-  // Use defaults if not found
-  const finalOrigin = origin || 'SGSIN';
-  const finalDest = destination || 'AEFJR';
+  // If both ports found, return them
+  if (origin && destination) {
+    console.log(`✅ [PORT-EXTRACTION] Success: ${origin} → ${destination}`);
+    return { origin, destination };
+  }
   
-  console.log(`✅ [PORT-EXTRACTION] Result: ${finalOrigin} → ${finalDest}`);
+  // If one port is missing, throw error with helpful message
+  if (!origin && destination) {
+    const errorMsg = `Could not identify origin port from query: "${query}". Destination found: ${destination}. Please specify origin port code (e.g., "from JPCHB to ${destination}" or use a port name like "from Singapore to ${destination}"). Common port codes: SGSIN (Singapore), NLRTM (Rotterdam), AEJEA (Jebel Ali), AEFJR (Fujairah), JPCHB (Chiba).`;
+    console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
   
-  return {
-    origin: finalOrigin,
-    destination: finalDest,
-  };
+  if (origin && !destination) {
+    const errorMsg = `Could not identify destination port from query: "${query}". Origin found: ${origin}. Please specify destination port code (e.g., "from ${origin} to SGSIN" or use a port name like "${origin} to Singapore"). Common port codes: SGSIN (Singapore), NLRTM (Rotterdam), AEJEA (Jebel Ali), AEFJR (Fujairah), JPCHB (Chiba).`;
+    console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+  
+  // Both missing - provide helpful error
+  const errorMsg = `Could not identify origin or destination ports from query: "${query}". Please use format: "from [ORIGIN] to [DESTINATION]" or specify port codes like "SGSIN to NLRTM". Common ports: SGSIN (Singapore), NLRTM (Rotterdam), AEJEA (Jebel Ali), AEFJR (Fujairah), JPCHB (Chiba), CNSHA (Shanghai), HKHKG (Hong Kong).`;
+  console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+  throw new Error(errorMsg);
 }
 
 /**

@@ -603,14 +603,49 @@ function extractPortsDeterministic(query: string): { origin: string | null; dest
     return { origin: foundPorts[0], destination: foundPorts[1] };
   }
   
+  // STEP 4: Handle single port found (context-aware)
   if (foundPorts.length === 1) {
+    const singlePort = foundPorts[0];
+    
+    // If we have coordinates, that port is origin
     if (originFromCoords) {
-      console.log('✅ [PORT-LOOKUP] Found origin from coordinates:', foundPorts[0]);
-      return { origin: foundPorts[0], destination: null };
-    } else {
-      console.log('✅ [PORT-LOOKUP] Found destination only:', foundPorts[0]);
-      return { origin: null, destination: foundPorts[0] };
+      console.log('✅ [PORT-LOOKUP] Found origin from coordinates:', singlePort);
+      return { origin: singlePort, destination: null };
     }
+    
+    // Check if "to X" pattern exists (X is destination)
+    const toDestPattern = /\s+to\s+([A-Za-z\s]+)/i;
+    const toDestMatch = query.match(toDestPattern);
+    if (toDestMatch) {
+      const destQuery = toDestMatch[1].trim().toLowerCase();
+      const portData = PORTS.find(p => p.port_code === singlePort);
+      const portName = portData?.name.toLowerCase();
+      
+      // If found port matches the "to X" part, it's destination
+      if (portName && (destQuery.includes(portName) || portName.includes(destQuery.split(/\s+/)[0]))) {
+        console.log('✅ [PORT-LOOKUP] Found destination from "to X" pattern:', singlePort);
+        return { origin: null, destination: singlePort };
+      }
+    }
+    
+    // Check if "from X" pattern exists (X is origin)
+    const fromOriginPattern = /from\s+([A-Za-z\s]+?)(?:\s+to\s+|\s*$)/i;
+    const fromMatch = query.match(fromOriginPattern);
+    if (fromMatch) {
+      const originQuery = fromMatch[1].trim().toLowerCase();
+      const portData = PORTS.find(p => p.port_code === singlePort);
+      const portName = portData?.name.toLowerCase();
+      
+      // If found port matches the "from X" part, it's origin
+      if (portName && (originQuery.includes(portName) || portName.includes(originQuery.split(/\s+/)[0]))) {
+        console.log('✅ [PORT-LOOKUP] Found origin from "from X" pattern:', singlePort);
+        return { origin: singlePort, destination: null };
+      }
+    }
+    
+    // Cannot determine context - return both as null to trigger API fallback
+    console.warn('⚠️ [PORT-LOOKUP] Single port found but context unclear, triggering API fallback');
+    return { origin: null, destination: null };
   }
   
   // If we have coordinates but no port found nearby, still return the coordinates as origin
@@ -624,8 +659,123 @@ function extractPortsDeterministic(query: string): { origin: string | null; dest
 }
 
 /**
+ * Use SeaRoute API to find ports when local lookup fails
+ * This provides comprehensive coverage beyond our 20-port database
+ */
+async function extractPortsFromSeaRouteAPI(query: string): Promise<{ origin: string | null; destination: string | null }> {
+  console.log('🌐 [PORT-LOOKUP] Attempting SeaRoute API fallback...');
+  
+  try {
+    const { resolvePortCode } = await import('./port-resolver');
+    
+    // Extract port names from query using regex patterns
+    // Pattern 1: "from X to Y" or "X to Y"
+    const toPattern = /(?:from\s+)?([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+)/i;
+    const toMatch = query.match(toPattern);
+    
+    if (toMatch) {
+      const originQuery = toMatch[1].trim();
+      const destQuery = toMatch[2].trim();
+      
+      console.log(`🌐 [PORT-LOOKUP] Searching API for: "${originQuery}" → "${destQuery}"`);
+      
+      // Resolve both ports via API
+      const [originResult, destResult] = await Promise.all([
+        resolvePortCode(originQuery),
+        resolvePortCode(destQuery)
+      ]);
+      
+      if (originResult && destResult) {
+        console.log(`✅ [PORT-LOOKUP] API found both: ${originResult.port_code} → ${destResult.port_code}`);
+        PortLogger.logAPIFallback(query, 'both_ports_resolved');
+        return {
+          origin: originResult.port_code,
+          destination: destResult.port_code
+        };
+      }
+      
+      // Partial success
+      if (originResult || destResult) {
+        console.log(`⚠️ [PORT-LOOKUP] API found partial: origin=${originResult?.port_code || 'null'}, dest=${destResult?.port_code || 'null'}`);
+        PortLogger.logAPIFallback(query, 'partial_resolution');
+        return {
+          origin: originResult?.port_code || null,
+          destination: destResult?.port_code || null
+        };
+      }
+    }
+    
+    // Pattern 2: "between X and Y"
+    const betweenPattern = /between\s+([A-Za-z\s]+?)\s+and\s+([A-Za-z\s]+)/i;
+    const betweenMatch = query.match(betweenPattern);
+    
+    if (betweenMatch) {
+      const originQuery = betweenMatch[1].trim();
+      const destQuery = betweenMatch[2].trim();
+      
+      console.log(`🌐 [PORT-LOOKUP] Searching API for (between): "${originQuery}" → "${destQuery}"`);
+      
+      const [originResult, destResult] = await Promise.all([
+        resolvePortCode(originQuery),
+        resolvePortCode(destQuery)
+      ]);
+      
+      if (originResult && destResult) {
+        console.log(`✅ [PORT-LOOKUP] API found both: ${originResult.port_code} → ${destResult.port_code}`);
+        PortLogger.logAPIFallback(query, 'between_pattern_resolved');
+        return {
+          origin: originResult.port_code,
+          destination: destResult.port_code
+        };
+      }
+      
+      if (originResult || destResult) {
+        return {
+          origin: originResult?.port_code || null,
+          destination: destResult?.port_code || null
+        };
+      }
+    }
+    
+    // Try single port lookup (for queries like "bunker at Fujairah")
+    const words = query.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      // Skip common words
+      if (isStopWord(words[i])) continue;
+      
+      // Try single word
+      const result = await resolvePortCode(words[i]);
+      if (result) {
+        console.log(`✅ [PORT-LOOKUP] API found single port: ${result.port_code}`);
+        PortLogger.logAPIFallback(query, 'single_word_match');
+        return { origin: null, destination: result.port_code };
+      }
+      
+      // Try two-word phrases
+      if (i < words.length - 1) {
+        const twoWords = `${words[i]} ${words[i + 1]}`;
+        const result2 = await resolvePortCode(twoWords);
+        if (result2) {
+          console.log(`✅ [PORT-LOOKUP] API found single port: ${result2.port_code}`);
+          PortLogger.logAPIFallback(query, 'two_word_match');
+          return { origin: null, destination: result2.port_code };
+        }
+      }
+    }
+    
+    console.warn('⚠️ [PORT-LOOKUP] SeaRoute API could not find ports');
+    return { origin: null, destination: null };
+    
+  } catch (error) {
+    console.error('❌ [PORT-LOOKUP] SeaRoute API fallback failed:', error);
+    PortLogger.logError('api-fallback', error);
+    return { origin: null, destination: null };
+  }
+}
+
+/**
  * Extract origin and destination from query using fuzzy port lookup with LLM fallback
- * Priority: LLM (if complex) > coordinates > string match > defaults
+ * Priority: deterministic > SeaRoute API > LLM (if complex)
  */
 export async function extractPortsFromQuery(query: string): Promise<{ origin: string | null; destination: string | null }> {
   startLoggingSession();
@@ -634,7 +784,31 @@ export async function extractPortsFromQuery(query: string): Promise<{ origin: st
   // STEP 1: Try deterministic extraction first (fast, free)
   const deterministicResult = extractPortsDeterministic(query);
   
-  // STEP 2: Check if complex query needs LLM
+  // If both ports found deterministically, return immediately
+  if (deterministicResult.origin && deterministicResult.destination) {
+    console.log(`✅ [PORT-LOOKUP] Deterministic success: ${deterministicResult.origin} → ${deterministicResult.destination}`);
+    PortLogger.logPortIdentification(deterministicResult.origin, deterministicResult.destination, 'deterministic');
+    return deterministicResult;
+  }
+  
+  // STEP 2: Try SeaRoute API fallback if deterministic failed or partial
+  console.log('🔄 [PORT-LOOKUP] Deterministic extraction incomplete, trying API fallback...');
+  const apiResult = await extractPortsFromSeaRouteAPI(query);
+  
+  // Merge results (API takes precedence for missing ports)
+  const finalOrigin = deterministicResult.origin || apiResult.origin;
+  const finalDest = deterministicResult.destination || apiResult.destination;
+  
+  if (finalOrigin && finalDest) {
+    console.log(`✅ [PORT-LOOKUP] Combined success: ${finalOrigin} → ${finalDest}`);
+    PortLogger.logHybridResolution(finalOrigin, finalDest, {
+      origin: deterministicResult.origin ? 'deterministic' : 'api',
+      destination: deterministicResult.destination ? 'deterministic' : 'api'
+    });
+    return { origin: finalOrigin, destination: finalDest };
+  }
+  
+  // STEP 3: Try complex query with LLM (if available)
   if (isComplexQuery(query)) {
     console.log('🔍 [PORT-LOOKUP] Complex query detected, using LLM...');
     const llmResult = await extractPortsWithLLM(query);
@@ -644,16 +818,19 @@ export async function extractPortsFromQuery(query: string): Promise<{ origin: st
       return llmResult;
     }
     
-    console.warn('🔍 [PORT-LOOKUP] LLM failed, falling back to deterministic');
+    console.warn('🔍 [PORT-LOOKUP] LLM failed, using partial results');
   }
   
-  // STEP 3: Use deterministic result (even if low confidence)
-  if (deterministicResult.origin && deterministicResult.destination) {
-    PortLogger.logPortIdentification(deterministicResult.origin, deterministicResult.destination, 'deterministic');
-    return deterministicResult;
+  // Final result (may have nulls)
+  if (finalOrigin || finalDest) {
+    console.warn(`⚠️ [PORT-LOOKUP] Incomplete extraction: origin=${finalOrigin || 'null'}, dest=${finalDest || 'null'}`);
+    PortLogger.logExtractionFailure(query, { origin: finalOrigin, destination: finalDest });
+  } else {
+    console.warn('⚠️ [PORT-LOOKUP] No ports found in query');
+    PortLogger.logExtractionFailure(query, { origin: null, destination: null });
   }
   
-  return { origin: null, destination: null };
+  return { origin: finalOrigin, destination: finalDest };
 }
 
 /**

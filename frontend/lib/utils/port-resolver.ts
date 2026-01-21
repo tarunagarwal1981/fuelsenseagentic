@@ -131,23 +131,41 @@ export async function validatePortCode(
 
 /**
  * Resolve port code from query string (port name or code)
- * Tries static lookup first, then API with fuzzy matching
+ * Tries static lookup first, then API with enhanced fuzzy matching and scoring
  */
 export async function resolvePortCode(
   query: string
 ): Promise<{ port_code: string; coordinates: { lat: number; lon: number }; source: 'static' | 'api' } | null> {
   const normalizedQuery = query.toLowerCase().trim();
+  
+  // Remove common noise words before searching
+  const cleanedQuery = normalizedQuery
+    .replace(/\b(port|of|the|at|in)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  console.log(`🔍 [PORT-RESOLVE] Searching for: "${query}" (cleaned: "${cleanedQuery}")`);
 
   // Try static lookup first
-  const staticPort = STATIC_PORTS.find(
-    p =>
-      p.port_code.toLowerCase() === normalizedQuery ||
-      p.name.toLowerCase() === normalizedQuery ||
-      p.name.toLowerCase().includes(normalizedQuery) ||
-      normalizedQuery.includes(p.name.toLowerCase())
-  );
+  const staticPort = STATIC_PORTS.find(p => {
+    const portName = p.name.toLowerCase();
+    const portCode = p.port_code.toLowerCase();
+    
+    return (
+      // Exact matches
+      portCode === normalizedQuery ||
+      portName === normalizedQuery ||
+      portName === cleanedQuery ||
+      // Contains matches (with minimum length check)
+      (cleanedQuery.length >= 3 && portName.includes(cleanedQuery)) ||
+      (cleanedQuery.length >= 3 && cleanedQuery.includes(portName)) ||
+      // Port code partial match (e.g., "JPCH" matches "JPCHB")
+      (normalizedQuery.length >= 4 && portCode.startsWith(normalizedQuery))
+    );
+  });
 
   if (staticPort && staticPort.coordinates) {
+    console.log(`✅ [PORT-RESOLVE] Static match: ${staticPort.port_code} (${staticPort.name})`);
     return {
       port_code: staticPort.port_code,
       coordinates: staticPort.coordinates,
@@ -155,13 +173,14 @@ export async function resolvePortCode(
     };
   }
 
-  // Try API with fuzzy matching
+  // Try API with enhanced fuzzy matching
   try {
     const apiPorts = await fetchSeaRoutePorts();
     
     // Exact code match
     const exactMatch = apiPorts.get(query.toUpperCase());
     if (exactMatch) {
+      console.log(`✅ [PORT-RESOLVE] API exact match: ${query.toUpperCase()}`);
       PortLogger.logPortResolution(query.toUpperCase(), { lat: exactMatch.lat, lon: exactMatch.lon }, 'api');
       return {
         port_code: query.toUpperCase(),
@@ -170,26 +189,71 @@ export async function resolvePortCode(
       };
     }
 
-    // Fuzzy name match
+    // Fuzzy name match with scoring
+    const candidates: Array<{ code: string; port: { name: string; lat: number; lon: number }; score: number }> = [];
+    
     for (const [code, port] of apiPorts.entries()) {
       const portNameLower = port.name.toLowerCase();
-      if (
-        portNameLower === normalizedQuery ||
-        portNameLower.includes(normalizedQuery) ||
-        normalizedQuery.includes(portNameLower)
-      ) {
-        PortLogger.logPortResolution(code, { lat: port.lat, lon: port.lon }, 'api');
-        return {
-          port_code: code,
-          coordinates: { lat: port.lat, lon: port.lon },
-          source: 'api',
-        };
+      let score = 0;
+      
+      // Exact name match - highest score
+      if (portNameLower === normalizedQuery || portNameLower === cleanedQuery) {
+        score = 100;
       }
+      // Name starts with query (e.g., "Chiba" matches "Chiba Port")
+      else if (portNameLower.startsWith(cleanedQuery)) {
+        score = 90;
+      }
+      // Name contains query at word boundary (e.g., "Singapore" in "Singapore Port")
+      else if (cleanedQuery.length >= 3 && portNameLower.includes(cleanedQuery)) {
+        score = 80;
+      }
+      // Query contains port name (e.g., "Chiba Port" contains "Chiba")
+      else if (cleanedQuery.length >= 3 && cleanedQuery.includes(portNameLower)) {
+        score = 70;
+      }
+      // First word matches (e.g., "Singapore" matches "Singapore, Jurong")
+      else if (cleanedQuery.length >= 3) {
+        const portFirstWord = portNameLower.split(/[\s,]+/)[0];
+        const queryFirstWord = cleanedQuery.split(/[\s,]+/)[0];
+        if (portFirstWord === queryFirstWord) {
+          score = 75;
+        } else if (portFirstWord.startsWith(queryFirstWord) || queryFirstWord.startsWith(portFirstWord)) {
+          score = 60;
+        }
+      }
+      // Partial match (at least 4 chars) - lower score
+      else if (cleanedQuery.length >= 4 && portNameLower.includes(cleanedQuery.substring(0, 4))) {
+        score = 50;
+      }
+      
+      if (score > 0) {
+        candidates.push({ code, port, score });
+      }
+    }
+    
+    // Sort by score and return best match
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => b.score - a.score);
+      const best = candidates[0];
+      
+      console.log(`✅ [PORT-RESOLVE] API fuzzy match: ${best.code} (${best.port.name}) - score: ${best.score}`);
+      if (candidates.length > 1) {
+        console.log(`   Other candidates: ${candidates.slice(1, 3).map(c => `${c.code}(${c.score})`).join(', ')}`);
+      }
+      
+      PortLogger.logPortResolution(best.code, { lat: best.port.lat, lon: best.port.lon }, 'api');
+      return {
+        port_code: best.code,
+        coordinates: { lat: best.port.lat, lon: best.port.lon },
+        source: 'api',
+      };
     }
   } catch (error) {
     console.warn(`[PORT-RESOLVE] API resolution failed for "${query}":`, error);
   }
 
+  console.warn(`❌ [PORT-RESOLVE] No match found for: "${query}"`);
   return null;
 }
 
