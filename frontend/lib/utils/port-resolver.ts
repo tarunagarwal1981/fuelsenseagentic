@@ -35,8 +35,9 @@ let apiPortCache: PortCache | null = null;
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
- * Fetch ports from SeaRoute API
+ * Fetch ports from SeaRoute API with robust response parsing
  * Caches response for 24 hours
+ * Handles multiple response formats: array, object with ports array, object with ports as key-value pairs
  */
 async function fetchSeaRoutePorts(): Promise<Map<string, { name: string; lat: number; lon: number }>> {
   // Check cache first
@@ -49,27 +50,112 @@ async function fetchSeaRoutePorts(): Promise<Map<string, { name: string; lat: nu
     console.log('[PORT-RESOLVE] Fetching ports from SeaRoute API...');
     const response = await fetch('https://maritime-route-api.onrender.com/ports', {
       method: 'GET',
-      signal: AbortSignal.timeout(5000), // 5 second timeout
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000), // Increased to 10s for slow API
     });
 
     if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+      throw new Error(`API returned ${response.status}: ${response.statusText}`);
     }
 
     const data = await response.json();
     const portsMap = new Map<string, { name: string; lat: number; lon: number }>();
 
-    // Handle different response formats
-    const portsArray = Array.isArray(data) ? data : (data.ports || []);
+    console.log('[PORT-RESOLVE] API response received, parsing...');
 
-    for (const port of portsArray) {
-      if (port.code && port.lat !== undefined && port.lon !== undefined) {
-        portsMap.set(port.code.toUpperCase(), {
-          name: port.name || port.code,
-          lat: port.lat,
-          lon: port.lon,
-        });
+    // Handle multiple possible response formats
+    let parsedCount = 0;
+
+    // Format 1: Direct array of ports
+    if (Array.isArray(data)) {
+      console.log('[PORT-RESOLVE] Format: Direct array');
+      for (const port of data) {
+        const code = port.code || port.port_code || port.portCode;
+        const lat = port.lat || port.latitude;
+        const lon = port.lon || port.lng || port.longitude;
+        const name = port.name || port.port_name || code;
+        
+        if (code && lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+          portsMap.set(code.toUpperCase(), {
+            name: name || code,
+            lat: parseFloat(lat),
+            lon: parseFloat(lon),
+          });
+          parsedCount++;
+        }
       }
+    }
+    // Format 2: Object with "ports" as key-value pairs (e.g., {"ports": {"SGSIN": {"lat": 1.29, ...}}})
+    else if (data && typeof data === 'object' && data.ports && typeof data.ports === 'object' && !Array.isArray(data.ports)) {
+      console.log('[PORT-RESOLVE] Format: Object with ports as key-value pairs');
+      for (const [code, portData] of Object.entries(data.ports)) {
+        const port = portData as { lat?: number; lon?: number; lng?: number; name?: string };
+        const lat = port.lat;
+        const lon = port.lon || port.lng;
+        const name = port.name || code;
+        
+        if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+          portsMap.set(code.toUpperCase(), {
+            name: name || code,
+            lat: parseFloat(String(lat)),
+            lon: parseFloat(String(lon)),
+          });
+          parsedCount++;
+        }
+      }
+    }
+    // Format 3: Object with "ports" as array
+    else if (data && typeof data === 'object' && Array.isArray(data.ports)) {
+      console.log('[PORT-RESOLVE] Format: Object with ports array');
+      for (const port of data.ports) {
+        const code = port.code || port.port_code || port.portCode;
+        const lat = port.lat || port.latitude;
+        const lon = port.lon || port.lng || port.longitude;
+        const name = port.name || port.port_name || code;
+        
+        if (code && lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+          portsMap.set(code.toUpperCase(), {
+            name: name || code,
+            lat: parseFloat(lat),
+            lon: parseFloat(lon),
+          });
+          parsedCount++;
+        }
+      }
+    }
+    // Format 4: Object with "data" property containing ports
+    else if (data && typeof data === 'object' && Array.isArray(data.data)) {
+      console.log('[PORT-RESOLVE] Format: Object with data array');
+      for (const port of data.data) {
+        const code = port.code || port.port_code || port.portCode;
+        const lat = port.lat || port.latitude;
+        const lon = port.lon || port.lng || port.longitude;
+        const name = port.name || port.port_name || code;
+        
+        if (code && lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
+          portsMap.set(code.toUpperCase(), {
+            name: name || code,
+            lat: parseFloat(lat),
+            lon: parseFloat(lon),
+          });
+          parsedCount++;
+        }
+      }
+    }
+    else {
+      console.error('[PORT-RESOLVE] Unable to parse API response format:', {
+        type: typeof data,
+        isArray: Array.isArray(data),
+        keys: data ? Object.keys(data).slice(0, 5) : [],
+      });
+      throw new Error('API response format not recognized');
+    }
+
+    if (parsedCount === 0) {
+      throw new Error('No valid ports found in API response');
     }
 
     // Update cache
@@ -80,11 +166,11 @@ async function fetchSeaRoutePorts(): Promise<Map<string, { name: string; lat: nu
       expiresAt: now + CACHE_DURATION_MS,
     };
 
-    console.log(`[PORT-RESOLVE] Fetched ${portsMap.size} ports from API`);
+    console.log(`✅ [PORT-RESOLVE] Successfully parsed ${parsedCount} ports from API`);
     return portsMap;
   } catch (error) {
-    console.warn('[PORT-RESOLVE] API fetch failed, using static data:', error);
-    // Return empty map to indicate fallback
+    console.error('[PORT-RESOLVE] API fetch failed:', error instanceof Error ? error.message : error);
+    // Return empty map to indicate fallback needed
     return new Map();
   }
 }

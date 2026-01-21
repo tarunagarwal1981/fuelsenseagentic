@@ -30,6 +30,66 @@
     ]
   },
   {
+    "port_code": "JPCHB",
+    "name": "Chiba",
+    "country": "JP",
+    "coordinates": {
+      "lat": 35.6047,
+      "lon": 140.1061
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JPNGO",
+    "name": "Nagoya",
+    "country": "JP",
+    "coordinates": {
+      "lat": 35.0824,
+      "lon": 136.8814
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JPKOB",
+    "name": "Kobe",
+    "country": "JP",
+    "coordinates": {
+      "lat": 34.6901,
+      "lon": 135.1956
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
+    "port_code": "JPOSA",
+    "name": "Osaka",
+    "country": "JP",
+    "coordinates": {
+      "lat": 34.6937,
+      "lon": 135.5023
+    },
+    "fuel_capabilities": [
+      "VLSFO",
+      "MGO",
+      "LSGO",
+      "HSFO"
+    ]
+  },
+  {
     "port_code": "ESBCN",
     "name": "Barcelona",
     "country": "ES",

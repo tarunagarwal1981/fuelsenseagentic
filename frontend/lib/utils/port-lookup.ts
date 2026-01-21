@@ -287,6 +287,26 @@ export function findPortCode(query: string): string | null {
     'tokyo': 'JPTYO',
     'tyo': 'JPTYO',
     
+    // Chiba
+    'chiba': 'JPCHB',
+    'chb': 'JPCHB',
+    
+    // Yokohama
+    'yokohama': 'JPYOK',
+    'yok': 'JPYOK',
+    
+    // Nagoya
+    'nagoya': 'JPNGO',
+    'ngo': 'JPNGO',
+    
+    // Kobe
+    'kobe': 'JPKOB',
+    'kob': 'JPKOB',
+    
+    // Osaka
+    'osaka': 'JPOSA',
+    'osa': 'JPOSA',
+    
     // Busan
     'busan': 'KRPUS',
     'pusan': 'KRPUS',
