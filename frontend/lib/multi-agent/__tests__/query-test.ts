@@ -73,6 +73,7 @@ export async function testQuery(
     agent_context: null,
     selected_route_id: null,
     weather_agent_partial: false,
+    standalone_port_weather: null,
     compliance_data: null,
     vessel_consumption: null,
     // ROB Tracking fields

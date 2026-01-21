@@ -572,6 +572,42 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     default: () => false,
   }),
 
+  /**
+   * Standalone port weather data (for queries like "weather at Singapore port")
+   * This is separate from weather_forecast which is for route-based weather
+   */
+  standalone_port_weather: Annotation<{
+    port_code: string;
+    port_name: string;
+    coordinates: { lat: number; lon: number };
+    target_date: string;
+    forecast: {
+      temperature_2m?: number;
+      wind_speed_10m?: number;
+      wind_direction?: number;
+      wave_height?: number;
+      wave_period?: number;
+      sea_state?: string;
+      conditions?: string;
+      visibility?: number;
+    };
+    hourly_forecast?: Array<{
+      datetime: string;
+      wave_height: number;
+      wind_speed: number;
+      conditions: string;
+    }>;
+  } | null>({
+    reducer: (x, y) => {
+      const result = y !== null && y !== undefined ? y : x;
+      if (result) {
+        console.log('🔄 Standalone port weather reducer: updating for', result.port_name);
+      }
+      return result;
+    },
+    default: () => null,
+  }),
+
   // ========================================================================
   // Bunker Agent State
   // ========================================================================

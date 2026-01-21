@@ -957,6 +957,47 @@ export async function supervisorAgentNode(
   }
   
   // ========================================================================
+  // STANDALONE PORT WEATHER - Direct routing without route calculation
+  // ========================================================================
+  
+  // Check if this is a standalone port weather query (no route needed)
+  if (intent.weather_type === 'port_weather' && intent.weather_port) {
+    console.log('🌤️ [SUPERVISOR] Standalone port weather query detected');
+    console.log(`   Port: ${intent.weather_port}`);
+    console.log(`   Date: ${intent.weather_date || 'not specified'}`);
+    
+    // Skip to weather agent if not already done
+    if (!state.standalone_port_weather && state.agent_status?.weather_agent !== 'success') {
+      console.log('🎯 [SUPERVISOR] Decision: Standalone port weather → weather_agent (direct)');
+      return {
+        next_agent: 'weather_agent',
+        agent_context: agentContext,
+        messages: [],
+      };
+    }
+    
+    // Weather done, finalize
+    if (state.standalone_port_weather || state.agent_status?.weather_agent === 'success') {
+      console.log('🎯 [SUPERVISOR] Decision: Port weather complete → finalize');
+      return {
+        next_agent: 'finalize',
+        agent_context: agentContext,
+        messages: [],
+      };
+    }
+    
+    // Weather agent failed
+    if (state.agent_status?.weather_agent === 'failed') {
+      console.log('⚠️ [SUPERVISOR] Port weather failed → finalize with error');
+      return {
+        next_agent: 'finalize',
+        agent_context: agentContext,
+        messages: [],
+      };
+    }
+  }
+  
+  // ========================================================================
   // DETERMINISTIC DECISION LOGIC - Based on actual needs, not fixed sequence
   // (Legacy fallback when execution plan is not available)
   // ========================================================================
@@ -1710,6 +1751,35 @@ export async function weatherAgentNode(
   
   try {
     // ========================================================================
+    // QUERY INTENT ANALYSIS - Check for standalone port weather
+    // ========================================================================
+    
+    const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
+    const userQuery = userMessage?.content?.toString() || '';
+    
+    // Import intent analyzer for weather classification
+    const { classifyWeatherQuery } = await import('./intent-analyzer');
+    const weatherClass = classifyWeatherQuery(userQuery);
+    
+    // ========================================================================
+    // MODE: STANDALONE PORT WEATHER (no route needed)
+    // ========================================================================
+    
+    if (weatherClass.type === 'port_weather' && weatherClass.port) {
+      console.log('🌤️ [WEATHER-WORKFLOW] Mode: Standalone port weather');
+      console.log(`   Port: ${weatherClass.port}`);
+      console.log(`   Date: ${weatherClass.date || 'not specified'}`);
+      
+      return await handleStandalonePortWeather(state, weatherClass.port, weatherClass.date, startTime);
+    }
+    
+    // ========================================================================
+    // MODE: ROUTE-BASED WEATHER (requires vessel_timeline)
+    // ========================================================================
+    
+    console.log('🌊 [WEATHER-WORKFLOW] Mode: Route-based weather');
+    
+    // ========================================================================
     // SUPERVISOR CONTEXT VALIDATION
     // ========================================================================
     
@@ -1723,25 +1793,25 @@ export async function weatherAgentNode(
     }
     
     // ========================================================================
-    // PREREQUISITE CHECK: Vessel Timeline Required
+    // PREREQUISITE CHECK: Vessel Timeline Required (for route weather only)
     // ========================================================================
     
-  if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
+    if (!state.vessel_timeline || state.vessel_timeline.length === 0) {
       console.error('❌ [WEATHER-WORKFLOW] Missing prerequisite: vessel_timeline');
-    return {
+      return {
         agent_status: { 
           ...(state.agent_status || {}), 
           weather_agent: 'failed' 
         },
-      agent_errors: {
-        ...(state.agent_errors || {}),
-        weather_agent: {
-          error: 'Cannot fetch weather without vessel timeline. Route agent must run first.',
-          timestamp: Date.now(),
+        agent_errors: {
+          ...(state.agent_errors || {}),
+          weather_agent: {
+            error: 'Cannot fetch weather without vessel timeline. Route agent must run first.',
+            timestamp: Date.now(),
+          },
         },
-      },
-    };
-  }
+      };
+    }
   
     console.log(`✅ [WEATHER-WORKFLOW] Prerequisite met: vessel_timeline (${state.vessel_timeline.length} positions)`);
     
@@ -1870,6 +1940,168 @@ export async function weatherAgentNode(
               timestamp: Date.now(),
             },
           },
+    };
+  }
+}
+
+/**
+ * Handle standalone port weather queries (no route required)
+ * Fetches weather data for a single port location
+ */
+async function handleStandalonePortWeather(
+  state: MultiAgentState,
+  portName: string,
+  targetDateStr: string | undefined,
+  startTime: number
+): Promise<Partial<MultiAgentState>> {
+  try {
+    console.log(`🌤️ [WEATHER-WORKFLOW] Fetching port weather for: ${portName}`);
+    
+    // Step 1: Resolve port to coordinates
+    const { extractPortsFromQuery } = await import('@/lib/utils/port-lookup');
+    const portsData = await import('@/lib/data/ports.json');
+    
+    // Try to find the port
+    // Define a simple port type for this function
+    let portInfo: { port_code: string; name: string; coordinates: { lat: number; lon: number } } | null = null;
+    
+    // Try to find in static data first
+    const staticPort = portsData.default.find((p: any) => 
+      p.name.toLowerCase().includes(portName.toLowerCase()) ||
+      p.port_code.toLowerCase() === portName.toLowerCase()
+    );
+    
+    if (staticPort && staticPort.coordinates) {
+      portInfo = {
+        port_code: staticPort.port_code,
+        name: staticPort.name,
+        coordinates: staticPort.coordinates,
+      };
+    }
+    
+    // If not found in static data, try port resolver
+    if (!portInfo) {
+      const { resolvePortCode } = await import('@/lib/utils/port-resolver');
+      const resolved = await resolvePortCode(portName);
+      if (resolved) {
+        portInfo = {
+          port_code: resolved.port_code,
+          name: portName,
+          coordinates: resolved.coordinates,
+        };
+      }
+    }
+    
+    if (!portInfo) {
+      console.error(`❌ [WEATHER-WORKFLOW] Could not find port: ${portName}`);
+      return {
+        agent_status: { 
+          ...(state.agent_status || {}), 
+          weather_agent: 'failed' 
+        },
+        agent_errors: {
+          ...(state.agent_errors || {}),
+          weather_agent: {
+            error: `Could not find port: ${portName}. Please specify a valid port name or code.`,
+            timestamp: Date.now(),
+          },
+        },
+      };
+    }
+    
+    console.log(`✅ [WEATHER-WORKFLOW] Port found: ${portInfo.port_code} (${portInfo.name})`);
+    console.log(`   Coordinates: ${portInfo.coordinates.lat}°N, ${portInfo.coordinates.lon}°E`);
+    
+    // Step 2: Parse target date
+    let targetDate = new Date();
+    if (targetDateStr) {
+      // Remove ordinal suffixes (st, nd, rd, th)
+      const cleaned = targetDateStr.replace(/(\d+)(st|nd|rd|th)/gi, '$1');
+      const parsed = new Date(cleaned);
+      if (!isNaN(parsed.getTime())) {
+        targetDate = parsed;
+      } else {
+        console.warn(`⚠️ [WEATHER-WORKFLOW] Could not parse date: "${targetDateStr}", using today`);
+      }
+    }
+    
+    console.log(`📅 [WEATHER-WORKFLOW] Target date: ${targetDate.toISOString().split('T')[0]}`);
+    
+    // Step 3: Fetch marine weather for port location
+    // Create a single position for weather lookup
+    const position = {
+      lat: portInfo.coordinates.lat,
+      lon: portInfo.coordinates.lon,
+      datetime: targetDate.toISOString(),
+    };
+    
+    // Execute marine weather tool for single position
+    const weatherResult = await executeMarineWeatherTool({
+      positions: [position],
+    });
+    
+    if (!weatherResult || weatherResult.length === 0) {
+      throw new Error('Failed to fetch weather data for port');
+    }
+    
+    console.log(`✅ [WEATHER-WORKFLOW] Weather data retrieved for ${portInfo.name}`);
+    
+    // Step 4: Format port weather response
+    const weatherPoint = weatherResult[0];
+    const standalonePortWeather = {
+      port_code: portInfo.port_code,
+      port_name: portInfo.name,
+      coordinates: portInfo.coordinates,
+      target_date: targetDate.toISOString(),
+      forecast: {
+        wave_height: weatherPoint.weather?.wave_height_m,
+        wind_speed_10m: weatherPoint.weather?.wind_speed_knots,
+        wind_direction: weatherPoint.weather?.wind_direction_deg,
+        sea_state: weatherPoint.weather?.sea_state,
+        conditions: weatherPoint.weather?.sea_state || 'Unknown',
+      },
+    };
+    
+    const duration = Date.now() - startTime;
+    console.log(`✅ [WEATHER-WORKFLOW] Standalone port weather complete in ${duration}ms`);
+    
+    // Record metrics
+    recordAgentExecution('weather_agent', duration, true);
+    
+    return {
+      standalone_port_weather: standalonePortWeather,
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        weather_agent: 'success' 
+      },
+      messages: [
+        new AIMessage({
+          content: '',
+          additional_kwargs: {
+            standalone_port_weather: standalonePortWeather,
+          }
+        })
+      ],
+    };
+    
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [WEATHER-WORKFLOW] Port weather error after ${duration}ms:`, error.message);
+    
+    recordAgentExecution('weather_agent', duration, false);
+    
+    return {
+      agent_status: { 
+        ...(state.agent_status || {}), 
+        weather_agent: 'failed' 
+      },
+      agent_errors: {
+        ...(state.agent_errors || {}),
+        weather_agent: {
+          error: error.message,
+          timestamp: Date.now(),
+        },
+      },
     };
   }
 }
@@ -3095,6 +3327,71 @@ export async function finalizeNode(state: MultiAgentState) {
   const agentStartTime = Date.now();
 
   try {
+    // ========================================================================
+    // STANDALONE PORT WEATHER - Direct formatting without synthesis
+    // ========================================================================
+    
+    if (state.standalone_port_weather && !state.route_data) {
+      console.log('🌤️ [FINALIZE] Standalone port weather response');
+      
+      const portWeather = state.standalone_port_weather;
+      const targetDate = new Date(portWeather.target_date);
+      
+      // Format port weather response
+      const portWeatherResponse = `
+## Weather Forecast for ${portWeather.port_name}
+
+📅 **Date:** ${targetDate.toLocaleDateString('en-US', { 
+  weekday: 'long', 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}
+
+📍 **Location:** ${portWeather.port_code} (${portWeather.coordinates.lat.toFixed(2)}°N, ${portWeather.coordinates.lon.toFixed(2)}°E)
+
+### Current Conditions
+
+${portWeather.forecast.wave_height !== undefined ? `🌊 **Wave Height:** ${portWeather.forecast.wave_height.toFixed(1)}m` : ''}
+${portWeather.forecast.wind_speed_10m !== undefined ? `💨 **Wind Speed:** ${portWeather.forecast.wind_speed_10m.toFixed(0)} knots` : ''}
+${portWeather.forecast.wind_direction !== undefined ? `🧭 **Wind Direction:** ${portWeather.forecast.wind_direction}°` : ''}
+${portWeather.forecast.sea_state ? `🌊 **Sea State:** ${portWeather.forecast.sea_state}` : ''}
+${portWeather.forecast.conditions ? `☁️ **Conditions:** ${portWeather.forecast.conditions}` : ''}
+
+### Port Operations Assessment
+
+${portWeather.forecast.wave_height !== undefined && portWeather.forecast.wave_height <= 1.5 
+  ? '✅ **Conditions are favorable for port operations and bunkering.**'
+  : portWeather.forecast.wave_height !== undefined && portWeather.forecast.wave_height <= 2.5
+  ? '⚠️ **Conditions are marginal. Exercise caution for bunkering operations.**'
+  : '❌ **Conditions may be challenging for port operations. Monitor closely.**'}
+
+${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind_speed_10m > 25 
+  ? '⚠️ **High winds detected. Consider weather windows for sensitive operations.**' 
+  : ''}
+
+---
+*Weather data provided by Open-Meteo Marine Weather API*
+      `.trim();
+      
+      const agentDuration = Date.now() - agentStartTime;
+      recordAgentTime('finalize', agentDuration);
+      recordAgentExecution('finalize', agentDuration, true);
+      
+      console.log('✅ [FINALIZE] Port weather response generated');
+      
+      return {
+        final_recommendation: portWeatherResponse,
+        formatted_response: null,
+        synthesized_insights: null,
+        messages: [new AIMessage({ content: portWeatherResponse })],
+        agent_status: {
+          ...(state.agent_status || {}),
+          finalize: 'success',
+        },
+      };
+    }
+    
     // ========================================================================
     // PHASE 1: CROSS-AGENT SYNTHESIS
     // ========================================================================
