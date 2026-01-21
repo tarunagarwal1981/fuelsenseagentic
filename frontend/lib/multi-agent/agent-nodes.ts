@@ -405,10 +405,34 @@ const analyzeBunkerOptionsTool = tool(
  * Routes to: route_agent → weather_agent → bunker_agent → finalize
  * 
  * Implements graceful degradation: if an agent fails, skip to next step.
+ * 
+ * AGENTIC MODE: When USE_AGENTIC_SUPERVISOR=true, uses ReAct pattern for 
+ * intelligent reasoning-based routing instead of hard-coded rules.
  */
 export async function supervisorAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  // ========================================================================
+  // AGENTIC SUPERVISOR MODE (NEW - ReAct Pattern)
+  // ========================================================================
+  const USE_AGENTIC_SUPERVISOR = process.env.USE_AGENTIC_SUPERVISOR === 'true';
+  
+  if (USE_AGENTIC_SUPERVISOR) {
+    console.log('\n🧠 [SUPERVISOR] Using AGENTIC mode (ReAct pattern)...');
+    
+    try {
+      // Dynamic import to avoid circular dependencies
+      const { reasoningSupervisor } = await import('./agentic-supervisor');
+      return await reasoningSupervisor(state);
+    } catch (error) {
+      console.error('❌ [SUPERVISOR] Agentic supervisor failed, falling back to legacy:', error);
+      // Fall through to legacy logic
+    }
+  }
+  
+  // ========================================================================
+  // LEGACY SUPERVISOR MODE (Original Logic)
+  // ========================================================================
   console.log("\n🎯 [SUPERVISOR] Node: Making routing decision...");
   
   // Log current state
@@ -3183,6 +3207,64 @@ function formatSynthesisAsNarrative(state: MultiAgentState): string {
 }
 
 /**
+ * Generate clarification response for agentic supervisor
+ * Called when needs_clarification is true
+ */
+function generateClarificationResponse(state: MultiAgentState): string {
+  const question = state.clarification_question || 'Could you please provide more details about your request?';
+  
+  // Get user's original query for context
+  const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
+  const originalQuery = userMessage 
+    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
+    : '';
+  
+  // Build context-aware response
+  const parts: string[] = [];
+  
+  parts.push('## ❓ Clarification Needed\n');
+  parts.push(question);
+  parts.push('\n');
+  
+  // Add context about what we understood
+  if (originalQuery) {
+    parts.push('\n**What I understood from your request:**');
+    parts.push(`> "${originalQuery.substring(0, 200)}${originalQuery.length > 200 ? '...' : ''}"\n`);
+  }
+  
+  // Add available data context
+  const availableData: string[] = [];
+  if (state.route_data) {
+    availableData.push(`Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}`);
+  }
+  if (state.weather_forecast) {
+    availableData.push('Weather forecast available');
+  }
+  if (state.bunker_ports && state.bunker_ports.length > 0) {
+    availableData.push(`${state.bunker_ports.length} bunker ports identified`);
+  }
+  
+  if (availableData.length > 0) {
+    parts.push('\n**Data I have so far:**');
+    availableData.forEach(item => parts.push(`- ${item}`));
+  }
+  
+  // Add reasoning context if available
+  if (state.current_thought) {
+    parts.push('\n**My analysis:**');
+    parts.push(`_${state.current_thought.substring(0, 300)}${state.current_thought.length > 300 ? '...' : ''}_`);
+  }
+  
+  // Add helpful suggestions
+  parts.push('\n\n**You can help by:**');
+  parts.push('- Providing specific port codes (e.g., SGSIN for Singapore, NLRTM for Rotterdam)');
+  parts.push('- Specifying fuel types and quantities needed');
+  parts.push('- Indicating your departure date or timeframe');
+  
+  return parts.join('\n');
+}
+
+/**
  * Generate legacy text output using synthesis data
  * NO LLM CALL - Uses direct formatting for speed
  */
@@ -3272,6 +3354,44 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
 export async function finalizeNode(state: MultiAgentState) {
   console.log('📝 [FINALIZE] Node: Starting finalization...');
   
+  const agentStartTime = Date.now();
+  
+  // ========================================================================
+  // AGENTIC MODE: Handle Clarification Requests
+  // ========================================================================
+  
+  if (state.needs_clarification && state.clarification_question) {
+    console.log('❓ [FINALIZE] Generating clarification response');
+    
+    const clarificationResponse = generateClarificationResponse(state);
+    
+    const duration = Date.now() - agentStartTime;
+    recordAgentTime('finalize', duration);
+    recordAgentExecution('finalize', duration, true);
+    
+    return {
+      final_recommendation: clarificationResponse,
+      formatted_response: null,
+      synthesized_insights: null,
+      messages: [new AIMessage({ content: clarificationResponse })],
+      needs_clarification: false, // Reset after handling
+      clarification_question: null,
+      agent_status: {
+        ...(state.agent_status || {}),
+        finalize: 'success',
+      },
+    };
+  }
+  
+  // ========================================================================
+  // AGENTIC MODE: Include Reasoning Chain in Response (if available)
+  // ========================================================================
+  
+  if (state.reasoning_history && state.reasoning_history.length > 0) {
+    console.log(`🧠 [FINALIZE] Reasoning chain available: ${state.reasoning_history.length} steps`);
+    // Reasoning chain will be included in synthesis/formatting
+  }
+  
   // === DEBUG: State inspection ===
   console.log('🔍 [FINALIZE-DEBUG] State inspection:');
   console.log(`  - rob_tracking: ${state.rob_tracking ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
@@ -3323,8 +3443,6 @@ export async function finalizeNode(state: MultiAgentState) {
     });
   }
   // === END DEBUG ===
-  
-  const agentStartTime = Date.now();
 
   try {
     // ========================================================================

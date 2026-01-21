@@ -17,6 +17,43 @@ import type { ECAConsumptionOutput } from '@/lib/engines/eca-consumption-engine'
 import type { VesselProfile } from '@/lib/services/vessel-service';
 
 // ============================================================================
+// Reasoning Types (Agentic Supervisor)
+// ============================================================================
+
+/**
+ * A single step in the supervisor's reasoning chain (ReAct pattern)
+ */
+export interface ReasoningStep {
+  /** Step number in the reasoning chain */
+  step_number: number;
+  /** The supervisor's thought process */
+  thought: string;
+  /** Action chosen based on reasoning */
+  action: 'call_agent' | 'validate' | 'recover' | 'clarify' | 'finalize';
+  /** Parameters for the action */
+  action_params?: {
+    agent?: string;
+    recovery_action?: 'retry_agent' | 'skip_agent' | 'ask_user';
+    question?: string;
+    [key: string]: unknown;
+  };
+  /** Observation after action execution */
+  observation?: string;
+  /** Timestamp of this step */
+  timestamp: Date;
+}
+
+/**
+ * Next action decided by agentic supervisor
+ */
+export interface SupervisorNextAction {
+  type: 'call_agent' | 'ask_user' | 'finalize' | 'recover';
+  agent?: string;
+  params?: Record<string, unknown>;
+  question?: string;
+}
+
+// ============================================================================
 // Type Definitions
 // ============================================================================
 
@@ -905,6 +942,63 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       return { ...x, ...y };
     },
     default: () => ({}),
+  }),
+
+  // ========================================================================
+  // Agentic Supervisor State (ReAct Pattern)
+  // ========================================================================
+
+  /**
+   * Reasoning history - tracks supervisor's thought process
+   * Each step contains thought, action, and observation
+   */
+  reasoning_history: Annotation<ReasoningStep[]>({
+    reducer: (current, update) => [...(current || []), ...update],
+    default: () => [],
+  }),
+
+  /**
+   * Current thought from supervisor's reasoning
+   * Updated at each reasoning step
+   */
+  current_thought: Annotation<string | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+
+  /**
+   * Next action decided by agentic supervisor
+   * Determines routing and behavior
+   */
+  next_action: Annotation<SupervisorNextAction | null>({
+    reducer: (_, update) => update,
+    default: () => null,
+  }),
+
+  /**
+   * Count of error recovery attempts
+   * Used to prevent infinite recovery loops
+   */
+  recovery_attempts: Annotation<number>({
+    reducer: (current, update) => (current || 0) + update,
+    default: () => 0,
+  }),
+
+  /**
+   * Flag indicating user clarification is needed
+   * When true, finalize will generate a clarifying question
+   */
+  needs_clarification: Annotation<boolean>({
+    reducer: (_, update) => update,
+    default: () => false,
+  }),
+
+  /**
+   * Clarification question to ask user (if needs_clarification is true)
+   */
+  clarification_question: Annotation<string | null>({
+    reducer: (_, update) => update,
+    default: () => null,
   }),
 });
 

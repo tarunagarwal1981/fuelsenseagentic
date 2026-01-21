@@ -47,6 +47,9 @@ if (registeredAgents.length === 0) {
  * Supervisor Router
  * 
  * Routes to the next agent based on supervisor's decision in state.next_agent.
+ * 
+ * AGENTIC MODE: Supports supervisor self-loop for ReAct pattern reasoning,
+ * and clarification handling for ambiguous queries.
  */
 function supervisorRouter(state: MultiAgentState): string | typeof END {
   const nextAgent = state.next_agent;
@@ -60,11 +63,32 @@ function supervisorRouter(state: MultiAgentState): string | typeof END {
     );
     return END;
   }
+  
+  // AGENTIC MODE: Check reasoning step limit
+  const reasoningSteps = state.reasoning_history?.length || 0;
+  if (reasoningSteps > 15) {
+    console.warn(
+      `⚠️ [SUPERVISOR-ROUTER] Too many reasoning steps (${reasoningSteps}), forcing finalize`
+    );
+    return 'finalize';
+  }
+
+  // AGENTIC MODE: If needs clarification, go to finalize to generate question
+  if (state.needs_clarification) {
+    console.log('❓ [SUPERVISOR-ROUTER] User clarification needed, routing to finalize');
+    return 'finalize';
+  }
 
   // Route based on supervisor's decision
   if (!nextAgent || nextAgent === '') {
     console.log('🔀 [SUPERVISOR-ROUTER] No next agent specified, defaulting to route_agent');
     return 'route_agent';
+  }
+
+  // AGENTIC MODE: Allow supervisor self-loop for continued reasoning
+  if (nextAgent === 'supervisor') {
+    console.log('🔄 [SUPERVISOR-ROUTER] Supervisor self-loop for continued reasoning');
+    return 'supervisor';
   }
 
   // Validate next agent value
@@ -282,6 +306,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
 
   // ========================================================================
   // Supervisor Routing
+  // Includes supervisor self-loop for agentic ReAct pattern
   // ========================================================================
   .addConditionalEdges('supervisor', supervisorRouter, {
     route_agent: 'route_agent',
@@ -289,6 +314,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
     weather_agent: 'weather_agent',
     bunker_agent: 'bunker_agent',
     finalize: 'finalize',
+    supervisor: 'supervisor',  // AGENTIC: Allow supervisor self-loop for continued reasoning
     [END]: END,
   })
 

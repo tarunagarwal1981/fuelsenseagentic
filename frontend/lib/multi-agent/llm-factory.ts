@@ -41,7 +41,8 @@ export type LLMTask =
   | 'supervisor_planning'  // Supervisor orchestration decisions
   | 'simple_tool'          // Route, Weather agents (simple schemas)
   | 'complex_tool'         // Bunker agent (complex nested schemas)
-  | 'synthesis';           // Finalize (complex reasoning)
+  | 'synthesis'            // Finalize (complex reasoning)
+  | 'reasoning';           // Agentic supervisor ReAct reasoning
 
 /**
  * LLM Factory for tiered model selection
@@ -67,19 +68,23 @@ export class LLMFactory {
         
       case 'supervisor_planning':
         // Supervisor: Orchestration and tool allocation decisions
-        // Use GPT-4o-mini for fast, cheap, structured routing decisions
-        const OpenAIPlanning = getChatOpenAI();
-        if (OpenAIPlanning && process.env.OPENAI_API_KEY) {
-          console.log('🤖 [LLM-FACTORY] Using GPT-4o-mini for supervisor planning');
-          return new OpenAIPlanning({
-            model: 'gpt-4o-mini',
-            temperature: 0,
-            apiKey: process.env.OPENAI_API_KEY,
-          });
+        // Prefer Claude for reliability, GPT-4o-mini optional via PREFER_OPENAI_PLANNING
+        const preferOpenAIPlanning = process.env.PREFER_OPENAI_PLANNING === 'true';
+        
+        if (preferOpenAIPlanning) {
+          const OpenAIPlanning = getChatOpenAI();
+          if (OpenAIPlanning && process.env.OPENAI_API_KEY) {
+            console.log('🤖 [LLM-FACTORY] Using GPT-4o-mini for supervisor planning');
+            return new OpenAIPlanning({
+              model: 'gpt-4o-mini',
+              temperature: 0,
+              apiKey: process.env.OPENAI_API_KEY,
+            });
+          }
         }
         
-        // Fallback to Claude Haiku for supervisor if no OpenAI key
-        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for supervisor planning (fallback)');
+        // Default: Use Claude Haiku for supervisor planning (reliable)
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for supervisor planning');
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
@@ -126,6 +131,32 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature,
+          apiKey: process.env.ANTHROPIC_API_KEY!,
+        });
+        
+      case 'reasoning':
+        // Agentic Supervisor: ReAct pattern reasoning
+        // Prefer Claude for reasoning (more reliable, no quota issues in testing)
+        // GPT-4o can be used if PREFER_OPENAI_REASONING=true
+        const preferOpenAI = process.env.PREFER_OPENAI_REASONING === 'true';
+        
+        if (preferOpenAI) {
+          const OpenAIReasoning = getChatOpenAI();
+          if (OpenAIReasoning && process.env.OPENAI_API_KEY) {
+            console.log('🤖 [LLM-FACTORY] Using GPT-4o for agentic reasoning');
+            return new OpenAIReasoning({
+              model: 'gpt-4o',
+              temperature: 0.7,  // Slightly creative for problem-solving
+              apiKey: process.env.OPENAI_API_KEY,
+            });
+          }
+        }
+        
+        // Default: Use Claude Haiku for reasoning (reliable, cost-effective)
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for agentic reasoning');
+        return new ChatAnthropic({
+          model: 'claude-haiku-4-5-20251001',
+          temperature: 0.5,
           apiKey: process.env.ANTHROPIC_API_KEY!,
         });
         
