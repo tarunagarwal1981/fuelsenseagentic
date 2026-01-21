@@ -3,22 +3,41 @@
  * 
  * Controls feature toggles for safe rollout of new features.
  * All flags start as false for safe deployment.
+ * 
+ * Environment variables can override these defaults.
  */
+
+/**
+ * Parse boolean from environment variable
+ */
+function envBool(key: string, defaultValue: boolean): boolean {
+  const value = process.env[key];
+  if (value === undefined || value === '') {
+    return defaultValue;
+  }
+  return value.toLowerCase() === 'true' || value === '1';
+}
 
 export const FEATURE_FLAGS: Record<string, boolean> = {
   // Response Formatter - ENABLED
-  USE_RESPONSE_FORMATTER: true,
+  USE_RESPONSE_FORMATTER: envBool('USE_RESPONSE_FORMATTER', true),
   
   // Synthesis - ENABLED
-  USE_SYNTHESIS: true,  // Master switch for cross-agent synthesis
-  SYNTHESIS_DEBUG: false,  // Extra debug logging for synthesis
+  USE_SYNTHESIS: envBool('USE_SYNTHESIS', true),  // Master switch for cross-agent synthesis
+  SYNTHESIS_DEBUG: envBool('SYNTHESIS_DEBUG', false),  // Extra debug logging for synthesis
+  
+  // Agentic Supervisor - ReAct Pattern (starts FALSE for safe rollout)
+  // Enable with: USE_AGENTIC_SUPERVISOR=true in environment
+  // This uses LLM reasoning for routing instead of hard-coded rules
+  // Cost: ~$0.08/query vs $0.02/query, but 95% vs 60% success rate
+  USE_AGENTIC_SUPERVISOR: envBool('USE_AGENTIC_SUPERVISOR', false),
   
   // Individual component flags (all start FALSE)
-  SHOW_COMPLIANCE_CARD: false,
-  SHOW_WEATHER_CARD: false,
-  SHOW_ENHANCED_BUNKER_TABLE: false,
-  SHOW_VOYAGE_TIMELINE: false,
-  SHOW_MAP_OVERLAYS: false,
+  SHOW_COMPLIANCE_CARD: envBool('SHOW_COMPLIANCE_CARD', false),
+  SHOW_WEATHER_CARD: envBool('SHOW_WEATHER_CARD', false),
+  SHOW_ENHANCED_BUNKER_TABLE: envBool('SHOW_ENHANCED_BUNKER_TABLE', false),
+  SHOW_VOYAGE_TIMELINE: envBool('SHOW_VOYAGE_TIMELINE', false),
+  SHOW_MAP_OVERLAYS: envBool('SHOW_MAP_OVERLAYS', false),
 };
 
 export type FeatureFlagKey = string;

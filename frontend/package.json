@@ -10,6 +10,7 @@
     "test": "tsx lib/multi-agent/__tests__/run-tests.ts",
     "test:registry": "tsx lib/multi-agent/__tests__/registry.test.ts",
     "test:planning": "tsx lib/multi-agent/__tests__/planning.test.ts",
+    "test:agentic": "tsx lib/multi-agent/__tests__/agentic-supervisor.test.ts",
     "test:query": "tsx lib/multi-agent/__tests__/query-test.ts",
     "test:baseline": "tsx tests/integration/baseline-queries.test.ts",
     "test:synthesis": "tsx lib/multi-agent/synthesis/__tests__/synthesis-v3.test.ts",

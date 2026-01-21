@@ -9,6 +9,7 @@ import './setup-env';
 
 import { testRegistry } from './registry.test';
 import { testPlanning } from './planning.test';
+import { testAgenticSupervisor } from './agentic-supervisor.test';
 
 async function runAllTests() {
   console.log('🚀 [TEST-RUNNER] Starting test suite...\n');
@@ -35,6 +36,17 @@ async function runAllTests() {
     console.log('✅ Planning tests completed\n');
   } catch (error) {
     console.error('❌ Planning tests failed:', error);
+    allPassed = false;
+  }
+  
+  try {
+    // Run agentic supervisor tests
+    console.log('\n📋 Running Agentic Supervisor Tests...');
+    console.log('-'.repeat(60));
+    await testAgenticSupervisor();
+    console.log('✅ Agentic supervisor tests completed\n');
+  } catch (error) {
+    console.error('❌ Agentic supervisor tests failed:', error);
     allPassed = false;
   }
   
