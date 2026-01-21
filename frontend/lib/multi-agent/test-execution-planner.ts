@@ -59,6 +59,9 @@ function createEmptyState(): MultiAgentState {
     recovery_attempts: 0,
     needs_clarification: false,
     clarification_question: null,
+    // Parameter override fields (supervisor → agent communication)
+    port_overrides: undefined,
+    agent_overrides: undefined,
   };
 }
 

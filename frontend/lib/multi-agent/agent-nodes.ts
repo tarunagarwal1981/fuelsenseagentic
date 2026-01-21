@@ -1457,12 +1457,36 @@ export async function routeAgentNode(
     if (!state.route_data) {
       console.log('📍 [ROUTE-WORKFLOW] Route data missing - calculating route...');
       
-      // Extract origin and destination from user query
+      let origin: string;
+      let destination: string;
+      
+      // Get user query (needed for validation logging)
       const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
       const userQuery = userMessage?.content?.toString() || '';
       
-      // Extract ports using LLM (reliable, handles any format)
-      const { origin, destination } = await extractPortsFromQuery(userQuery);
+      // ======================================================================
+      // PRIORITY 1: Check for supervisor-provided port overrides (from error recovery)
+      // These bypass extraction logic entirely - supervisor has already validated them
+      // ======================================================================
+      if (state.port_overrides?.origin && state.port_overrides?.destination) {
+        console.log('🎯 [ROUTE-WORKFLOW] Using supervisor-provided port overrides (bypass extraction):');
+        console.log(`   Origin: ${state.port_overrides.origin}`);
+        console.log(`   Destination: ${state.port_overrides.destination}`);
+        
+        origin = state.port_overrides.origin;
+        destination = state.port_overrides.destination;
+        
+      } else {
+        // ======================================================================
+        // PRIORITY 2: Standard flow - extract ports from query
+        // ======================================================================
+        console.log('📍 [ROUTE-WORKFLOW] No overrides found, extracting ports from query...');
+        
+        // Extract ports using LLM (reliable, handles any format)
+        const extracted = await extractPortsFromQuery(userQuery);
+        origin = extracted.origin;
+        destination = extracted.destination;
+      }
       
       console.log(`📍 [ROUTE-WORKFLOW] Calculating route: ${origin} → ${destination}`);
       
@@ -1607,6 +1631,11 @@ export async function routeAgentNode(
     // Record metrics
     recordAgentExecution('route_agent', duration, true);
     
+    // Log if we used overrides for debugging
+    if (state.port_overrides) {
+      console.log('🎯 [ROUTE-WORKFLOW] Successfully used supervisor port overrides');
+    }
+    
     return {
       route_data: state.route_data,
       vessel_timeline: state.vessel_timeline,
@@ -1614,6 +1643,8 @@ export async function routeAgentNode(
         ...(state.agent_status || {}), 
         route_agent: 'success' 
       },
+      // Clear port_overrides after successful use to prevent pollution in future calls
+      port_overrides: undefined,
       messages: [
         new AIMessage({
           content: '',
@@ -1628,6 +1659,12 @@ export async function routeAgentNode(
   } catch (error: any) {
     const duration = Date.now() - startTime;
     console.error(`❌ [ROUTE-WORKFLOW] Error after ${duration}ms:`, error.message);
+    
+    // Log state context for debugging
+    if (state.port_overrides) {
+      console.error(`🔍 [ROUTE-WORKFLOW] Port overrides were present:`, state.port_overrides);
+    }
+    console.error(`🔍 [ROUTE-WORKFLOW] Recovery attempts: ${state.recovery_attempts || 0}`);
     
     // Record error metrics
     recordAgentExecution('route_agent', duration, false);

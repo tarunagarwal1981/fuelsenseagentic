@@ -1000,6 +1000,34 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     reducer: (_, update) => update,
     default: () => null,
   }),
+
+  // ========================================================================
+  // Parameter Override System (Supervisor → Agent Communication)
+  // ========================================================================
+
+  /**
+   * Port overrides from supervisor (bypasses extraction logic)
+   * Used when supervisor detects typos/corrections and wants to pass validated port codes directly
+   * Example: { origin: "JPCHB", destination: "SGSIN" } for "Chiba to sigapore" query
+   */
+  port_overrides: Annotation<{
+    origin?: string;      // UN/LOCODE format (e.g., "JPCHB")
+    destination?: string; // UN/LOCODE format (e.g., "SGSIN")
+  } | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
+
+  /**
+   * Generic agent parameter overrides
+   * Allows supervisor to pass pre-validated/corrected parameters to any agent
+   * Key = agent_name, Value = parameters to override
+   * Example: { "weather_agent": { "coordinates": [1.29, 103.85] } }
+   */
+  agent_overrides: Annotation<Record<string, Record<string, unknown>> | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
+  }),
 });
 
 /**

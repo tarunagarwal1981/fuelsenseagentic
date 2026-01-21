@@ -411,9 +411,22 @@ ACTIONS YOU CAN TAKE
    When: Need to check state before proceeding
    Params: { "check": "description" }
 
-3. "recover" - Attempt error recovery
-   When: An agent has failed
-   Params: { "recovery_action": "retry_agent" | "skip_agent" | "ask_user", "agent": "agent_name" }
+3. "recover" - Attempt error recovery with CORRECTIONS
+   When: An agent has failed due to invalid/misspelled data
+   Params structure:
+   {
+     "recovery_action": "retry_agent" | "skip_agent" | "ask_user",
+     "agent": "agent_name",
+     "corrected_params": {  // REQUIRED for retry_agent when fixing data issues
+       "origin_port": "JPCHB",      // Use UN/LOCODE format
+       "destination_port": "SGSIN"  // Use UN/LOCODE format
+     },
+     "reason": "Brief explanation (e.g., 'Fixed typo: sigapore → SGSIN')"
+   }
+   
+   CRITICAL: When recovery_action is "retry_agent" and the failure was due to 
+   invalid/misspelled ports, you MUST provide corrected_params. The agent will 
+   use these corrected parameters directly instead of re-parsing the query.
 
 4. "clarify" - Ask user for clarification
    When: Confidence < 30% AND critical info completely missing
@@ -433,10 +446,33 @@ OUTPUT FORMAT (STRICT JSON)
   "params": { ... }
 }
 
+═══════════════════════════════════════════════════════════════════════════════
+RECOVERY EXAMPLE (Port Typo Correction)
+═══════════════════════════════════════════════════════════════════════════════
+
+User Query: "route from Chiba to sigapore"
+Agent Error: "Could not identify destination port 'sigapore'. Did you mean 'Singapore' (SGSIN)?"
+
+CORRECT RECOVERY RESPONSE:
+{
+  "thought": "The route_agent failed because 'sigapore' is misspelled. The error suggests SGSIN (Singapore). I should retry with the corrected port codes: JPCHB (Chiba) and SGSIN (Singapore).",
+  "action": "recover",
+  "params": {
+    "recovery_action": "retry_agent",
+    "agent": "route_agent",
+    "corrected_params": {
+      "origin_port": "JPCHB",
+      "destination_port": "SGSIN"
+    },
+    "reason": "Corrected typo: 'sigapore' → 'Singapore' (SGSIN)"
+  }
+}
+
 CRITICAL: 
 - Always return valid JSON
 - Be DECISIVE (default to action)
-- Only clarify when confidence < 30%`;
+- Only clarify when confidence < 30%
+- When retrying failed agents, provide corrected_params to fix the issue`;
 }
 
 /**
@@ -447,6 +483,9 @@ function buildReasoningPrompt(state: MultiAgentState, patternMatch: PatternMatch
   const stateSummary = summarizeState(state);
   const agentStatus = summarizeAgentStatus(state);
   const recentReasoning = summarizeRecentReasoning(state);
+  
+  // Build error context if any agent failed
+  const errorContext = buildErrorContext(state);
   
   return `
 ═══════════════════════════════════════════════════════════════════════════════
@@ -467,9 +506,33 @@ ${stateSummary}
 
 AGENT STATUS:
 ${agentStatus}
+${errorContext}
 
 RECENT REASONING:
 ${recentReasoning}
+
+═══════════════════════════════════════════════════════════════════════════════
+SUPERVISOR CAPABILITIES (Error Recovery)
+═══════════════════════════════════════════════════════════════════════════════
+
+When retrying a failed agent, you can provide CORRECTED PARAMETERS that bypass
+the agent's extraction logic. This is critical for fixing typos/misspellings.
+
+Example: If route_agent fails on "sigapore" (typo), retry with:
+{
+  "action": "recover",
+  "params": {
+    "recovery_action": "retry_agent",
+    "agent": "route_agent",
+    "corrected_params": {
+      "origin_port": "JPCHB",      // UN/LOCODE for Chiba
+      "destination_port": "SGSIN"  // UN/LOCODE for Singapore (corrected)
+    },
+    "reason": "Fixed typo: sigapore → SGSIN"
+  }
+}
+
+The agent will use your corrected port codes DIRECTLY, skipping extraction.
 
 ═══════════════════════════════════════════════════════════════════════════════
 YOUR TASK
@@ -482,8 +545,13 @@ IMPORTANT CHECKS:
 ✓ Extracted data: ${JSON.stringify(patternMatch.extracted_data)}
 ✓ If query has a port name → call weather_agent (don't clarify for minor details)
 ✓ If query has origin AND destination → call route_agent
-✓ If agent failed previously → consider recovery strategy
+✓ If agent failed previously → provide corrected_params in recovery action
 ✓ If all required data available → finalize
+
+RECOVERY DECISION:
+- Agent failed due to typo/misspelling? → retry with corrected_params (fix the typo!)
+- Agent failed due to missing critical data? → ask_user for clarification
+- Agent failed for unknown reason after 2+ attempts? → skip_agent and continue
 
 CONFIDENCE CALIBRATION:
 - Port name present (even if unknown to you) = 90% confidence → ACT
@@ -494,6 +562,30 @@ CONFIDENCE CALIBRATION:
 Remember: Default to ACTION (call_agent), not CLARIFICATION!
 
 Provide your reasoning and next action as JSON.`;
+}
+
+/**
+ * Build error context for failed agents
+ */
+function buildErrorContext(state: MultiAgentState): string {
+  const errors = state.agent_errors || {};
+  const errorMessages: string[] = [];
+  
+  for (const [agent, errorInfo] of Object.entries(errors)) {
+    if (errorInfo?.error) {
+      errorMessages.push(`\n⚠️ ${agent} ERROR: ${errorInfo.error}`);
+    }
+  }
+  
+  if (errorMessages.length === 0) {
+    return '';
+  }
+  
+  return `
+AGENT ERRORS:${errorMessages.join('')}
+
+RECOVERY HINT: If error mentions a typo like "sigapore", retry with corrected_params.
+Common port codes: SGSIN (Singapore), NLRTM (Rotterdam), JPCHB (Chiba), AEDXB (Dubai)`;
 }
 
 // ============================================================================
@@ -694,7 +786,12 @@ function handleValidate(
 }
 
 /**
- * Handle recover action
+ * Handle recover action with parameter override support
+ * 
+ * When the LLM provides corrected_params during recovery, these are passed
+ * to the agent via state.port_overrides (for route_agent) or state.agent_overrides
+ * (for other agents). This allows the agent to bypass extraction logic and use
+ * the supervisor's validated corrections directly.
  */
 function handleRecover(
   reasoning: Reasoning,
@@ -707,23 +804,68 @@ function handleRecover(
   const targetAgent = reasoning.params?.agent as string | undefined;
   
   if (recoveryAction === 'retry_agent' && targetAgent) {
-    console.log(`🔄 Retrying ${targetAgent}`);
+    console.log(`🔄 [AGENTIC-SUPERVISOR] Retrying ${targetAgent}`);
     step.observation = `Retrying ${targetAgent}`;
     
+    // Clear agent's failed status to allow retry
     const newAgentStatus = { ...state.agent_status };
     delete newAgentStatus[targetAgent];
     
-    return {
+    // Extract corrected parameters from LLM reasoning
+    // LLM might use different field names, so check all variations
+    const correctedParams = reasoning.params?.corrected_params as Record<string, unknown> | undefined ||
+                            reasoning.params?.override_ports as Record<string, unknown> | undefined ||
+                            reasoning.params?.override_params as Record<string, unknown> | undefined;
+    
+    // Build base state update
+    const stateUpdate: Partial<MultiAgentState> = {
       next_agent: targetAgent,
       current_thought: reasoning.thought,
       reasoning_history: [step],
-      recovery_attempts: 1,
+      recovery_attempts: 1, // Will be added to existing count via reducer
       agent_status: newAgentStatus,
     };
+    
+    // If this is route_agent and we have corrected port parameters, pass them via port_overrides
+    if (targetAgent === 'route_agent' && correctedParams) {
+      const originPort = (correctedParams.origin_port || correctedParams.origin) as string | undefined;
+      const destPort = (correctedParams.destination_port || correctedParams.destination) as string | undefined;
+      
+      if (originPort || destPort) {
+        console.log('🎯 [AGENTIC-SUPERVISOR] Passing corrected ports to route_agent:');
+        if (originPort) console.log(`   Origin: ${originPort}`);
+        if (destPort) console.log(`   Destination: ${destPort}`);
+        
+        stateUpdate.port_overrides = {
+          origin: originPort,
+          destination: destPort,
+        };
+        
+        step.observation = `Retrying ${targetAgent} with corrected ports: ${originPort} → ${destPort}`;
+      } else {
+        console.warn('⚠️ [AGENTIC-SUPERVISOR] corrected_params found but no port data:', correctedParams);
+      }
+    }
+    
+    // For other agents, use the generic agent_overrides
+    if (targetAgent !== 'route_agent' && correctedParams) {
+      console.log(`🎯 [AGENTIC-SUPERVISOR] Passing corrected params to ${targetAgent}:`, correctedParams);
+      stateUpdate.agent_overrides = {
+        [targetAgent]: correctedParams,
+      };
+      step.observation = `Retrying ${targetAgent} with corrected parameters`;
+    }
+    
+    // Log the reason if provided
+    if (reasoning.params?.reason) {
+      console.log(`📝 [AGENTIC-SUPERVISOR] Recovery reason: ${reasoning.params.reason}`);
+    }
+    
+    return stateUpdate;
   }
   
   if (recoveryAction === 'skip_agent') {
-    console.log('⏭️ Skipping failed agent');
+    console.log('⏭️ [AGENTIC-SUPERVISOR] Skipping failed agent');
     step.observation = `Skipping ${targetAgent || 'failed agent'}`;
     
     const newAgentStatus = { ...state.agent_status };
@@ -740,7 +882,7 @@ function handleRecover(
   }
   
   if (recoveryAction === 'ask_user') {
-    console.log('❓ Asking user for help');
+    console.log('❓ [AGENTIC-SUPERVISOR] Asking user for help');
     step.observation = 'Need user clarification';
     
     return {
