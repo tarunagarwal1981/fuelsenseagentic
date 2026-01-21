@@ -1,7 +1,10 @@
 /**
  * Agentic Supervisor Tests
  * 
- * Tests for the ReAct pattern implementation of the agentic supervisor.
+ * Tests for the 3-tier decision framework:
+ * - Tier 1: Pattern Matcher (fast regex matching)
+ * - Tier 2: Decision Framework (confidence thresholds)
+ * - Tier 3: LLM Reasoning (complex queries)
  */
 
 // Load environment variables FIRST before any other imports
@@ -9,18 +12,376 @@ import './setup-env';
 
 import { HumanMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from '../state';
+import { matchQueryPattern, validateExtractedData, formatClarificationQuestion, type PatternMatch } from '../pattern-matcher';
+import { makeRoutingDecision, CONFIDENCE_THRESHOLDS, type DecisionResult } from '../decision-framework';
+
+// ============================================================================
+// Pattern Matcher Tests (No API keys required)
+// ============================================================================
+
+/**
+ * Test the pattern matcher with various query types
+ */
+export async function testPatternMatcher(): Promise<void> {
+  console.log('\n🧪 [PATTERN-MATCHER-TEST] Testing Tier 1: Pattern Matcher\n');
+  
+  const testCases: Array<{
+    query: string;
+    expectedType: PatternMatch['type'];
+    expectedAgent?: PatternMatch['agent'];
+    minConfidence: number;
+    maxConfidence: number;
+    description: string;
+  }> = [
+    // Port Weather - High Confidence
+    {
+      query: 'what is the weather condition at Singapore on 22nd jan 2026',
+      expectedType: 'port_weather',
+      expectedAgent: 'weather_agent',
+      minConfidence: 90,
+      maxConfidence: 100,
+      description: 'Port weather with clear port name and date',
+    },
+    {
+      query: 'weather at Singapore port',
+      expectedType: 'port_weather',
+      expectedAgent: 'weather_agent',
+      minConfidence: 90,
+      maxConfidence: 100,
+      description: 'Simple port weather query',
+    },
+    {
+      query: 'How is the weather at Rotterdam tomorrow',
+      expectedType: 'port_weather',
+      expectedAgent: 'weather_agent',
+      minConfidence: 85,
+      maxConfidence: 100,
+      description: 'Conversational weather query',
+    },
+    // Port Weather - Ambiguous (generic word "port" is not a valid port name)
+    {
+      query: 'weather at port',
+      expectedType: 'ambiguous',  // "port" alone is not a valid port name, so no pattern match
+      expectedAgent: undefined,
+      minConfidence: 0,
+      maxConfidence: 10,
+      description: 'Generic port word - no valid pattern match',
+    },
+    // Route Queries - High Confidence
+    {
+      query: 'route from Singapore to Rotterdam',
+      expectedType: 'route_calculation',
+      expectedAgent: 'route_agent',
+      minConfidence: 85,
+      maxConfidence: 100,
+      description: 'Clear route query with origin and destination',
+    },
+    {
+      query: 'distance from Tokyo to Shanghai',
+      expectedType: 'route_calculation',
+      expectedAgent: 'route_agent',
+      minConfidence: 85,
+      maxConfidence: 100,
+      description: 'Distance query is a route query',
+    },
+    // Bunker Queries
+    {
+      query: 'cheapest bunker from Singapore to Rotterdam',
+      expectedType: 'bunker_planning',
+      expectedAgent: 'route_agent',
+      minConfidence: 80,
+      maxConfidence: 100,
+      description: 'Bunker with route - starts with route_agent',
+    },
+    {
+      query: 'cheapest bunker',
+      expectedType: 'bunker_planning',
+      expectedAgent: undefined,
+      minConfidence: 30,
+      maxConfidence: 50,
+      description: 'Bunker without route - medium confidence',
+    },
+    // Ambiguous Queries
+    {
+      query: 'hello there',
+      expectedType: 'ambiguous',
+      expectedAgent: undefined,
+      minConfidence: 0,
+      maxConfidence: 10,
+      description: 'Unrelated query - no pattern match',
+    },
+  ];
+  
+  let passed = 0;
+  let failed = 0;
+  
+  for (const testCase of testCases) {
+    console.log(`📋 Test: ${testCase.description}`);
+    console.log(`   Query: "${testCase.query}"`);
+    
+    const result = matchQueryPattern(testCase.query);
+    
+    const typeMatch = result.type === testCase.expectedType;
+    const agentMatch = result.agent === testCase.expectedAgent;
+    const confidenceMatch = result.confidence >= testCase.minConfidence && result.confidence <= testCase.maxConfidence;
+    
+    console.log(`   Type: ${result.type} (expected: ${testCase.expectedType}) ${typeMatch ? '✅' : '❌'}`);
+    console.log(`   Agent: ${result.agent || 'none'} (expected: ${testCase.expectedAgent || 'none'}) ${agentMatch ? '✅' : '❌'}`);
+    console.log(`   Confidence: ${result.confidence}% (expected: ${testCase.minConfidence}-${testCase.maxConfidence}%) ${confidenceMatch ? '✅' : '❌'}`);
+    
+    if (typeMatch && agentMatch && confidenceMatch) {
+      console.log(`   ✅ PASSED\n`);
+      passed++;
+    } else {
+      console.log(`   ❌ FAILED\n`);
+      failed++;
+    }
+  }
+  
+  console.log('='.repeat(60));
+  console.log(`📊 Pattern Matcher Results: ${passed} passed, ${failed} failed`);
+  
+  if (failed > 0) {
+    throw new Error(`Pattern matcher tests failed: ${failed} failures`);
+  }
+  
+  console.log('✅ [PATTERN-MATCHER-TEST] All pattern matcher tests passed!\n');
+}
+
+// ============================================================================
+// Decision Framework Tests (No API keys required)
+// ============================================================================
+
+/**
+ * Test the decision framework with pattern matches
+ */
+export async function testDecisionFramework(): Promise<void> {
+  console.log('\n🧪 [DECISION-FRAMEWORK-TEST] Testing Tier 2: Decision Framework\n');
+  
+  // Mock empty state for testing
+  const emptyState: Partial<MultiAgentState> = {
+    messages: [],
+    reasoning_history: [],
+    recovery_attempts: 0,
+    agent_status: {},
+    agent_errors: {},
+    route_data: null,
+    standalone_port_weather: null,
+    bunker_analysis: null,
+  };
+  
+  const testCases: Array<{
+    patternMatch: PatternMatch;
+    state: Partial<MultiAgentState>;
+    expectedDecision: DecisionResult['decision'];
+    expectedAgent?: string;
+    description: string;
+  }> = [
+    // High Confidence - Immediate Action
+    {
+      patternMatch: {
+        matched: true,
+        type: 'port_weather',
+        agent: 'weather_agent',
+        confidence: 95,
+        extracted_data: { port: 'Singapore', date: '22nd jan 2026' },
+        reason: 'Clear port weather pattern',
+      },
+      state: emptyState,
+      expectedDecision: 'immediate_action',
+      expectedAgent: 'weather_agent',
+      description: 'High confidence port weather → immediate action',
+    },
+    // Low Confidence - Request Clarification
+    {
+      patternMatch: {
+        matched: true,
+        type: 'port_weather',
+        agent: 'weather_agent',
+        confidence: 20,
+        extracted_data: { port: undefined },
+        reason: 'Generic word "port" - low confidence',
+      },
+      state: emptyState,
+      expectedDecision: 'request_clarification',
+      expectedAgent: undefined,
+      description: 'Low confidence → request clarification',
+    },
+    // Medium Confidence - LLM Reasoning
+    {
+      patternMatch: {
+        matched: true,
+        type: 'bunker_planning',
+        agent: undefined,
+        confidence: 50,
+        extracted_data: {},
+        reason: 'Bunker without route info',
+      },
+      state: emptyState,
+      expectedDecision: 'llm_reasoning',
+      expectedAgent: undefined,
+      description: 'Medium confidence → LLM reasoning',
+    },
+    // Agent Already Succeeded - Finalize
+    {
+      patternMatch: {
+        matched: true,
+        type: 'port_weather',
+        agent: 'weather_agent',
+        confidence: 95,
+        extracted_data: { port: 'Singapore' },
+        reason: 'Port weather pattern',
+      },
+      state: {
+        ...emptyState,
+        standalone_port_weather: {
+          port_code: 'SGSIN',
+          port_name: 'Singapore',
+          coordinates: { lat: 1.29, lon: 103.85 },
+          target_date: '2026-01-22',
+          forecast: { wave_height: 1.5 },
+        },
+      },
+      expectedDecision: 'finalize',
+      expectedAgent: 'finalize',
+      description: 'Work complete → finalize',
+    },
+    // No Pattern Match - LLM Reasoning
+    {
+      patternMatch: {
+        matched: false,
+        type: 'ambiguous',
+        confidence: 0,
+        reason: 'No pattern matched',
+      },
+      state: emptyState,
+      expectedDecision: 'llm_reasoning',
+      expectedAgent: undefined,
+      description: 'No pattern → LLM reasoning',
+    },
+  ];
+  
+  let passed = 0;
+  let failed = 0;
+  
+  for (const testCase of testCases) {
+    console.log(`📋 Test: ${testCase.description}`);
+    console.log(`   Pattern: ${testCase.patternMatch.type}, ${testCase.patternMatch.confidence}%`);
+    
+    const result = makeRoutingDecision(testCase.patternMatch, testCase.state as MultiAgentState);
+    
+    const decisionMatch = result.decision === testCase.expectedDecision;
+    const agentMatch = result.agent === testCase.expectedAgent;
+    
+    console.log(`   Decision: ${result.decision} (expected: ${testCase.expectedDecision}) ${decisionMatch ? '✅' : '❌'}`);
+    console.log(`   Agent: ${result.agent || 'none'} (expected: ${testCase.expectedAgent || 'none'}) ${agentMatch ? '✅' : '❌'}`);
+    
+    if (decisionMatch && agentMatch) {
+      console.log(`   ✅ PASSED\n`);
+      passed++;
+    } else {
+      console.log(`   ❌ FAILED\n`);
+      failed++;
+    }
+  }
+  
+  console.log('='.repeat(60));
+  console.log(`📊 Decision Framework Results: ${passed} passed, ${failed} failed`);
+  
+  if (failed > 0) {
+    throw new Error(`Decision framework tests failed: ${failed} failures`);
+  }
+  
+  console.log('✅ [DECISION-FRAMEWORK-TEST] All decision framework tests passed!\n');
+}
+
+// ============================================================================
+// Clarification Question Tests (No API keys required)
+// ============================================================================
+
+/**
+ * Test clarification question generation
+ */
+export async function testClarificationQuestions(): Promise<void> {
+  console.log('\n🧪 [CLARIFICATION-TEST] Testing clarification question generation\n');
+  
+  const testCases = [
+    {
+      match: { type: 'port_weather' as const, matched: true, confidence: 20 },
+      missing: ['port'],
+      expectedContains: 'port',
+      description: 'Port weather missing port',
+    },
+    {
+      match: { type: 'route_calculation' as const, matched: true, confidence: 30 },
+      missing: ['origin port', 'destination port'],
+      expectedContains: 'origin',
+      description: 'Route missing both ports',
+    },
+    {
+      match: { type: 'bunker_planning' as const, matched: true, confidence: 40 },
+      missing: ['route information'],
+      expectedContains: 'voyage',
+      description: 'Bunker missing route',
+    },
+  ];
+  
+  let passed = 0;
+  
+  for (const testCase of testCases) {
+    console.log(`📋 Test: ${testCase.description}`);
+    
+    const question = formatClarificationQuestion(testCase.match as PatternMatch, testCase.missing);
+    const containsExpected = question.toLowerCase().includes(testCase.expectedContains);
+    
+    console.log(`   Question: "${question}"`);
+    console.log(`   Contains "${testCase.expectedContains}": ${containsExpected ? '✅' : '❌'}\n`);
+    
+    if (containsExpected) passed++;
+  }
+  
+  console.log(`📊 Clarification Tests: ${passed}/${testCases.length} passed`);
+  console.log('✅ [CLARIFICATION-TEST] Tests complete\n');
+}
+
+// ============================================================================
+// Full Integration Tests (Requires API keys)
+// ============================================================================
 
 /**
  * Test the agentic supervisor with various query types
  */
 export async function testAgenticSupervisor(): Promise<void> {
-  console.log('\n🧪 [AGENTIC-SUPERVISOR-TEST] Starting agentic supervisor validation...\n');
+  console.log('\n' + '═'.repeat(70));
+  console.log('🧪 [AGENTIC-SUPERVISOR-TEST] Starting 3-Tier Decision Framework Tests');
+  console.log('═'.repeat(70) + '\n');
+  
+  // ============================================================================
+  // Tier 1 & 2 Tests (No API keys required)
+  // ============================================================================
+  
+  console.log('📋 Running Tier 1 & 2 Tests (No API keys required)...\n');
+  
+  // Test pattern matcher
+  await testPatternMatcher();
+  
+  // Test decision framework
+  await testDecisionFramework();
+  
+  // Test clarification questions
+  await testClarificationQuestions();
+  
+  // ============================================================================
+  // Tier 3 Tests (Requires API keys)
+  // ============================================================================
+  
+  console.log('\n📋 Running Tier 3 Tests (Requires API keys)...\n');
   
   // Check if API keys are available
   if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
-    console.log('⚠️ [AGENTIC-SUPERVISOR-TEST] Skipping - API keys not available');
-    console.log('   Set ANTHROPIC_API_KEY or OPENAI_API_KEY to run agentic supervisor tests');
-    console.log('✅ [AGENTIC-SUPERVISOR-TEST] Test skipped (requires API keys)');
+    console.log('⚠️ [AGENTIC-SUPERVISOR-TEST] Skipping Tier 3 - API keys not available');
+    console.log('   Set ANTHROPIC_API_KEY or OPENAI_API_KEY to run full integration tests');
+    console.log('✅ [AGENTIC-SUPERVISOR-TEST] Tier 1 & 2 tests completed successfully');
     return;
   }
   
@@ -249,16 +610,29 @@ export async function testAgenticSupervisor(): Promise<void> {
   // ============================================================================
   // Summary
   // ============================================================================
-  console.log('\n' + '='.repeat(60));
-  console.log('✅ [AGENTIC-SUPERVISOR-TEST] All tests passed!');
-  console.log('='.repeat(60));
+  console.log('\n' + '═'.repeat(70));
+  console.log('✅ [AGENTIC-SUPERVISOR-TEST] All 3-Tier Framework Tests Passed!');
+  console.log('═'.repeat(70));
   
-  console.log('\n📊 Test Summary:');
-  console.log('   - Test 1: Port weather query → weather_agent ✅');
-  console.log('   - Test 2: Max reasoning steps → finalize ✅');
-  console.log('   - Test 3: Max recovery attempts → clarification ✅');
-  console.log('   - Test 4: Bunker query → route_agent first ✅');
-  console.log('   - Test 5: Route available → skip route_agent ✅');
+  console.log('\n📊 Complete Test Summary:');
+  console.log('\n   Tier 1 - Pattern Matcher:');
+  console.log('   ✅ Port weather patterns (high confidence)');
+  console.log('   ✅ Route calculation patterns');
+  console.log('   ✅ Bunker planning patterns');
+  console.log('   ✅ Low confidence detection');
+  
+  console.log('\n   Tier 2 - Decision Framework:');
+  console.log('   ✅ High confidence → immediate action');
+  console.log('   ✅ Medium confidence → LLM reasoning');
+  console.log('   ✅ Low confidence → request clarification');
+  console.log('   ✅ Work complete → finalize');
+  
+  console.log('\n   Tier 3 - Integration:');
+  console.log('   ✅ Port weather query → weather_agent');
+  console.log('   ✅ Max reasoning steps → finalize');
+  console.log('   ✅ Max recovery attempts → clarification');
+  console.log('   ✅ Bunker query → route_agent first');
+  console.log('   ✅ Route available → skip route_agent');
 }
 
 // Run if executed directly

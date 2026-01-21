@@ -1,30 +1,34 @@
 /**
- * Agentic Supervisor - ReAct Pattern Implementation
+ * Agentic Supervisor - Enhanced 3-Tier Decision Framework
  * 
- * Implements a truly agentic supervisor that uses continuous LLM reasoning
- * to adaptively route between agents, handle failures, and make intelligent decisions.
+ * Implements a truly agentic supervisor with a 3-tier decision system:
  * 
- * ReAct Loop:
- * 1. REASON: LLM thinks about current state
- * 2. ACT: Execute the chosen action
- * 3. OBSERVE: Update state with results
- * 4. DECIDE: Continue or finish?
+ * TIER 1: Pattern Matcher (Fast Path)
+ * - Regex-based pattern matching for common queries
+ * - Avoids LLM calls for obvious cases
+ * - Returns confidence score for decision
  * 
- * Agency Breakdown:
- * - Intent Understanding: 15% (LLM deep reasoning)
- * - Adaptive Routing: 20% (LLM decides agent order dynamically)
- * - Error Recovery: 15% (LLM proposes recovery strategies)
- * - Prerequisite Flexibility: 10% (LLM understands when rules can bend)
- * - Clarification Handling: 10% (LLM asks intelligent questions)
- * - Multi-turn Memory: 5% (Reasoning history maintained)
- * Total Agentic: 75%
- * Deterministic (math, APIs): 25%
+ * TIER 2: Decision Framework (Confidence Routing)
+ * - High confidence (>= 80%): Immediate action
+ * - Medium confidence (30-80%): LLM reasoning
+ * - Low confidence (< 30%): Request clarification
+ * 
+ * TIER 3: LLM Reasoning (Complex Queries)
+ * - ReAct pattern for step-by-step reasoning
+ * - Handles ambiguous queries
+ * - Recovery from failures
+ * 
+ * Key Principle: DEFAULT TO ACTION, NOT CLARIFICATION
+ * - 80%+ confidence → ACT immediately
+ * - Only clarify when critical info is COMPLETELY absent
  */
 
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { LLMFactory } from './llm-factory';
 import { AgentRegistry } from './registry';
 import type { MultiAgentState, ReasoningStep } from './state';
+import { matchQueryPattern, type PatternMatch } from './pattern-matcher';
+import { makeRoutingDecision, CONFIDENCE_THRESHOLDS } from './decision-framework';
 
 // ============================================================================
 // Constants
@@ -49,21 +53,46 @@ interface Reasoning {
 }
 
 // ============================================================================
-// Main Reasoning Supervisor
+// Logging Utilities
 // ============================================================================
 
 /**
- * Agentic Reasoning Supervisor
+ * Log decision flow for debugging
+ */
+function logDecisionFlow(stage: string, data: Record<string, unknown>): void {
+  console.log(`\n${'─'.repeat(70)}`);
+  console.log(`🔍 [DECISION-FLOW] ${stage}`);
+  console.log(`${'─'.repeat(70)}`);
+  
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'object' && value !== null) {
+      console.log(`   ${key}:`, JSON.stringify(value, null, 2).split('\n').join('\n   '));
+    } else {
+      console.log(`   ${key}: ${value}`);
+    }
+  }
+}
+
+// ============================================================================
+// Main Reasoning Supervisor (3-Tier Framework)
+// ============================================================================
+
+/**
+ * Agentic Reasoning Supervisor (Enhanced with 3-Tier Decision Framework)
  * 
- * Uses ReAct pattern to make intelligent routing decisions.
- * Replaces hard-coded if/else routing with LLM-powered reasoning.
+ * Tier 1: Pre-processing pattern matcher (fast, deterministic)
+ * Tier 2: Decision framework with confidence thresholds
+ * Tier 3: LLM reasoning for complex queries
  */
 export async function reasoningSupervisor(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
-  console.log('\n🧠 [AGENTIC-SUPERVISOR] Starting reasoning loop...');
+  console.log('\n🧠 [AGENTIC-SUPERVISOR] Starting 3-tier decision framework...');
   
-  // Check limits
+  // ============================================================================
+  // CIRCUIT BREAKERS - Check limits first
+  // ============================================================================
+  
   const reasoningStepCount = state.reasoning_history?.length || 0;
   if (reasoningStepCount >= MAX_REASONING_STEPS) {
     console.warn('⚠️ [AGENTIC-SUPERVISOR] Max reasoning steps reached');
@@ -80,20 +109,128 @@ export async function reasoningSupervisor(
     return {
       next_agent: 'finalize',
       needs_clarification: true,
-      clarification_question: 'I encountered multiple issues processing your request. Could you please rephrase or provide more specific details?',
-      current_thought: 'Unable to recover from errors after multiple attempts, need user input',
+      clarification_question: 'I encountered persistent issues. Could you rephrase your request?',
+      current_thought: 'Unable to recover from errors, need user input',
     };
   }
   
-  // Generate reasoning
-  const reasoning = await generateReasoning(state);
+  // ============================================================================
+  // TIER 1: PATTERN MATCHER (Fast Path)
+  // ============================================================================
   
-  // Log reasoning
-  console.log('💭 [AGENTIC-SUPERVISOR] Thought:', reasoning.thought.substring(0, 200));
-  console.log('🎯 [AGENTIC-SUPERVISOR] Action:', reasoning.action);
-  if (reasoning.params?.agent) {
-    console.log('📍 [AGENTIC-SUPERVISOR] Target agent:', reasoning.params.agent);
+  const query = extractQuery(state);
+  console.log(`\n🔍 [TIER-1] Pattern Matcher analyzing: "${query.substring(0, 80)}..."`);
+  
+  const patternMatch = matchQueryPattern(query);
+  
+  logDecisionFlow('Pattern Match Results', {
+    type: patternMatch.type,
+    confidence: `${patternMatch.confidence}%`,
+    agent: patternMatch.agent || 'none',
+    extracted_data: patternMatch.extracted_data || {},
+    reason: patternMatch.reason || 'N/A',
+  });
+  
+  // ============================================================================
+  // TIER 2: DECISION FRAMEWORK (Confidence Routing)
+  // ============================================================================
+  
+  const decision = makeRoutingDecision(patternMatch, state);
+  
+  logDecisionFlow('Decision Framework Results', {
+    decision: decision.decision,
+    confidence: `${decision.confidence}%`,
+    agent: decision.agent || 'none',
+    reason: decision.reason,
+  });
+  
+  // ============================================================================
+  // IMMEDIATE ACTION (High Confidence >= 80%)
+  // ============================================================================
+  
+  if (decision.decision === 'immediate_action' && decision.agent) {
+    console.log(`\n🎯 [TIER-2] HIGH CONFIDENCE - Direct routing to ${decision.agent}`);
+    
+    const step: ReasoningStep = {
+      step_number: reasoningStepCount + 1,
+      thought: decision.reason,
+      action: 'call_agent',
+      action_params: { agent: decision.agent },
+      observation: `Pattern match with ${decision.confidence}% confidence → ${decision.agent}`,
+      timestamp: new Date(),
+    };
+    
+    return {
+      next_agent: decision.agent,
+      current_thought: decision.reason,
+      reasoning_history: [step],
+      needs_clarification: false,
+    };
   }
+  
+  // ============================================================================
+  // FINALIZE (Work Complete)
+  // ============================================================================
+  
+  if (decision.decision === 'finalize') {
+    console.log('\n✅ [TIER-2] All work complete - Routing to finalize');
+    
+    const step: ReasoningStep = {
+      step_number: reasoningStepCount + 1,
+      thought: decision.reason,
+      action: 'finalize',
+      action_params: {},
+      observation: 'All required data available',
+      timestamp: new Date(),
+    };
+    
+    return {
+      next_agent: 'finalize',
+      current_thought: decision.reason,
+      reasoning_history: [step],
+      needs_clarification: false,
+    };
+  }
+  
+  // ============================================================================
+  // REQUEST CLARIFICATION (Low Confidence < 30%)
+  // ============================================================================
+  
+  if (decision.decision === 'request_clarification') {
+    console.log('\n❓ [TIER-2] LOW CONFIDENCE - Requesting clarification');
+    
+    const step: ReasoningStep = {
+      step_number: reasoningStepCount + 1,
+      thought: decision.reason,
+      action: 'clarify',
+      action_params: { question: decision.clarification_question },
+      observation: `Confidence too low (${decision.confidence}%), need user input`,
+      timestamp: new Date(),
+    };
+    
+    return {
+      needs_clarification: true,
+      clarification_question: decision.clarification_question,
+      current_thought: decision.reason,
+      reasoning_history: [step],
+      next_agent: 'finalize',
+    };
+  }
+  
+  // ============================================================================
+  // TIER 3: LLM REASONING (Medium Confidence or Complex Query)
+  // ============================================================================
+  
+  console.log('\n🧠 [TIER-3] Using LLM reasoning for complex decision...');
+  
+  // Generate reasoning using LLM with pattern context
+  const reasoning = await generateReasoning(state, patternMatch);
+  
+  logDecisionFlow('LLM Reasoning Results', {
+    thought: reasoning.thought.substring(0, 200) + '...',
+    action: reasoning.action,
+    params: reasoning.params || {},
+  });
   
   // Record reasoning step
   const step: ReasoningStep = {
@@ -109,19 +246,38 @@ export async function reasoningSupervisor(
 }
 
 // ============================================================================
-// Reasoning Generation
+// Query Extraction
 // ============================================================================
 
 /**
- * Generate reasoning using LLM
- * 
- * Analyzes current state and decides what to do next.
+ * Extract the user query from state
  */
-async function generateReasoning(state: MultiAgentState): Promise<Reasoning> {
+function extractQuery(state: MultiAgentState): string {
+  // Find the last HumanMessage
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const msg = state.messages[i];
+    if (msg instanceof HumanMessage || msg._getType?.() === 'human') {
+      return typeof msg.content === 'string' ? msg.content : String(msg.content);
+    }
+  }
+  return '';
+}
+
+// ============================================================================
+// LLM Reasoning Generation
+// ============================================================================
+
+/**
+ * Generate reasoning using LLM (with pattern match context)
+ */
+async function generateReasoning(
+  state: MultiAgentState,
+  patternMatch: PatternMatch
+): Promise<Reasoning> {
   const llm = LLMFactory.getLLMForTask('reasoning');
   
   const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildReasoningPrompt(state);
+  const userPrompt = buildReasoningPrompt(state, patternMatch);
   
   const response = await llm.invoke([
     new SystemMessage(systemPrompt),
@@ -136,7 +292,6 @@ async function generateReasoning(state: MultiAgentState): Promise<Reasoning> {
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.error('❌ [AGENTIC-SUPERVISOR] Failed to parse reasoning response');
-    // Fallback to safe default
     return {
       thought: 'Unable to parse reasoning, defaulting to finalize',
       action: 'finalize',
@@ -157,65 +312,155 @@ async function generateReasoning(state: MultiAgentState): Promise<Reasoning> {
 }
 
 /**
- * Build system prompt for reasoning
+ * Build enhanced system prompt with explicit decision rules
  */
 function buildSystemPrompt(): string {
   const agentDescriptions = getAgentDescriptions();
   
-  return `You are an intelligent maritime operations coordinator.
-Your job is to reason through complex queries and decide what to do next.
+  return `You are an intelligent maritime operations coordinator with a DECISIVE mindset.
+Your job is to make CONFIDENT routing decisions based on available information.
 
 AVAILABLE AGENTS:
 ${agentDescriptions}
 
-REASONING FRAMEWORK:
-1. Understand what the user is really asking for
-2. Analyze what data we have vs what we need
-3. Consider prerequisites and dependencies
-4. Handle failures gracefully with alternative approaches
-5. Ask for clarification when truly ambiguous
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL: YOU ARE THE DECISION-MAKER, NOT A QUESTIONNAIRE BOT
+═══════════════════════════════════════════════════════════════════════════════
 
-IMPORTANT PRINCIPLES:
-- NOT ALL queries need ALL agents (be smart!)
-- Port weather ≠ Route weather (different requirements)
-- If an agent fails, consider why and adapt
-- Sometimes partial answers are better than no answer
-- Ask users for help when stuck (don't guess)
-- NEVER route to an agent that has already failed unless trying recovery
+DEFAULT BEHAVIOR: Take action whenever you have sufficient information (>= 80% confidence)
+EXCEPTION: Only ask for clarification when confidence < 30% AND critical info is COMPLETELY ABSENT
 
-ACTIONS YOU CAN TAKE:
-1. "call_agent" - Route to a specific agent. Params: { "agent": "route_agent" | "weather_agent" | "bunker_agent" | "compliance_agent" }
-2. "validate" - Validate prerequisites before proceeding. Params: { "check": "description" }
-3. "recover" - Attempt error recovery. Params: { "recovery_action": "retry_agent" | "skip_agent" | "ask_user", "agent": "agent_name" }
-4. "clarify" - Ask user for clarification. Params: { "question": "your question" }
-5. "finalize" - Finalize and return response. Params: {}
+═══════════════════════════════════════════════════════════════════════════════
+DECISION MATRIX
+═══════════════════════════════════════════════════════════════════════════════
 
-OUTPUT FORMAT (strict JSON):
+🌤️ PORT WEATHER QUERIES:
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Required: Port name (or port code)                                         │
+│ Optional: Date (default = current date if missing)                         │
+│ Action: call_agent → weather_agent                                         │
+│                                                                             │
+│ ✅ HIGH CONFIDENCE (Proceed):                                              │
+│   - "weather at Singapore" (port clear)                                   │
+│   - "weather condition at Singapore on 22nd jan" (all info present)       │
+│   - "Singapore port weather" (port clear)                                 │
+│                                                                             │
+│ ❌ LOW CONFIDENCE (Clarify):                                               │
+│   - "weather at port" (which port? - generic word)                        │
+│   - "weather" (where? - no location at all)                               │
+└────────────────────────────────────────────────────────────────────────────┘
+
+🗺️ ROUTE CALCULATION QUERIES:
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Required: Origin port AND Destination port                                 │
+│ Action: call_agent → route_agent                                           │
+│                                                                             │
+│ ✅ HIGH CONFIDENCE (Proceed):                                              │
+│   - "route from Singapore to Rotterdam" (both ports clear)                │
+│   - "Singapore Rotterdam route" (both identifiable)                        │
+│                                                                             │
+│ ❌ LOW CONFIDENCE (Clarify):                                               │
+│   - "route to Rotterdam" (from where? - missing origin)                   │
+│   - "route from Singapore" (to where? - missing destination)              │
+└────────────────────────────────────────────────────────────────────────────┘
+
+⛽ BUNKER PLANNING QUERIES:
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Required: Route information (origin + destination)                         │
+│ Depends on: route_data in state                                            │
+│ Action: If route exists → bunker_agent, else → route_agent first          │
+│                                                                             │
+│ ✅ HIGH CONFIDENCE (Proceed):                                              │
+│   - "cheapest bunker Singapore to Rotterdam" (route info present)         │
+│   - "bunker recommendation" (IF route_data already in state)              │
+│                                                                             │
+│ ❌ LOW CONFIDENCE (Clarify):                                               │
+│   - "cheapest bunker" (what route? - no route info)                       │
+└────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPORTANT PRINCIPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. DEFAULT TO ACTION, NOT CLARIFICATION
+   - If you have 80%+ of needed info → ACT
+   - Only clarify if critical info is 100% absent
+   
+2. TRUST DOWNSTREAM AGENTS
+   - Weather agent can look up ports you don't recognize
+   - Route agent can handle port name variations
+   - Don't clarify just because you're uncertain
+   
+3. USE REASONABLE DEFAULTS
+   - Missing date? → Assume current date
+   - Unclear terminal? → Agent will figure it out
+   
+4. NEVER CLARIFY FOR MINOR UNCERTAINTIES
+   - ❌ DON'T: "I see Singapore, but which specific terminal?"
+   - ✅ DO: Call weather_agent, let it figure out terminals
+
+═══════════════════════════════════════════════════════════════════════════════
+ACTIONS YOU CAN TAKE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. "call_agent" - Route to specific agent
+   When: Confidence >= 80%
+   Params: { "agent": "route_agent" | "weather_agent" | "bunker_agent" | "compliance_agent" }
+
+2. "validate" - Validate prerequisites
+   When: Need to check state before proceeding
+   Params: { "check": "description" }
+
+3. "recover" - Attempt error recovery
+   When: An agent has failed
+   Params: { "recovery_action": "retry_agent" | "skip_agent" | "ask_user", "agent": "agent_name" }
+
+4. "clarify" - Ask user for clarification
+   When: Confidence < 30% AND critical info completely missing
+   Params: { "question": "specific question about missing info" }
+
+5. "finalize" - Return response
+   When: All necessary agents have completed
+   Params: {}
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT (STRICT JSON)
+═══════════════════════════════════════════════════════════════════════════════
+
 {
-  "thought": "Your step-by-step reasoning about the current situation and what to do next",
+  "thought": "Your reasoning: What info do I have? What's my confidence? What should I do?",
   "action": "call_agent" | "validate" | "recover" | "clarify" | "finalize",
   "params": { ... }
 }
 
-CRITICAL: Always return valid JSON. The "thought" field should explain your reasoning clearly.`;
+CRITICAL: 
+- Always return valid JSON
+- Be DECISIVE (default to action)
+- Only clarify when confidence < 30%`;
 }
 
 /**
- * Build user prompt with current state
+ * Build reasoning prompt with pattern match context
  */
-function buildReasoningPrompt(state: MultiAgentState): string {
-  const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
-  const query = userMessage 
-    ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
-    : 'Unknown query';
-  
+function buildReasoningPrompt(state: MultiAgentState, patternMatch: PatternMatch): string {
+  const query = extractQuery(state);
   const stateSummary = summarizeState(state);
   const agentStatus = summarizeAgentStatus(state);
   const recentReasoning = summarizeRecentReasoning(state);
   
   return `
-CURRENT SITUATION:
-Query: "${query}"
+═══════════════════════════════════════════════════════════════════════════════
+CURRENT SITUATION
+═══════════════════════════════════════════════════════════════════════════════
+
+USER QUERY: "${query}"
+
+PATTERN ANALYSIS (from Tier 1):
+  Type: ${patternMatch.type}
+  Confidence: ${patternMatch.confidence}%
+  Agent Suggestion: ${patternMatch.agent || 'none'}
+  Extracted Data: ${JSON.stringify(patternMatch.extracted_data || {})}
+  Reason: ${patternMatch.reason || 'N/A'}
 
 AVAILABLE DATA:
 ${stateSummary}
@@ -226,20 +471,27 @@ ${agentStatus}
 RECENT REASONING:
 ${recentReasoning}
 
-TASK:
-Think step-by-step about what to do next. Consider:
-1. What is the user actually asking for?
-2. What data do I already have?
-3. What data do I still need?
-4. Are there any blockers or failures?
-5. Can I proceed with what I have?
-6. Should I ask for clarification?
+═══════════════════════════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════════════════════════
+
+Analyze the situation and decide the next action.
 
 IMPORTANT CHECKS:
-- If query is about port weather at a specific location (NOT a route), go directly to weather_agent
-- If query needs bunker analysis but we already have route_data and weather_consumption, go to bunker_agent
-- If all required data is available, go to finalize
-- If an agent has failed, consider recovery options
+✓ Pattern confidence is ${patternMatch.confidence}% - ${patternMatch.confidence >= 80 ? 'HIGH (should act)' : patternMatch.confidence >= 30 ? 'MEDIUM (use judgment)' : 'LOW (may clarify)'}
+✓ Extracted data: ${JSON.stringify(patternMatch.extracted_data)}
+✓ If query has a port name → call weather_agent (don't clarify for minor details)
+✓ If query has origin AND destination → call route_agent
+✓ If agent failed previously → consider recovery strategy
+✓ If all required data available → finalize
+
+CONFIDENCE CALIBRATION:
+- Port name present (even if unknown to you) = 90% confidence → ACT
+- Date missing but can default to today = Still 90% confidence → ACT
+- Generic word like "port" with no name = 20% confidence → CLARIFY
+- No location at all = 0% confidence → CLARIFY
+
+Remember: Default to ACTION (call_agent), not CLARIFICATION!
 
 Provide your reasoning and next action as JSON.`;
 }
@@ -255,33 +507,21 @@ function summarizeState(state: MultiAgentState): string {
   const items: string[] = [];
   
   if (state.route_data) {
-    items.push(`✅ Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code} (${state.route_data.distance_nm}nm, ${state.route_data.estimated_hours}hrs)`);
+    items.push(`✅ Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code} (${state.route_data.distance_nm}nm)`);
   } else {
     items.push('❌ Route: Not calculated');
   }
   
   if (state.vessel_timeline) {
     items.push(`✅ Timeline: ${state.vessel_timeline.length} waypoints`);
-  } else {
-    items.push('❌ Timeline: Not available');
-  }
-  
-  if (state.compliance_data) {
-    items.push('✅ Compliance: ECA zones validated');
-  } else {
-    items.push('❌ Compliance: Not checked');
   }
   
   if (state.weather_forecast) {
     items.push(`✅ Weather forecast: ${state.weather_forecast.length} points`);
-  } else {
-    items.push('❌ Weather forecast: Not retrieved');
   }
   
   if (state.weather_consumption) {
-    items.push(`✅ Weather-adjusted consumption: +${state.weather_consumption.consumption_increase_percent.toFixed(1)}%`);
-  } else {
-    items.push('❌ Weather-adjusted consumption: Not calculated');
+    items.push(`✅ Weather consumption: +${state.weather_consumption.consumption_increase_percent.toFixed(1)}%`);
   }
   
   if (state.standalone_port_weather) {
@@ -290,34 +530,17 @@ function summarizeState(state: MultiAgentState): string {
   
   if (state.bunker_ports && state.bunker_ports.length > 0) {
     items.push(`✅ Bunker ports: ${state.bunker_ports.length} found`);
-  } else {
-    items.push('❌ Bunker ports: Not identified');
   }
   
-  if (state.port_prices) {
-    const portCount = state.port_prices.prices_by_port 
-      ? Object.keys(state.port_prices.prices_by_port).length 
-      : 0;
-    items.push(`✅ Port prices: ${portCount} ports`);
-  } else {
-    items.push('❌ Port prices: Not fetched');
+  if (state.bunker_analysis?.recommendations && state.bunker_analysis.recommendations.length > 0) {
+    items.push(`✅ Bunker analysis: ${state.bunker_analysis.recommendations.length} options`);
   }
   
-  if (state.bunker_analysis && state.bunker_analysis.recommendations?.length > 0) {
-    items.push(`✅ Bunker analysis: ${state.bunker_analysis.recommendations.length} options, best: ${state.bunker_analysis.best_option?.port_name}`);
-  } else {
-    items.push('❌ Bunker analysis: Not done');
+  if (state.compliance_data) {
+    items.push('✅ Compliance: ECA validated');
   }
   
-  if (state.rob_tracking) {
-    items.push('✅ ROB tracking: Available');
-  }
-  
-  if (state.multi_bunker_plan?.required) {
-    items.push(`✅ Multi-port plan: ${state.multi_bunker_plan.plans?.length || 0} options`);
-  }
-  
-  return items.join('\n');
+  return items.length > 0 ? items.join('\n') : 'No data collected yet';
 }
 
 /**
@@ -345,7 +568,7 @@ function summarizeAgentStatus(state: MultiAgentState): string {
     }
   }
   
-  return items.length > 0 ? items.join('\n') : 'No agents executed yet';
+  return items.join('\n');
 }
 
 /**
@@ -358,10 +581,9 @@ function summarizeRecentReasoning(state: MultiAgentState): string {
     return 'None yet (first reasoning step)';
   }
   
-  // Show last 3 steps
   const recentSteps = history.slice(-3);
   return recentSteps.map(step => 
-    `Step ${step.step_number}: ${step.thought.substring(0, 100)}... → ${step.action}${step.action_params?.agent ? ` (${step.action_params.agent})` : ''}`
+    `Step ${step.step_number}: ${step.thought.substring(0, 80)}... → ${step.action}`
   ).join('\n');
 }
 
@@ -374,16 +596,7 @@ function getAgentDescriptions(): string {
     const prereqs = agent.prerequisites.length > 0 
       ? `Prerequisites: ${agent.prerequisites.join(', ')}` 
       : 'Prerequisites: None';
-    const outputs = agent.outputs.length > 0 
-      ? `Produces: ${agent.outputs.join(', ')}` 
-      : 'Produces: Nothing';
-    const deterministic = agent.is_deterministic ? ' (deterministic workflow)' : '';
-    
-    return `
-- ${agent.agent_name}${deterministic}
-  ${agent.description}
-  ${prereqs}
-  ${outputs}`;
+    return `- ${agent.agent_name}: ${agent.description} (${prereqs})`;
   }).join('\n');
 }
 
@@ -433,7 +646,7 @@ function handleCallAgent(
   const agentName = reasoning.params?.agent;
   
   if (!agentName) {
-    console.error('❌ [AGENTIC-SUPERVISOR] No agent specified in call_agent action');
+    console.error('❌ [AGENTIC-SUPERVISOR] No agent specified');
     return {
       next_agent: 'finalize',
       current_thought: 'No agent specified, finalizing',
@@ -441,7 +654,6 @@ function handleCallAgent(
     };
   }
   
-  // Validate agent exists
   const validAgents = ['route_agent', 'compliance_agent', 'weather_agent', 'bunker_agent'];
   if (!validAgents.includes(agentName)) {
     console.error(`❌ [AGENTIC-SUPERVISOR] Invalid agent: ${agentName}`);
@@ -453,8 +665,6 @@ function handleCallAgent(
   }
   
   console.log(`🎯 [AGENTIC-SUPERVISOR] Routing to: ${agentName}`);
-  
-  // Update step with observation
   step.observation = `Routing to ${agentName}`;
   
   return {
@@ -474,10 +684,8 @@ function handleValidate(
   step: ReasoningStep
 ): Partial<MultiAgentState> {
   console.log('✓ [AGENTIC-SUPERVISOR] Validating prerequisites');
+  step.observation = 'Validation complete';
   
-  step.observation = 'Validation complete, continuing reasoning';
-  
-  // Validation is internal - stay in supervisor for next reasoning step
   return {
     current_thought: reasoning.thought,
     reasoning_history: [step],
@@ -499,10 +707,9 @@ function handleRecover(
   const targetAgent = reasoning.params?.agent as string | undefined;
   
   if (recoveryAction === 'retry_agent' && targetAgent) {
-    console.log(`🔄 [AGENTIC-SUPERVISOR] Retrying ${targetAgent}`);
+    console.log(`🔄 Retrying ${targetAgent}`);
     step.observation = `Retrying ${targetAgent}`;
     
-    // Clear agent's failed status to allow retry
     const newAgentStatus = { ...state.agent_status };
     delete newAgentStatus[targetAgent];
     
@@ -516,10 +723,9 @@ function handleRecover(
   }
   
   if (recoveryAction === 'skip_agent') {
-    console.log(`⏭️ [AGENTIC-SUPERVISOR] Skipping failed agent, continuing`);
-    step.observation = `Skipping ${targetAgent || 'failed agent'}, continuing with available data`;
+    console.log('⏭️ Skipping failed agent');
+    step.observation = `Skipping ${targetAgent || 'failed agent'}`;
     
-    // Mark agent as skipped
     const newAgentStatus = { ...state.agent_status };
     if (targetAgent) {
       newAgentStatus[targetAgent] = 'skipped';
@@ -534,20 +740,18 @@ function handleRecover(
   }
   
   if (recoveryAction === 'ask_user') {
-    console.log('❓ [AGENTIC-SUPERVISOR] Asking user for help');
-    step.observation = 'Need user clarification to proceed';
+    console.log('❓ Asking user for help');
+    step.observation = 'Need user clarification';
     
     return {
       needs_clarification: true,
-      clarification_question: reasoning.params?.question || 'I encountered an issue. Could you provide more details?',
+      clarification_question: reasoning.params?.question || 'Could you provide more details?',
       current_thought: reasoning.thought,
       reasoning_history: [step],
       next_agent: 'finalize',
     };
   }
   
-  // Unknown recovery action - finalize
-  console.warn(`⚠️ [AGENTIC-SUPERVISOR] Unknown recovery action: ${recoveryAction}`);
   return handleFinalize(reasoning, state, step);
 }
 
@@ -561,8 +765,8 @@ function handleClarify(
 ): Partial<MultiAgentState> {
   console.log('❓ [AGENTIC-SUPERVISOR] Need user clarification');
   
-  const question = reasoning.params?.question || 'Could you please provide more details about your request?';
-  step.observation = `Asking user: "${question}"`;
+  const question = reasoning.params?.question || 'Could you provide more details?';
+  step.observation = `Asking: "${question}"`;
   
   return {
     needs_clarification: true,
@@ -581,8 +785,7 @@ function handleFinalize(
   state: MultiAgentState,
   step: ReasoningStep
 ): Partial<MultiAgentState> {
-  console.log('✅ [AGENTIC-SUPERVISOR] Finalizing with reasoning');
-  
+  console.log('✅ [AGENTIC-SUPERVISOR] Finalizing');
   step.observation = 'Proceeding to finalize';
   
   return {
