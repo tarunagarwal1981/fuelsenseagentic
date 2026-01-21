@@ -50,6 +50,7 @@ async function testInfiniteLoopFix() {
         agent_errors: {},
         agent_status: {},
         weather_agent_partial: false,
+        standalone_port_weather: null,
       },
       {
         streamMode: 'values',

@@ -87,6 +87,7 @@ function createMockState(overrides: Partial<MultiAgentState> = {}): MultiAgentSt
     weather_consumption: null,
     port_weather_status: null,
     weather_agent_partial: false,
+    standalone_port_weather: null,
     bunker_ports: [
       { port_code: 'AEJEA', port_name: 'Fujairah', coordinates: { lat: 25.1, lon: 56.4 } } as any,
       { port_code: 'LKCMB', port_name: 'Colombo', coordinates: { lat: 6.9, lon: 79.8 } } as any,

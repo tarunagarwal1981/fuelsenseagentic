@@ -131,6 +131,7 @@ function buildInitialState(query: string): MultiAgentState {
     weather_consumption: null,
     port_weather_status: null,
     weather_agent_partial: false,
+    standalone_port_weather: null,
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
@@ -356,6 +357,229 @@ export async function runBaselineTests(): Promise<void> {
 
   console.log('\n' + '='.repeat(80));
   console.log('BASELINE SUMMARY');
+  console.log('  Baseline queries:  passed=%d failed=%d', q.passed, q.failed);
+  console.log('  Response quality:  passed=%d failed=%d', rq.passed, rq.failed);
+  console.log('  Performance:       passed=%d failed=%d', perf.passed, perf.failed);
+  console.log('  TOTAL:             passed=%d failed=%d', totalPassed, totalFailed);
+  console.log('='.repeat(80));
+
+  if (totalFailed > 0) {
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// Port Extraction Tests - Fixed Logic
+// ============================================================================
+
+import { extractPortsFromQuery } from '../../lib/utils/port-lookup';
+
+interface PortExtractionTest {
+  query: string;
+  expectedOrigin: string | null;
+  expectedDestination: string | null;
+  description: string;
+}
+
+const PORT_EXTRACTION_TESTS: PortExtractionTest[] = [
+  {
+    query: 'route from Chiba to Singapore',
+    expectedOrigin: 'JPCHB',
+    expectedDestination: 'SGSIN',
+    description: 'Basic "from X to Y" with uncommon origin port',
+  },
+  {
+    query: 'Chiba to Singapore',
+    expectedOrigin: 'JPCHB',
+    expectedDestination: 'SGSIN',
+    description: '"X to Y" without "from" keyword',
+  },
+  {
+    query: 'Singapore to Rotterdam',
+    expectedOrigin: 'SGSIN',
+    expectedDestination: 'NLRTM',
+    description: 'Common port to common port',
+  },
+  {
+    query: 'from JPCHB to SGSIN',
+    expectedOrigin: 'JPCHB',
+    expectedDestination: 'SGSIN',
+    description: 'Direct port codes',
+  },
+  {
+    query: 'give me the rote between Chiba and Singapore',
+    expectedOrigin: 'JPCHB',
+    expectedDestination: 'SGSIN',
+    description: 'Typo in "route", using "between X and Y" pattern',
+  },
+  {
+    query: 'route from Singapore to Chiba',
+    expectedOrigin: 'SGSIN',
+    expectedDestination: 'JPCHB',
+    description: 'Reverse direction',
+  },
+  {
+    query: 'calculate route JPCHB to SGSIN',
+    expectedOrigin: 'JPCHB',
+    expectedDestination: 'SGSIN',
+    description: 'Port codes without "from" keyword',
+  },
+  {
+    query: 'Find bunker from Rotterdam to Shanghai',
+    expectedOrigin: 'NLRTM',
+    expectedDestination: 'CNSHA',
+    description: 'Bunker query with common ports',
+  },
+  {
+    query: 'voyage from Hong Kong to Fujairah',
+    expectedOrigin: 'HKHKG',
+    expectedDestination: 'AEFJR',
+    description: 'Voyage query with common ports',
+  },
+];
+
+export async function testPortExtraction(): Promise<{ passed: number; failed: number }> {
+  console.log('\n🧪 [BASELINE] Port Extraction Tests - Fixed Logic\n');
+  let passed = 0;
+  let failed = 0;
+
+  for (const test of PORT_EXTRACTION_TESTS) {
+    console.log(`\n📝 Testing: "${test.query}"`);
+    console.log(`   Description: ${test.description}`);
+    console.log(`   Expected: ${test.expectedOrigin} → ${test.expectedDestination}`);
+    
+    try {
+      const result = await extractPortsFromQuery(test.query);
+      console.log(`   Got:      ${result.origin} → ${result.destination}`);
+      
+      const originMatch = test.expectedOrigin === null 
+        ? result.origin === null 
+        : result.origin === test.expectedOrigin;
+      const destMatch = test.expectedDestination === null 
+        ? result.destination === null 
+        : result.destination === test.expectedDestination;
+      
+      if (originMatch && destMatch) {
+        console.log('   ✅ PASSED');
+        passed++;
+      } else {
+        console.log('   ❌ FAILED');
+        if (!originMatch) {
+          console.log(`      Origin mismatch: expected ${test.expectedOrigin}, got ${result.origin}`);
+        }
+        if (!destMatch) {
+          console.log(`      Destination mismatch: expected ${test.expectedDestination}, got ${result.destination}`);
+        }
+        failed++;
+      }
+    } catch (error) {
+      console.log(`   ❌ ERROR: ${error instanceof Error ? error.message : String(error)}`);
+      failed++;
+    }
+  }
+
+  console.log(`\n📊 Port Extraction Results: ${passed}/${PORT_EXTRACTION_TESTS.length} passed`);
+  return { passed, failed };
+}
+
+// ============================================================================
+// Context-Aware Single Port Detection Tests
+// ============================================================================
+
+interface SinglePortTest {
+  query: string;
+  expectedIsOrigin: boolean | null; // true = origin, false = dest, null = unclear/error expected
+  expectedPort: string;
+  description: string;
+}
+
+const SINGLE_PORT_CONTEXT_TESTS: SinglePortTest[] = [
+  {
+    query: 'from Singapore to unknown port',
+    expectedIsOrigin: true,
+    expectedPort: 'SGSIN',
+    description: '"from X" pattern - port is origin',
+  },
+  {
+    query: 'voyage to Singapore',
+    expectedIsOrigin: false,
+    expectedPort: 'SGSIN',
+    description: '"to X" pattern - port is destination',
+  },
+];
+
+export async function testSinglePortContext(): Promise<{ passed: number; failed: number }> {
+  console.log('\n🧪 [BASELINE] Single Port Context Detection Tests\n');
+  let passed = 0;
+  let failed = 0;
+
+  for (const test of SINGLE_PORT_CONTEXT_TESTS) {
+    console.log(`\n📝 Testing: "${test.query}"`);
+    console.log(`   Description: ${test.description}`);
+    
+    try {
+      const result = await extractPortsFromQuery(test.query);
+      
+      // Determine if port was detected as origin or destination
+      const detectedAsOrigin = result.origin === test.expectedPort;
+      const detectedAsDest = result.destination === test.expectedPort;
+      
+      console.log(`   Got: origin=${result.origin}, dest=${result.destination}`);
+      
+      if (test.expectedIsOrigin === true && detectedAsOrigin) {
+        console.log('   ✅ PASSED - Correctly identified as origin');
+        passed++;
+      } else if (test.expectedIsOrigin === false && detectedAsDest) {
+        console.log('   ✅ PASSED - Correctly identified as destination');
+        passed++;
+      } else if (test.expectedIsOrigin === null && !detectedAsOrigin && !detectedAsDest) {
+        console.log('   ✅ PASSED - Correctly triggered fallback (context unclear)');
+        passed++;
+      } else {
+        console.log('   ❌ FAILED - Incorrect context detection');
+        failed++;
+      }
+    } catch (error) {
+      if (test.expectedIsOrigin === null) {
+        console.log('   ✅ PASSED - Error expected for ambiguous context');
+        passed++;
+      } else {
+        console.log(`   ❌ ERROR: ${error instanceof Error ? error.message : String(error)}`);
+        failed++;
+      }
+    }
+  }
+
+  console.log(`\n📊 Single Port Context Results: ${passed}/${SINGLE_PORT_CONTEXT_TESTS.length} passed`);
+  return { passed, failed };
+}
+
+// ============================================================================
+// Updated Main Runner
+// ============================================================================
+
+export async function runBaselineTests(): Promise<void> {
+  console.log('\n' + '='.repeat(80));
+  console.log('BASELINE QUERY TESTS – capture current system behavior before engine integration');
+  console.log('='.repeat(80));
+
+  testSystemHealth();
+
+  // Run port extraction tests first (faster)
+  const portTests = await testPortExtraction();
+  const contextTests = await testSinglePortContext();
+
+  const q = await runBaselineQueries();
+  const rq = await testResponseQuality();
+  const perf = await testPerformanceBenchmarks();
+
+  const totalPassed = q.passed + rq.passed + perf.passed + portTests.passed + contextTests.passed;
+  const totalFailed = q.failed + rq.failed + perf.failed + portTests.failed + contextTests.failed;
+
+  console.log('\n' + '='.repeat(80));
+  console.log('BASELINE SUMMARY');
+  console.log('  Port extraction:   passed=%d failed=%d', portTests.passed, portTests.failed);
+  console.log('  Context detection: passed=%d failed=%d', contextTests.passed, contextTests.failed);
   console.log('  Baseline queries:  passed=%d failed=%d', q.passed, q.failed);
   console.log('  Response quality:  passed=%d failed=%d', rq.passed, rq.failed);
   console.log('  Performance:       passed=%d failed=%d', perf.passed, perf.failed);

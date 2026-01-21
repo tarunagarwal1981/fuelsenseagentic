@@ -83,6 +83,7 @@ async function createTestState(): Promise<Partial<MultiAgentState>> {
     agent_status: {},
     agent_errors: {},
     weather_agent_partial: false,
+    standalone_port_weather: null,
     next_agent: '',
     selected_route_id: null,
   };

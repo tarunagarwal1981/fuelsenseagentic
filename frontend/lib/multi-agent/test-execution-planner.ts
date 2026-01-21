@@ -33,6 +33,7 @@ function createEmptyState(): MultiAgentState {
     weather_consumption: null,
     port_weather_status: null,
     weather_agent_partial: false,
+    standalone_port_weather: null,
     bunker_ports: null,
     port_prices: null,
     bunker_analysis: null,
