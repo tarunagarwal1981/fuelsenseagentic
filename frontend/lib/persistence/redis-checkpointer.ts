@@ -92,6 +92,13 @@ function buildRedisUrlFromUpstashRest(restUrl: string, token: string): string {
   return `rediss://default:${encoded}@${host}:6379`;
 }
 
+/**
+ * Detect if we're using Upstash Redis (which doesn't support RediSearch/FT.CREATE)
+ */
+function isUpstashRedis(url: string): boolean {
+  return url.includes('upstash.io') || url.includes('upstash.com');
+}
+
 // ---------------------------------------------------------------------------
 // Singleton checkpointer instance (lazy, once resolved)
 // ---------------------------------------------------------------------------
@@ -224,19 +231,49 @@ async function createCheckpointer(): Promise<BaseCheckpointSaver> {
     return wrapWithRetryAndLogging(new MemorySaver());
   }
 
+  // NEW: Detect Upstash and skip RedisSaver entirely (Upstash doesn't support RediSearch)
+  if (isUpstashRedis(env.url)) {
+    console.warn(
+      `${PERSISTENCE_LOG_PREFIX} Upstash Redis detected. ` +
+      `RedisSaver requires RediSearch (FT.CREATE) which Upstash doesn't support. ` +
+      `Using MemorySaver instead.`
+    );
+    resolvedKind = "memory";
+    return wrapWithRetryAndLogging(new MemorySaver());
+  }
+
+  // Continue with RedisSaver for standard Redis (with RediSearch support)
   try {
     const redisUrl = buildRedisUrlFromUpstashRest(env.url, env.token);
     const saver = await RedisSaver.fromUrl(redisUrl, TTL_CONFIG);
+    
+    // Validate checkpointer is properly initialized
+    if (!saver || typeof saver.put !== 'function' || typeof saver.get !== 'function') {
+      throw new Error('RedisSaver initialization returned invalid checkpointer');
+    }
+    
     console.log(
-      `${PERSISTENCE_LOG_PREFIX} Upstash Redis configured → using RedisSaver (production)`
+      `${PERSISTENCE_LOG_PREFIX} Redis configured → using RedisSaver (production)`
     );
     resolvedKind = "redis";
     return wrapWithRetryAndLogging(saver);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `${PERSISTENCE_LOG_PREFIX} RedisSaver init failed (${msg}) → falling back to MemorySaver`
-    );
+    const isRediSearchError = 
+      msg.includes('FT.CREATE') || 
+      msg.includes('RediSearch') || 
+      msg.includes('Command is not available');
+    
+    if (isRediSearchError) {
+      console.warn(
+        `${PERSISTENCE_LOG_PREFIX} RedisSaver requires RediSearch (FT.CREATE) which is not available. ` +
+        `Falling back to MemorySaver.`
+      );
+    } else {
+      console.warn(
+        `${PERSISTENCE_LOG_PREFIX} RedisSaver init failed (${msg}) → falling back to MemorySaver`
+      );
+    }
     resolvedKind = "memory";
     return wrapWithRetryAndLogging(new MemorySaver());
   }

@@ -60,6 +60,13 @@ export class LLMFactory {
     task: LLMTask,
     context?: AgentContext
   ): BaseChatModel {
+    // Validate API key FIRST before any LLM initialization
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error(
+        'ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.'
+      );
+    }
+    
     switch (task) {
       case 'intent_analysis':
         // Supervisor: Should use pure logic, not LLM
@@ -88,7 +95,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         
       case 'simple_tool':
@@ -109,7 +116,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         
       case 'complex_tool':
@@ -119,7 +126,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         
       case 'synthesis':
@@ -131,7 +138,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         
       case 'reasoning':
@@ -157,7 +164,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0.5,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
         
       default:
@@ -166,7 +173,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY!,
+          apiKey: process.env.ANTHROPIC_API_KEY,
         });
     }
   }

@@ -147,20 +147,30 @@ export async function POST(req: Request) {
     let app;
     try {
       app = await getMultiAgentApp();
+      
+      // Validate app is properly initialized
+      if (!app) {
+        throw new Error('getMultiAgentApp() returned null/undefined');
+      }
+      if (typeof app.stream !== 'function') {
+        throw new Error('Multi-agent app missing stream method');
+      }
+      
+      console.log('✅ [MULTI-AGENT-API] App initialized successfully');
     } catch (e) {
-      console.error('❌ [MULTI-AGENT-API] getMultiAgentApp failed:', e);
+      console.error('❌ [MULTI-AGENT-API] App initialization failed:', e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
       return NextResponse.json(
         {
-          error: 'Persistence layer unavailable. Please retry after 30 seconds.',
-          type: 'persistence_error',
-          retry_after_seconds: 30,
+          error: 'Failed to initialize multi-agent system. Please try again.',
+          type: 'initialization_error',
+          details: errorMessage,
         },
         {
-          status: 503,
+          status: 500,
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
-            'Retry-After': '30',
             'X-Correlation-ID': correlation_id,
           },
         }
