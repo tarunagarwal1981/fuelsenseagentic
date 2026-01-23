@@ -60,10 +60,11 @@ export class LLMFactory {
     task: LLMTask,
     context?: AgentContext
   ): BaseChatModel {
-    // Validate API key FIRST before any LLM initialization
-    if (!process.env.ANTHROPIC_API_KEY) {
+    // Validate API key FIRST - check for undefined, null, and empty string
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    if (!apiKey) {
       throw new Error(
-        'ANTHROPIC_API_KEY is not set. Please configure it in Netlify environment variables.'
+        'ANTHROPIC_API_KEY is not set or is empty. Please configure it in Netlify environment variables.'
       );
     }
     
@@ -95,7 +96,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
         
       case 'simple_tool':
@@ -116,7 +117,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
         
       case 'complex_tool':
@@ -126,7 +127,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
         
       case 'synthesis':
@@ -138,7 +139,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
         
       case 'reasoning':
@@ -164,7 +165,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0.5,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
         
       default:
@@ -173,7 +174,7 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
-          apiKey: process.env.ANTHROPIC_API_KEY,
+          apiKey: apiKey,
         });
     }
   }

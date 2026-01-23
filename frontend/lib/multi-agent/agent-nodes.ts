@@ -433,7 +433,13 @@ function summarizeInputForLog(state: MultiAgentState): Record<string, unknown> {
 export async function supervisorAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  console.log('🔍 [DEBUG-SUPERVISOR] Entry');
+  console.log('🔍 [DEBUG-SUPERVISOR] State keys:', Object.keys(state));
+  console.log('🔍 [DEBUG-SUPERVISOR] Messages count:', state.messages.length);
+  
   const cid = extractCorrelationId(state);
+  console.log('🔍 [DEBUG-SUPERVISOR] Correlation ID:', cid);
+  
   logAgentExecution('supervisor', cid, 0, 'started', { input: summarizeInputForLog(state) });
 
   // ========================================================================
@@ -575,6 +581,7 @@ export async function supervisorAgentNode(
   
   if (USE_REGISTRY_PLANNING) {
     try {
+      console.log('📋 [SUPERVISOR] Calling generateExecutionPlan...');
       const availableAgents = AgentRegistry.getAllAgents();
       
       // Log tool binding info for LLM planning
@@ -594,14 +601,19 @@ export async function supervisorAgentNode(
       
       executionPlan = await generateExecutionPlan(userQuery, state, availableAgents);
       planningSource = 'registry_llm';
+      console.log('✅ [SUPERVISOR] Execution plan generated successfully');
       console.log('✅ [SUPERVISOR] Generated execution plan:', {
         agents: executionPlan.execution_order,
         reasoning: executionPlan.reasoning.substring(0, 100),
         estimated_time: executionPlan.estimated_total_time
       });
     } catch (error) {
-      console.error('❌ [SUPERVISOR] Plan generation failed, using legacy routing:', error);
-      // executionPlan stays null, will use legacy routing
+      console.error('❌ [SUPERVISOR] generateExecutionPlan failed:', error);
+      console.error('   Error details:', error instanceof Error ? error.message : String(error));
+      console.error('   Stack:', error instanceof Error ? error.stack : 'no stack');
+      // Fall back to legacy routing
+      executionPlan = null;
+      planningSource = 'legacy_keywords';
     }
   }
   
