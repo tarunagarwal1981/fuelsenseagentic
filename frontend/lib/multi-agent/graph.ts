@@ -368,8 +368,36 @@ export const multiAgentApp = workflow.compile();
  * - Wrapped with retry (max 3) and logging for put/putWrites.
  */
 export async function getMultiAgentApp() {
-  const checkpointer = await getCheckpointer();
-  return workflow.compile({ checkpointer });
+  console.log('🔧 [GRAPH] Getting checkpointer...');
+  
+  let checkpointer;
+  try {
+    checkpointer = await getCheckpointer();
+    console.log('✅ [GRAPH] Checkpointer obtained:', checkpointer?.constructor?.name || 'unknown');
+  } catch (error) {
+    console.error('❌ [GRAPH] Failed to get checkpointer:', error);
+    console.error('   Error details:', error instanceof Error ? error.message : String(error));
+    console.error('   Error stack:', error instanceof Error ? error.stack : 'no stack');
+    throw error;
+  }
+  
+  console.log('🔧 [GRAPH] Compiling workflow with checkpointer...');
+  
+  let compiledApp;
+  try {
+    compiledApp = workflow.compile({ checkpointer });
+    console.log('✅ [GRAPH] Workflow compiled successfully');
+    console.log('🔍 [GRAPH] Compiled app type:', compiledApp?.constructor?.name || 'unknown');
+    console.log('🔍 [GRAPH] Compiled app has stream:', typeof compiledApp?.stream === 'function');
+    console.log('🔍 [GRAPH] Compiled app has invoke:', typeof compiledApp?.invoke === 'function');
+  } catch (error) {
+    console.error('❌ [GRAPH] Workflow compilation failed:', error);
+    console.error('   Error details:', error instanceof Error ? error.message : String(error));
+    console.error('   Error stack:', error instanceof Error ? error.stack : 'no stack');
+    throw error;
+  }
+  
+  return compiledApp;
 }
 
 console.log('✅ Multi-Agent LangGraph compiled successfully');

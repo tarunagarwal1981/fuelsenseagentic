@@ -6,6 +6,7 @@
  */
 
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { LLMFactory } from './llm-factory';
 import { AgentRegistry, type AgentRegistryEntry } from './registry';
 import type { MultiAgentState } from './state';
@@ -108,8 +109,22 @@ export async function generateExecutionPlan(
   // Clean cache periodically
   cleanCache();
   
-  // Get supervisor LLM
-  const supervisorLLM = LLMFactory.getLLMForTask('supervisor_planning');
+  // Get supervisor LLM with validation
+  let supervisorLLM: BaseChatModel;
+  try {
+    supervisorLLM = LLMFactory.getLLMForTask('supervisor_planning');
+    
+    // Validate LLM before use
+    if (!supervisorLLM) {
+      throw new Error('supervisorLLM is null or undefined');
+    }
+    if (typeof supervisorLLM.invoke !== 'function') {
+      throw new Error('supervisorLLM.invoke is not a function');
+    }
+  } catch (error) {
+    console.error('❌ [SUPERVISOR-PLANNER] Failed to get supervisor LLM:', error);
+    throw new Error(`LLM initialization failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   
   // Build registry context as JSON
   const registryJSON = AgentRegistry.toJSON();

@@ -68,6 +68,13 @@ export class LLMFactory {
       );
     }
     
+    // Basic format validation (Anthropic keys start with 'sk-')
+    if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
+      throw new Error(
+        'ANTHROPIC_API_KEY appears to be invalid. Anthropic API keys should start with "sk-" and be at least 20 characters long.'
+      );
+    }
+    
     switch (task) {
       case 'intent_analysis':
         // Supervisor: Should use pure logic, not LLM
@@ -93,11 +100,18 @@ export class LLMFactory {
         
         // Default: Use Claude Haiku for supervisor planning (reliable)
         console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for supervisor planning');
-        return new ChatAnthropic({
+        const llm = new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
           apiKey: apiKey,
         });
+        
+        // Validate LLM instance has required methods
+        if (!llm || typeof llm.invoke !== 'function') {
+          throw new Error('ChatAnthropic instance is invalid - missing invoke method');
+        }
+        
+        return llm;
         
       case 'simple_tool':
         // Route/Weather agents: Simple tool calling

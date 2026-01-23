@@ -152,13 +152,20 @@ export async function POST(req: Request) {
       if (!app) {
         throw new Error('getMultiAgentApp() returned null/undefined');
       }
+      
+      console.log('✅ [MULTI-AGENT-API] App initialized successfully');
+      console.log('🔍 [DEBUG] App type:', app.constructor.name);
+      console.log('🔍 [DEBUG] App has stream:', typeof app.stream === 'function');
+      console.log('🔍 [DEBUG] App has invoke:', typeof app.invoke === 'function');
+      console.log('🔍 [DEBUG] App methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(app)));
+      
       if (typeof app.stream !== 'function') {
         throw new Error('Multi-agent app missing stream method');
       }
-      
-      console.log('✅ [MULTI-AGENT-API] App initialized successfully');
     } catch (e) {
       console.error('❌ [MULTI-AGENT-API] App initialization failed:', e);
+      console.error('   Error details:', e instanceof Error ? e.message : String(e));
+      console.error('   Error stack:', e instanceof Error ? e.stack : 'no stack');
       const errorMessage = e instanceof Error ? e.message : String(e);
       return NextResponse.json(
         {
@@ -277,11 +284,37 @@ export async function POST(req: Request) {
               };
 
           // Stream graph execution with checkpoint config for persistence and recovery
-          const streamResult = await app.stream(input, {
+          console.log('🎬 [STREAM] Stream started, calling app.stream()...');
+          
+          // Add debug logging before stream call
+          console.log('🔍 [DEBUG] About to call app.stream() with:');
+          console.log('🔍 [DEBUG] initialInput:', JSON.stringify({
+            messages: input.messages?.length || 0,
+            correlation_id: input.correlation_id,
+            hasOtherFields: Object.keys(input).filter(k => k !== 'messages' && k !== 'correlation_id')
+          }, null, 2));
+          
+          const streamConfig = {
             streamMode: 'values',
             recursionLimit: 60,
             configurable: { thread_id, correlation_id },
-          });
+          };
+          console.log('🔍 [DEBUG] streamConfig:', JSON.stringify(streamConfig, null, 2));
+          
+          // THIS IS WHERE IT FAILS - Add detailed logging
+          let streamResult;
+          try {
+            streamResult = await app.stream(input, streamConfig);
+            console.log('✅ [STREAM] app.stream() returned iterator');
+          } catch (streamError) {
+            console.error('❌ [STREAM] app.stream() failed:', streamError);
+            console.error('❌ [STREAM] Error name:', streamError instanceof Error ? streamError.name : 'unknown');
+            console.error('❌ [STREAM] Error message:', streamError instanceof Error ? streamError.message : String(streamError));
+            console.error('❌ [STREAM] Error stack:', streamError instanceof Error ? streamError.stack : 'no stack');
+            console.error('❌ [STREAM] initialInput:', JSON.stringify(input, null, 2));
+            console.error('❌ [STREAM] streamConfig:', JSON.stringify(streamConfig, null, 2));
+            throw streamError;
+          }
 
           // Process stream events
           for await (const event of streamResult) {
@@ -530,23 +563,30 @@ export async function POST(req: Request) {
           controller.close();
         } catch (error) {
           const executionTime = Date.now() - startTime;
-          console.error(formatLogWithCorrelation(correlation_id, 'Stream error', { error: String(error), executionTime }));
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : 'no stack';
+          
+          console.error('❌ [STREAM] Stream controller error:', error);
+          console.error('❌ [STREAM] Full error details:');
+          console.error('   Error:', errorMessage);
+          console.error('   Stack:', errorStack);
+          console.error(formatLogWithCorrelation(correlation_id, 'Stream error', { error: errorMessage, executionTime }));
 
           recordRequest(false, executionTime);
 
-          let errorMessage = error instanceof Error ? error.message : String(error);
+          let finalErrorMessage = errorMessage;
           const isCheckpointOrRedis =
-            /redis|checkpoint|ECONNREFUSED|ETIMEDOUT|ECONNRESET|putWrites|put\(/i.test(errorMessage);
+            /redis|checkpoint|ECONNREFUSED|ETIMEDOUT|ECONNRESET|putWrites|put\(/i.test(finalErrorMessage);
           const retryAfter = 30;
           if (isCheckpointOrRedis) {
-            errorMessage = `Checkpoint persistence failed after retries. Please retry after ${retryAfter} seconds.`;
+            finalErrorMessage = `Checkpoint persistence failed after retries. Please retry after ${retryAfter} seconds.`;
           }
 
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
-                error: errorMessage,
+                error: finalErrorMessage,
                 execution_time_ms: executionTime,
                 ...(isCheckpointOrRedis && { retry_after_seconds: retryAfter }),
               })}\n\n`
@@ -571,14 +611,13 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : 'no stack';
+    
+    console.error('❌ [MULTI-AGENT-API] Stream execution failed');
+    console.error('   Error:', errorMessage);
+    console.error('   Stack:', errorStack);
     console.error('❌ [MULTI-AGENT-API] Fatal error:', error);
-    console.error(
-      `❌ [MULTI-AGENT-API] Error details:`,
-      error instanceof Error ? error.message : String(error)
-    );
-    if (error instanceof Error && error.stack) {
-      console.error('❌ [MULTI-AGENT-API] Stack trace:', error.stack);
-    }
 
     // Record failed request
     recordRequest(false, executionTime);
@@ -588,11 +627,10 @@ export async function POST(req: Request) {
       variant: 'multi-agent',
       responseTime: executionTime,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: errorMessage,
     });
 
     // Check if it's an Anthropic API error
-    const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage?.includes('credit balance') || errorMessage?.includes('insufficient credits')) {
       return NextResponse.json(
         {
