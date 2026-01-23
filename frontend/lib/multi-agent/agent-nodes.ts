@@ -28,10 +28,14 @@ import {
   recordAgentExecution,
   recordToolCall,
 } from './monitoring';
+import { extractCorrelationId } from '@/lib/utils/correlation';
+import { logAgentExecution, logError, logToolCall } from '@/lib/monitoring/axiom-logger';
+import { sanitizeToolInput, sanitizeToolOutput } from '@/lib/monitoring/sanitize';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
 import { AgentRegistry, zodSchemaToJsonSchema } from './registry';
 import { generateExecutionPlan, type SupervisorPlan } from './supervisor-planner';
+import { isFallbackResponse } from '@/lib/resilience/fallback-strategies';
 
 // Import tool execute functions
 import { executeRouteCalculatorTool } from '@/lib/tools/route-calculator';
@@ -395,6 +399,23 @@ const analyzeBunkerOptionsTool = tool(
 );
 
 // ============================================================================
+// Logging helpers
+// ============================================================================
+
+function summarizeInputForLog(state: MultiAgentState): Record<string, unknown> {
+  return {
+    has_route_data: !!state.route_data,
+    has_vessel_timeline: !!state.vessel_timeline,
+    has_weather_forecast: !!state.weather_forecast,
+    has_weather_consumption: !!state.weather_consumption,
+    has_bunker_ports: !!state.bunker_ports,
+    has_bunker_analysis: !!state.bunker_analysis,
+    message_count: state.messages?.length ?? 0,
+    next_agent: state.next_agent || '(empty)',
+  };
+}
+
+// ============================================================================
 // Agent Node Implementations
 // ============================================================================
 
@@ -412,6 +433,9 @@ const analyzeBunkerOptionsTool = tool(
 export async function supervisorAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('supervisor', cid, 0, 'started', { input: summarizeInputForLog(state) });
+
   // ========================================================================
   // AGENTIC SUPERVISOR MODE (NEW - ReAct Pattern)
   // ========================================================================
@@ -425,6 +449,7 @@ export async function supervisorAgentNode(
       const { reasoningSupervisor } = await import('./agentic-supervisor');
       return await reasoningSupervisor(state);
     } catch (error) {
+      logError(extractCorrelationId(state), error, { agent: 'supervisor' });
       console.error('❌ [SUPERVISOR] Agentic supervisor failed, falling back to legacy:', error);
       // Fall through to legacy logic
     }
@@ -435,16 +460,80 @@ export async function supervisorAgentNode(
   // ========================================================================
   console.log("\n🎯 [SUPERVISOR] Node: Making routing decision...");
   
+  // ========================================================================
+  // Degradation Detection (NEW)
+  // ========================================================================
+  // Check for fallback responses in state data and set degraded mode
+  let degradedMode = state.degraded_mode || false;
+  const missingData: string[] = [...(state.missing_data || [])];
+  
+  // Check route data for degradation
+  if (state.route_data && isFallbackResponse(state.route_data)) {
+    degradedMode = true;
+    if (!missingData.includes('route_data')) {
+      missingData.push('route_data');
+    }
+    logError(cid, new Error('[DEGRADATION] Route data is degraded'), {
+      agent: 'supervisor',
+      degradation_type: 'route_data',
+      reason: (state.route_data as any)._degradation_reason || 'unknown',
+    });
+  }
+  
+  // Check bunker ports for degradation
+  if (state.bunker_ports && Array.isArray(state.bunker_ports) && state.bunker_ports.length > 0) {
+    const firstPort = state.bunker_ports[0] as any;
+    if (isFallbackResponse(firstPort) || firstPort._degraded) {
+      degradedMode = true;
+      if (!missingData.includes('bunker_ports')) {
+        missingData.push('bunker_ports');
+      }
+      logError(cid, new Error('[DEGRADATION] Bunker ports data is degraded'), {
+        agent: 'supervisor',
+        degradation_type: 'bunker_ports',
+      });
+    }
+  }
+  
+  // Check port prices for degradation
+  if (state.port_prices && isFallbackResponse(state.port_prices)) {
+    degradedMode = true;
+    if (!missingData.includes('port_prices')) {
+      missingData.push('port_prices');
+    }
+    logError(cid, new Error('[DEGRADATION] Port prices data is degraded'), {
+      agent: 'supervisor',
+      degradation_type: 'port_prices',
+      reason: (state.port_prices as any)._degradation_reason || 'unknown',
+    });
+  }
+  
+  // Check bunker analysis for degradation
+  if (state.bunker_analysis && isFallbackResponse(state.bunker_analysis)) {
+    degradedMode = true;
+    if (!missingData.includes('bunker_analysis')) {
+      missingData.push('bunker_analysis');
+    }
+    logError(cid, new Error('[DEGRADATION] Bunker analysis is degraded'), {
+      agent: 'supervisor',
+      degradation_type: 'bunker_analysis',
+      reason: (state.bunker_analysis as any)._degradation_reason || 'unknown',
+    });
+  }
+  
   // Log current state
   console.log("📊 [SUPERVISOR] Current state:");
-  console.log(`   - Route data: ${state.route_data ? '✅' : '❌'}`);
+  console.log(`   - Route data: ${state.route_data ? '✅' : '❌'} ${(state.route_data as any)?._degraded ? '(degraded)' : ''}`);
   console.log(`   - Vessel timeline: ${state.vessel_timeline ? '✅' : '❌'}`);
   console.log(`   - Weather forecast: ${state.weather_forecast ? '✅' : '❌'}`);
   console.log(`   - Weather consumption: ${state.weather_consumption ? '✅' : '❌'}`);
   console.log(`   - Port weather: ${state.port_weather_status ? '✅' : '❌'}`);
-  console.log(`   - Bunker ports: ${state.bunker_ports ? '✅' : '❌'}`);
-  console.log(`   - Port prices: ${state.port_prices ? '✅' : '❌'}`);
-  console.log(`   - Bunker analysis: ${state.bunker_analysis ? '✅' : '❌'}`);
+  console.log(`   - Bunker ports: ${state.bunker_ports ? '✅' : '❌'} ${(state.bunker_ports as any)?._degraded ? '(degraded)' : ''}`);
+  console.log(`   - Port prices: ${state.port_prices ? '✅' : '❌'} ${(state.port_prices as any)?._degraded ? '(degraded)' : ''}`);
+  console.log(`   - Bunker analysis: ${state.bunker_analysis ? '✅' : '❌'} ${(state.bunker_analysis as any)?._degraded ? '(degraded)' : ''}`);
+  if (degradedMode) {
+    console.log(`   ⚠️ Degraded mode: YES (missing: ${missingData.join(', ')})`);
+  }
 
   // Get user query to analyze intent FIRST (before loop detection)
   const userMessage = state.messages.find((msg) => msg instanceof HumanMessage);
@@ -1237,6 +1326,8 @@ export async function supervisorAgentNode(
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
+        degraded_mode: degradedMode,
+        missing_data: missingData,
       };
     }
     
@@ -1247,6 +1338,8 @@ export async function supervisorAgentNode(
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
+      degraded_mode: degradedMode,
+      missing_data: missingData,
     };
   }
   
@@ -1433,6 +1526,9 @@ function extractVesselNameFromQuery(query: string): string | null {
 export async function routeAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('route_agent', cid, 0, 'started', { input: summarizeInputForLog(state) });
+
   console.log('\n🗺️ [ROUTE-WORKFLOW] Starting deterministic workflow...');
   
   const startTime = Date.now();
@@ -1514,14 +1610,12 @@ export async function routeAgentNode(
       }
       
       // Try primary API, with fallback to cached routes
+      const routeInput = { origin_port_code: origin, destination_port_code: destination, vessel_speed_knots: 14 };
+      const t0Route = Date.now();
+      logToolCall('calculate_route', extractCorrelationId(state), sanitizeToolInput(routeInput), undefined, 0, 'started');
       try {
-        // Try main API
-        const routeResult = await executeRouteCalculatorTool({
-          origin_port_code: origin,
-          destination_port_code: destination,
-          vessel_speed_knots: 14, // Default speed
-        });
-        
+        const routeResult = await executeRouteCalculatorTool(routeInput);
+        logToolCall('calculate_route', extractCorrelationId(state), sanitizeToolInput(routeInput), sanitizeToolOutput(routeResult), Date.now() - t0Route, 'success');
         console.log(`✅ [ROUTE-WORKFLOW] Route calculated: ${routeResult.distance_nm} nm`);
         
         // Validate route after calculation with actual distance
@@ -1557,6 +1651,7 @@ export async function routeAgentNode(
         console.log('📤 [STREAM] Sending route data');
         
       } catch (error: any) {
+        logToolCall('calculate_route', extractCorrelationId(state), sanitizeToolInput(routeInput), { error: error.message }, Date.now() - t0Route, 'failed');
         console.warn(`⚠️ [ROUTE-WORKFLOW] Primary route API failed: ${error.message}`);
         console.log('🔄 [ROUTE-WORKFLOW] Attempting fallback to cached routes...');
         
@@ -1602,14 +1697,11 @@ export async function routeAgentNode(
         ? `2024-12-${dateMatch[1].padStart(2, '0')}T08:00:00Z`
         : new Date().toISOString();
       
-      // Execute timeline calculation tool directly
-      const timelineResult = await executeWeatherTimelineTool({
-        waypoints: state.route_data.waypoints,
-        vessel_speed_knots: 14, // Default speed
-        departure_datetime: departureTime,
-        sampling_interval_hours: 12,
-      });
-      
+      const timelineInput = { waypoints: state.route_data.waypoints, vessel_speed_knots: 14, departure_datetime: departureTime, sampling_interval_hours: 12 };
+      const t0Timeline = Date.now();
+      logToolCall('calculate_weather_timeline', extractCorrelationId(state), sanitizeToolInput(timelineInput), undefined, 0, 'started');
+      const timelineResult = await executeWeatherTimelineTool(timelineInput);
+      logToolCall('calculate_weather_timeline', extractCorrelationId(state), sanitizeToolInput(timelineInput), sanitizeToolOutput(timelineResult), Date.now() - t0Timeline, 'success');
       console.log(`✅ [ROUTE-WORKFLOW] Timeline calculated: ${timelineResult.length} positions`);
       
       // Update state with timeline
@@ -1630,7 +1722,8 @@ export async function routeAgentNode(
     
     // Record metrics
     recordAgentExecution('route_agent', duration, true);
-    
+    logAgentExecution('route_agent', extractCorrelationId(state), duration, 'success', {});
+
     // Log if we used overrides for debugging
     if (state.port_overrides) {
       console.log('🎯 [ROUTE-WORKFLOW] Successfully used supervisor port overrides');
@@ -1658,6 +1751,7 @@ export async function routeAgentNode(
     
   } catch (error: any) {
     const duration = Date.now() - startTime;
+    logError(extractCorrelationId(state), error, { agent: 'route_agent' });
     console.error(`❌ [ROUTE-WORKFLOW] Error after ${duration}ms:`, error.message);
     
     // Log state context for debugging
@@ -1668,7 +1762,8 @@ export async function routeAgentNode(
     
     // Record error metrics
     recordAgentExecution('route_agent', duration, false);
-    
+    logAgentExecution('route_agent', extractCorrelationId(state), duration, 'failed', {});
+
     return {
       agent_status: { 
         ...(state.agent_status || {}), 
@@ -1806,6 +1901,9 @@ function extractWeatherDataFromMessages(messages: any[]): {
 export async function weatherAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('weather_agent', cid, 0, 'started', { input: summarizeInputForLog(state) });
+
   console.log('\n🌊 [WEATHER-WORKFLOW] Starting deterministic workflow...');
   
   const startTime = Date.now();
@@ -1882,16 +1980,11 @@ export async function weatherAgentNode(
     
     if (!state.weather_forecast) {
       console.log('🌡️ [WEATHER-WORKFLOW] Weather forecast missing - fetching marine weather...');
-      
-      // Execute marine weather tool directly
-      const weatherResult = await executeMarineWeatherTool({
-        positions: state.vessel_timeline.map((pos: any) => ({
-          lat: pos.lat,
-          lon: pos.lon,
-          datetime: pos.datetime,
-        })),
-      });
-      
+      const weatherInput = { positions: state.vessel_timeline.map((pos: any) => ({ lat: pos.lat, lon: pos.lon, datetime: pos.datetime })) };
+      const t0Weather = Date.now();
+      logToolCall('fetch_marine_weather', extractCorrelationId(state), sanitizeToolInput(weatherInput), undefined, 0, 'started');
+      const weatherResult = await executeMarineWeatherTool(weatherInput);
+      logToolCall('fetch_marine_weather', extractCorrelationId(state), sanitizeToolInput(weatherInput), sanitizeToolOutput(weatherResult), Date.now() - t0Weather, 'success');
       console.log(`✅ [WEATHER-WORKFLOW] Weather fetched: ${weatherResult.length} forecast points`);
       
       // Update state with weather forecast
@@ -1928,17 +2021,16 @@ export async function weatherAgentNode(
       // Calculate base consumption from vessel specs
       const baseConsumptionMt = (vesselSpecs.fuel_capacity_mt.VLSFO || 650) * 0.5; // Rough estimate
       
-      // Execute weather consumption tool directly
-      const consumptionResult = await executeWeatherConsumptionTool({
-        weather_data: state.weather_forecast.map((w: any) => ({
-          datetime: w.datetime || w.position?.datetime,
-          weather: w.weather || w.position?.weather,
-        })),
+      const consumptionInput = {
+        weather_data: state.weather_forecast.map((w: any) => ({ datetime: w.datetime || w.position?.datetime, weather: w.weather || w.position?.weather })),
         base_consumption_mt: baseConsumptionMt,
-        vessel_heading_deg: 90, // Default heading (can be improved)
+        vessel_heading_deg: 90,
         fuel_type_breakdown: vesselSpecs.fuel_capacity_mt,
-      });
-      
+      };
+      const t0Consumption = Date.now();
+      logToolCall('calculate_weather_consumption', extractCorrelationId(state), sanitizeToolInput(consumptionInput), undefined, 0, 'started');
+      const consumptionResult = await executeWeatherConsumptionTool(consumptionInput);
+      logToolCall('calculate_weather_consumption', extractCorrelationId(state), sanitizeToolInput(consumptionInput), sanitizeToolOutput(consumptionResult), Date.now() - t0Consumption, 'success');
       console.log(`✅ [WEATHER-WORKFLOW] Consumption calculated: ${consumptionResult.consumption_increase_percent}% increase`);
       
       // Update state with consumption data
@@ -1963,7 +2055,8 @@ export async function weatherAgentNode(
     
     // Record metrics
     recordAgentExecution('weather_agent', duration, true);
-    
+    logAgentExecution('weather_agent', extractCorrelationId(state), duration, 'success', {});
+
     return {
       weather_forecast: state.weather_forecast,
       weather_consumption: state.weather_consumption,
@@ -1984,11 +2077,13 @@ export async function weatherAgentNode(
     
   } catch (error: any) {
     const duration = Date.now() - startTime;
+    logError(extractCorrelationId(state), error, { agent: 'weather_agent' });
     console.error(`❌ [WEATHER-WORKFLOW] Error after ${duration}ms:`, error.message);
     
     // Record error metrics
     recordAgentExecution('weather_agent', duration, false);
-    
+    logAgentExecution('weather_agent', extractCorrelationId(state), duration, 'failed', {});
+
         return {
       agent_status: { 
         ...(state.agent_status || {}), 
@@ -2096,11 +2191,11 @@ async function handleStandalonePortWeather(
       datetime: targetDate.toISOString(),
     };
     
-    // Execute marine weather tool for single position
-    const weatherResult = await executeMarineWeatherTool({
-      positions: [position],
-    });
-    
+    const portWeatherInput = { positions: [position] };
+    const t0Port = Date.now();
+    logToolCall('fetch_marine_weather', extractCorrelationId(state), sanitizeToolInput(portWeatherInput), undefined, 0, 'started');
+    const weatherResult = await executeMarineWeatherTool(portWeatherInput);
+    logToolCall('fetch_marine_weather', extractCorrelationId(state), sanitizeToolInput(portWeatherInput), sanitizeToolOutput(weatherResult), Date.now() - t0Port, 'success');
     if (!weatherResult || weatherResult.length === 0) {
       throw new Error('Failed to fetch weather data for port');
     }
@@ -2128,7 +2223,8 @@ async function handleStandalonePortWeather(
     
     // Record metrics
     recordAgentExecution('weather_agent', duration, true);
-    
+    logAgentExecution('weather_agent', extractCorrelationId(state), duration, 'success', {});
+
     return {
       standalone_port_weather: standalonePortWeather,
       agent_status: { 
@@ -2147,10 +2243,12 @@ async function handleStandalonePortWeather(
     
   } catch (error: any) {
     const duration = Date.now() - startTime;
+    logError(extractCorrelationId(state), error, { agent: 'weather_agent' });
     console.error(`❌ [WEATHER-WORKFLOW] Port weather error after ${duration}ms:`, error.message);
     
     recordAgentExecution('weather_agent', duration, false);
-    
+    logAgentExecution('weather_agent', extractCorrelationId(state), duration, 'failed', {});
+
     return {
       agent_status: { 
         ...(state.agent_status || {}), 
@@ -2326,6 +2424,9 @@ function buildECASegmentsFromCompliance(
 export async function bunkerAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('bunker_agent', cid, 0, 'started', { input: summarizeInputForLog(state) });
+
   console.log('\n⚓ [BUNKER-WORKFLOW] Starting deterministic workflow...');
   const startTime = Date.now();
   
@@ -2634,6 +2735,7 @@ export async function bunkerAgentNode(
     if (!state.bunker_ports) {
       console.log('🔍 [BUNKER-WORKFLOW] Finding bunker ports along route...');
       
+      const t0Pf = Date.now();
       try {
         // Include MGO in fuel types if ECA compliance requires it
         const fuelTypesForPorts = fuelRequirements.fuel_types.length > 0 
@@ -2650,13 +2752,13 @@ export async function bunkerAgentNode(
           max_deviation_nm: 150, // Standard deviation limit
           fuel_types: fuelTypesForPorts,
         };
-        
+        logToolCall('find_bunker_ports', extractCorrelationId(state), sanitizeToolInput(portFinderInput), undefined, 0, 'started');
         bunkerPorts = await withTimeout(
           executePortFinderTool(portFinderInput),
           TIMEOUTS.ROUTE_CALCULATION,
           'Port finder timed out'
         );
-        
+        logToolCall('find_bunker_ports', extractCorrelationId(state), sanitizeToolInput(portFinderInput), sanitizeToolOutput(bunkerPorts), Date.now() - t0Pf, 'success');
         console.log(`✅ [BUNKER-WORKFLOW] Found ${bunkerPorts.total_ports_found} ports within 150nm of route`);
         
         if (bunkerPorts.total_ports_found === 0) {
@@ -2690,8 +2792,11 @@ export async function bunkerAgentNode(
           };
         }
       } catch (error: any) {
+        logToolCall('find_bunker_ports', extractCorrelationId(state), sanitizeToolInput({ route_waypoints: state.route_data?.waypoints }), { error: error.message }, Date.now() - t0Pf, 'failed');
+        logError(extractCorrelationId(state), error, { agent: 'bunker_agent', tool: 'executePortFinderTool' });
         console.error('❌ [BUNKER-WORKFLOW] Port finder error:', error.message);
         recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        logAgentExecution('bunker_agent', extractCorrelationId(state), Date.now() - startTime, 'failed', {});
         throw error;
       }
     } else {
@@ -2707,7 +2812,7 @@ export async function bunkerAgentNode(
     
     if (needsWeatherSafety && !state.port_weather_status) {
       console.log('🌊 [BUNKER-WORKFLOW] Checking weather safety at bunker ports...');
-      
+      const t0Pw = Date.now();
       try {
         // Calculate estimated arrival times for each port
         const bunkerPortsWithArrival = bunkerPorts.ports.map((port: any) => {
@@ -2727,17 +2832,19 @@ export async function bunkerAgentNode(
         const portWeatherInput = {
           bunker_ports: bunkerPortsWithArrival,
         };
-        
+        logToolCall('check_bunker_port_weather', extractCorrelationId(state), sanitizeToolInput(portWeatherInput), undefined, 0, 'started');
         portWeather = await withTimeout(
           executePortWeatherTool(portWeatherInput),
           TIMEOUTS.WEATHER_API,
           'Port weather check timed out'
         );
-        
+        logToolCall('check_bunker_port_weather', extractCorrelationId(state), sanitizeToolInput(portWeatherInput), sanitizeToolOutput(portWeather), Date.now() - t0Pw, 'success');
         const safePortsCount = portWeather.filter((p: any) => p.bunkering_feasible).length;
         console.log(`✅ [BUNKER-WORKFLOW] Weather checked: ${safePortsCount}/${portWeather.length} ports have safe conditions`);
         
       } catch (error: any) {
+        logToolCall('check_bunker_port_weather', extractCorrelationId(state), sanitizeToolInput({}), { error: error.message }, Date.now() - t0Pw, 'failed');
+        logError(extractCorrelationId(state), error, { agent: 'bunker_agent', tool: 'executePortWeatherTool' });
         console.error('❌ [BUNKER-WORKFLOW] Port weather error:', error.message);
         console.warn('⚠️ [BUNKER-WORKFLOW] Continuing without weather safety data');
         // Don't fail the entire workflow - continue without weather data
@@ -2757,7 +2864,7 @@ export async function bunkerAgentNode(
     
     if (!state.port_prices) {
       console.log('💰 [BUNKER-WORKFLOW] Fetching fuel prices for candidate ports...');
-      
+      const t0Price = Date.now();
       try {
         // Include MGO in fuel types if ECA compliance requires it
         const fuelTypes = fuelRequirements.fuel_types.length > 0 
@@ -2773,20 +2880,23 @@ export async function bunkerAgentNode(
           port_codes: bunkerPorts.ports.map((p: any) => p.port.port_code),
           fuel_types: fuelTypes,
         };
-        
+        logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput(priceFetcherInput), undefined, 0, 'started');
         portPrices = await withTimeout(
           executePriceFetcherTool(priceFetcherInput),
           TIMEOUTS.PRICE_FETCH,
           'Price fetcher timed out'
         );
-        
+        logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput(priceFetcherInput), sanitizeToolOutput(portPrices), Date.now() - t0Price, 'success');
         // Log with actual count
         const priceCount = Array.isArray(portPrices) ? portPrices.length : 0;
         console.log(`✅ [BUNKER-WORKFLOW] Fetched prices for ${priceCount} ports`);
         
       } catch (error: any) {
+        logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput({ port_codes: bunkerPorts?.ports?.map((p: any) => p.port?.port_code) }), { error: error.message }, Date.now() - t0Price, 'failed');
+        logError(extractCorrelationId(state), error, { agent: 'bunker_agent', tool: 'executePriceFetcherTool' });
         console.error('❌ [BUNKER-WORKFLOW] Price fetcher error:', error.message);
         recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        logAgentExecution('bunker_agent', extractCorrelationId(state), Date.now() - startTime, 'failed', {});
         throw error;
       }
     } else {
@@ -2802,7 +2912,7 @@ export async function bunkerAgentNode(
     
     if (!state.bunker_analysis) {
       console.log('📊 [BUNKER-WORKFLOW] Analyzing bunker options...');
-      
+      const t0Analyzer = Date.now();
       try {
         // Use vlsfoRequired/lsmgoRequired from outer scope (calculated from voyage consumption)
         // Match manual implementation parameter structure exactly
@@ -2816,7 +2926,7 @@ export async function bunkerAgentNode(
           vessel_consumption_mt_per_day: consumptionVlsfo,       // Use actual vessel consumption rate
           port_weather: portWeather,               // Optional weather data
         };
-        
+        logToolCall('analyze_bunker_options', extractCorrelationId(state), sanitizeToolInput(analyzerInput), undefined, 0, 'started');
         console.log('📊 [BUNKER-WORKFLOW] Analyzer input:', {
           ports_count: bunkerPorts.ports.length,
           prices_count: Array.isArray(portPrices) ? portPrices.length : 0,
@@ -2831,7 +2941,7 @@ export async function bunkerAgentNode(
           TIMEOUTS.AGENT,
           'Bunker analyzer timed out'
         );
-        
+        logToolCall('analyze_bunker_options', extractCorrelationId(state), sanitizeToolInput(analyzerInput), sanitizeToolOutput(bunkerAnalysis), Date.now() - t0Analyzer, 'success');
         const rankedCount = bunkerAnalysis?.recommendations?.length || 0;
         const bestPort = bunkerAnalysis?.recommendations?.[0];
         console.log(`✅ [BUNKER-WORKFLOW] Analysis complete: ${rankedCount} ports ranked`);
@@ -2841,8 +2951,11 @@ export async function bunkerAgentNode(
         }
         
       } catch (error: any) {
+        logToolCall('analyze_bunker_options', extractCorrelationId(state), sanitizeToolInput({ fuel_quantity_mt: vlsfoRequired, mgo_quantity_mt: lsmgoRequired }), { error: error.message }, Date.now() - t0Analyzer, 'failed');
+        logError(extractCorrelationId(state), error, { agent: 'bunker_agent', tool: 'executeBunkerAnalyzerTool' });
         console.error('❌ [BUNKER-WORKFLOW] Bunker analyzer error:', error.message);
         recordAgentExecution('bunker_agent', Date.now() - startTime, false);
+        logAgentExecution('bunker_agent', extractCorrelationId(state), Date.now() - startTime, 'failed', {});
         throw error;
       }
     } else {
@@ -2858,7 +2971,8 @@ export async function bunkerAgentNode(
     console.log(`✅ [BUNKER-WORKFLOW] Complete in ${duration}ms`);
     
     recordAgentExecution('bunker_agent', duration, true);
-    
+    logAgentExecution('bunker_agent', extractCorrelationId(state), duration, 'success', {});
+
     // ========================================================================
     // CRITICAL: Extract correct values for state
     // State expects specific types, not the raw tool outputs
@@ -2909,6 +3023,7 @@ export async function bunkerAgentNode(
         robTrackingResult = robWithBunker;
         robSafetyStatus = formatROBSafetyStatus(robWithBunker, consumptionVlsfo, consumptionLsmgo);
       } catch (e: any) {
+        logError(extractCorrelationId(state), e, { agent: 'bunker_agent', step: 'ROB-with-bunker' });
         console.warn(`⚠️ [BUNKER-WORKFLOW] ROB-with-bunker skipped: ${e?.message || e}`);
       }
     }
@@ -3030,6 +3145,7 @@ export async function bunkerAgentNode(
           console.log('ℹ️ [BUNKER-WORKFLOW] Multi-port not required after detailed analysis');
         }
       } catch (err: any) {
+        logError(extractCorrelationId(state), err, { agent: 'bunker_agent', step: 'planMultiPortBunker' });
         console.error('❌ [BUNKER-WORKFLOW] Multi-port planning error:', err.message);
         // Don't fail the whole workflow - multi-port is an enhancement
       }
@@ -3097,11 +3213,13 @@ export async function bunkerAgentNode(
     
   } catch (error: any) {
     const duration = Date.now() - startTime;
+    logError(extractCorrelationId(state), error, { agent: 'bunker_agent' });
     console.error(`❌ [BUNKER-WORKFLOW] Error after ${duration}ms:`, error.message);
     
     // Record error metrics
     recordAgentExecution('bunker_agent', duration, false);
-    
+    logAgentExecution('bunker_agent', extractCorrelationId(state), duration, 'failed', {});
+
     return {
       agent_status: { 
         ...(state.agent_status || {}), 
@@ -3389,9 +3507,27 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
 }
 
 export async function finalizeNode(state: MultiAgentState) {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('finalize', cid, 0, 'started', { input: summarizeInputForLog(state) });
+
   console.log('📝 [FINALIZE] Node: Starting finalization...');
   
   const agentStartTime = Date.now();
+  
+  // ========================================================================
+  // Degradation Detection and Communication
+  // ========================================================================
+  const isDegraded = state.degraded_mode || false;
+  const missingData = state.missing_data || [];
+  
+  if (isDegraded) {
+    console.log(`⚠️ [FINALIZE] System operating in degraded mode. Missing data: ${missingData.join(', ')}`);
+    logError(cid, new Error('[DEGRADATION] Finalizing with degraded mode'), {
+      agent: 'finalize',
+      degraded_mode: true,
+      missing_data: missingData,
+    });
+  }
   
   // ========================================================================
   // AGENTIC MODE: Handle Clarification Requests
@@ -3405,7 +3541,8 @@ export async function finalizeNode(state: MultiAgentState) {
     const duration = Date.now() - agentStartTime;
     recordAgentTime('finalize', duration);
     recordAgentExecution('finalize', duration, true);
-    
+    logAgentExecution('finalize', extractCorrelationId(state), duration, 'success', {});
+
     return {
       final_recommendation: clarificationResponse,
       formatted_response: null,
@@ -3532,7 +3669,8 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       const agentDuration = Date.now() - agentStartTime;
       recordAgentTime('finalize', agentDuration);
       recordAgentExecution('finalize', agentDuration, true);
-      
+      logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
+
       console.log('✅ [FINALIZE] Port weather response generated');
       
       return {
@@ -3573,6 +3711,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       }
       
     } catch (synthesisError: unknown) {
+      logError(extractCorrelationId(state), synthesisError, { agent: 'finalize', step: 'generateSynthesis' });
       const message = synthesisError instanceof Error ? synthesisError.message : String(synthesisError);
       console.error('❌ [FINALIZE] Synthesis error (non-fatal):', message);
       // Continue without synthesis - graceful degradation
@@ -3585,7 +3724,25 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     console.log('🎨 [FINALIZE] Phase 2: Template formatting');
     
     // Generate legacy text output (backwards compatible)
-    const legacyTextOutput = await generateLegacyTextOutput(updatedState);
+    let legacyTextOutput = await generateLegacyTextOutput(updatedState);
+    
+    // Add degradation warning if system is in degraded mode
+    if (isDegraded && missingData.length > 0) {
+      const degradationWarning = `\n\n⚠️ **Analysis completed with limited data**\n\n` +
+        `The following data components were unavailable: ${missingData.map(d => `\`${d}\``).join(', ')}. ` +
+        `Recommendations may be less accurate than usual.\n\n` +
+        `**What this means:**\n` +
+        `- The system attempted to retrieve data from external APIs but encountered failures\n` +
+        `- Fallback strategies were used where possible (e.g., cached routes, historical prices)\n` +
+        `- Some analysis may be incomplete or based on estimated data\n\n` +
+        `**Recommendations:**\n` +
+        `- Please try again in a few minutes - transient API issues may resolve\n` +
+        `- If the issue persists, contact support with your correlation ID: \`${cid}\`\n` +
+        `- For critical decisions, verify data independently\n\n` +
+        `---\n\n`;
+      
+      legacyTextOutput = degradationWarning + legacyTextOutput;
+    }
     
     // Generate new formatted response (OPTIONAL)
     let formattedResponse: TemplateFormattedResponse | null = null;
@@ -3612,6 +3769,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         }
         
       } catch (error: unknown) {
+        logError(extractCorrelationId(state), error, { agent: 'finalize', step: 'formatResponseWithTemplate' });
         const message = error instanceof Error ? error.message : String(error);
         console.error('❌ [FINALIZE] Template formatter error:', message);
         console.error('   Falling back to legacy text output only');
@@ -3628,7 +3786,8 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
     recordAgentExecution('finalize', agentDuration, true);
-    
+    logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
+
     console.log('✅ [FINALIZE] Node: Final recommendation generated');
     
     return {
@@ -3644,8 +3803,10 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     
   } catch (error) {
     const agentDuration = Date.now() - agentStartTime;
+    logError(extractCorrelationId(state), error, { agent: 'finalize' });
     recordAgentTime('finalize', agentDuration);
     recordAgentExecution('finalize', agentDuration, false);
+    logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'failed', {});
     console.error('❌ [FINALIZE] Node error:', error);
     throw error;
   }

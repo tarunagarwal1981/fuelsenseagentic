@@ -1,9 +1,13 @@
 /**
  * Multi-Agent Graph Construction
- * 
+ *
  * Builds the LangGraph state machine for multi-agent orchestration.
  * Coordinates the workflow between supervisor, route agent, weather agent,
  * bunker agent, and finalize node.
+ *
+ * Persistence: use getMultiAgentApp() for production (Redis/MemorySaver with
+ * retry and logging). multiAgentApp is the sync, no-checkpointer build for
+ * tests and backward compatibility.
  */
 
 import { StateGraph, END } from '@langchain/langgraph';
@@ -24,6 +28,9 @@ import {
   finalizeNode,
 } from './agent-nodes';
 import { AgentRegistry } from './registry';
+import { getCheckpointer } from '@/lib/persistence/redis-checkpointer';
+
+export { getCheckpointMetrics } from '@/lib/persistence/redis-checkpointer';
 
 // ============================================================================
 // Registry Validation
@@ -348,12 +355,22 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
 // ============================================================================
 
 /**
- * Compiled Multi-Agent Application
- * 
- * The compiled graph ready for execution.
- * Use with: await multiAgentApp.invoke(initialState, { recursionLimit: 50 })
+ * Compiled Multi-Agent Application (no checkpointer, for tests and backward compatibility).
+ * Use getMultiAgentApp() for production with Redis/MemorySaver persistence.
  */
 export const multiAgentApp = workflow.compile();
+
+/**
+ * Returns the compiled multi-agent app with Redis (or MemorySaver) checkpointer.
+ * Use for /api/chat-multi-agent to enable checkpoint persistence and recovery.
+ *
+ * - Checkpointer: from getCheckpointer() (RedisSaver when Upstash env is set, else MemorySaver).
+ * - Wrapped with retry (max 3) and logging for put/putWrites.
+ */
+export async function getMultiAgentApp() {
+  const checkpointer = await getCheckpointer();
+  return workflow.compile({ checkpointer });
+}
 
 console.log('✅ Multi-Agent LangGraph compiled successfully');
 console.log('📊 Graph structure:');

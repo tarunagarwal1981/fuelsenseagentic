@@ -18,6 +18,9 @@ import { AIMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from './state';
 import { executeECAZoneValidatorTool } from '../tools/eca-zone-validator';
 import { CONSUMPTION_CONFIG, SPEED_CONFIG } from '../tools/eca-config';
+import { extractCorrelationId } from '@/lib/utils/correlation';
+import { logAgentExecution, logError, logToolCall } from '@/lib/monitoring/axiom-logger';
+import { sanitizeToolInput, sanitizeToolOutput } from '@/lib/monitoring/sanitize';
 
 /**
  * Compliance Agent Node
@@ -33,7 +36,14 @@ import { CONSUMPTION_CONFIG, SPEED_CONFIG } from '../tools/eca-config';
 export async function complianceAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
-  
+  const cid = extractCorrelationId(state);
+  logAgentExecution('compliance_agent', cid, 0, 'started', {
+    input: {
+      has_route_data: !!state.route_data,
+      message_count: state.messages?.length ?? 0,
+    },
+  });
+
   console.log('\n⚖️ [COMPLIANCE-AGENT] Starting compliance checks...');
   const startTime = Date.now();
   
@@ -95,7 +105,10 @@ export async function complianceAgentNode(
       }
     };
     
+    const t0 = Date.now();
+    logToolCall('eca_zone_validator', cid, sanitizeToolInput(ecaInput), undefined, 0, 'started');
     const ecaResult = await executeECAZoneValidatorTool(ecaInput);
+    logToolCall('eca_zone_validator', cid, sanitizeToolInput(ecaInput), sanitizeToolOutput(ecaResult), Date.now() - t0, 'success');
     
     // Log ECA results
     if (ecaResult.has_eca_zones) {
@@ -176,6 +189,7 @@ export async function complianceAgentNode(
     // ========================================================================
     
     const duration = Date.now() - startTime;
+    logAgentExecution('compliance_agent', cid, duration, 'success', {});
     console.log(`\n✅ [COMPLIANCE-AGENT] Completed in ${duration}ms`);
     
     return {
@@ -201,6 +215,9 @@ export async function complianceAgentNode(
     };
     
   } catch (error: any) {
+    const duration = Date.now() - startTime;
+    logError(cid, error, { agent: 'compliance_agent' });
+    logAgentExecution('compliance_agent', cid, duration, 'failed', {});
     console.error('❌ [COMPLIANCE-AGENT] Error during compliance checks:', error);
     
     return {

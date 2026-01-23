@@ -55,6 +55,7 @@ export async function testQuery(
   // Initial state
   const initialState: MultiAgentState = {
     messages: [humanMessage],
+    correlation_id: 'test-correlation-id',
     next_agent: '',
     route_data: null,
     vessel_timeline: null,

@@ -57,6 +57,7 @@ async function testComplianceIntegration() {
       // Create initial state
       const initialState: MultiAgentState = {
         messages: [new HumanMessage(test.query)],
+        correlation_id: 'test-correlation-id',
         next_agent: '',
         route_data: null,
         vessel_timeline: null,

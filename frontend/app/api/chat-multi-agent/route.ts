@@ -1,18 +1,23 @@
 /**
  * Multi-Agent Chat API Endpoint
- * 
+ *
  * API endpoint that uses the multi-agent LangGraph system for comprehensive
  * bunker optimization with route planning, weather analysis, and bunker recommendations.
- * 
+ *
  * Uses Server-Sent Events (SSE) streaming to send progressive updates as each agent completes.
+ * Checkpoint persistence (Redis/MemorySaver) via getMultiAgentApp(); thread_id enables
+ * conversation continuity and recovery across server restarts.
  */
 
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import { multiAgentApp } from '@/lib/multi-agent/graph';
-import { MultiAgentStateAnnotation } from '@/lib/multi-agent/state';
+import { getMultiAgentApp } from '@/lib/multi-agent/graph';
+import { validateMultiAgentStateShape } from '@/lib/multi-agent/state';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
+import { randomUUID } from 'crypto';
+import { generateCorrelationId, formatLogWithCorrelation } from '@/lib/utils/correlation';
+import { runWithCorrelation } from '@/lib/monitoring/correlation-context';
 import {
   withTimeout,
   TIMEOUTS,
@@ -44,10 +49,15 @@ interface MultiAgentRequest {
   departure_date?: string;
   selectedRouteId?: string;
   messages?: Array<{ role: string; content: string }>;
+  /** For conversation continuity and checkpoint recovery. Omit for new conversation. */
+  thread_id?: string;
+  /** For tracing; send on continuation to keep the same ID. */
+  correlation_id?: string;
 }
 
 export async function POST(req: Request) {
   const startTime = Date.now();
+  let correlation_id = generateCorrelationId();
   console.log('📨 [MULTI-AGENT-API] Received request');
 
   // Check for API key
@@ -65,6 +75,7 @@ export async function POST(req: Request) {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type',
+          'X-Correlation-ID': correlation_id,
         },
       }
     );
@@ -73,14 +84,23 @@ export async function POST(req: Request) {
   try {
     // Parse request body
     const body: MultiAgentRequest = await req.json();
-    const { message, origin, destination, vessel_speed, departure_date, selectedRouteId, messages } = body;
+    const { message, origin, destination, vessel_speed, departure_date, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId } = body;
 
+    correlation_id = bodyCorrelationId?.trim() || correlation_id;
+    const thread_id = bodyThreadId?.trim() || randomUUID();
+    const isContinuation = !!bodyThreadId?.trim();
+    if (isContinuation) {
+      console.log(formatLogWithCorrelation(correlation_id, 'Checkpoint recovery: loading state', { thread_id }));
+    }
+
+    console.log(formatLogWithCorrelation(correlation_id, 'Request started', { message: message.substring(0, 80) }));
     console.log('📝 [MULTI-AGENT-API] Request details:');
     console.log(`   - Message: ${message.substring(0, 100)}...`);
     console.log(`   - Origin: ${origin || 'not provided'}`);
     console.log(`   - Destination: ${destination || 'not provided'}`);
     console.log(`   - Vessel speed: ${vessel_speed || 'not provided'}`);
     console.log(`   - Departure date: ${departure_date || 'not provided'}`);
+    console.log(`   - thread_id: ${thread_id} (${isContinuation ? 'continuation' : 'new'})`);
 
     // Build initial message with context
     let userMessage = message;
@@ -116,6 +136,7 @@ export async function POST(req: Request) {
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
+            'X-Correlation-ID': correlation_id,
           },
         }
       );
@@ -123,11 +144,39 @@ export async function POST(req: Request) {
 
     console.log('🚀 [MULTI-AGENT-API] Starting multi-agent graph execution with streaming...');
 
+    let app;
+    try {
+      app = await getMultiAgentApp();
+    } catch (e) {
+      console.error('❌ [MULTI-AGENT-API] getMultiAgentApp failed:', e);
+      return NextResponse.json(
+        {
+          error: 'Persistence layer unavailable. Please retry after 30 seconds.',
+          type: 'persistence_error',
+          retry_after_seconds: 30,
+        },
+        {
+          status: 503,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Retry-After': '30',
+            'X-Correlation-ID': correlation_id,
+          },
+        }
+      );
+    }
+
     // Create streaming response
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        await runWithCorrelation(correlation_id, async () => {
         try {
+          // Send session with thread_id and correlation_id for continuity and tracing
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'session', thread_id, correlation_id })}\n\n`)
+          );
           // Send initial keep-alive
           controller.enqueue(encoder.encode(': keep-alive\n\n'));
 
@@ -194,33 +243,35 @@ export async function POST(req: Request) {
             }
           }
 
-          // Stream graph execution
-          // Increased recursion limit to 60 for complex multi-agent queries
-          // Complex queries with multiple agents and tool calls may need more iterations
-          const streamResult = await multiAgentApp.stream(
-            {
-              messages: [humanMessage],
-              next_agent: '',
-              route_data: initialRouteData,
-              vessel_timeline: null,
-              weather_forecast: null,
-              weather_consumption: null,
-              port_weather_status: null,
-              bunker_ports: null,
-              port_prices: null,
-              bunker_analysis: null,
-        multi_bunker_plan: null,
-              final_recommendation: null,
-              agent_errors: {},
-              agent_status: {},
-              agent_context: null,
-              selected_route_id: selectedRouteId || null,
-            },
-            {
-              streamMode: 'values',
-              recursionLimit: 60, // Increased from 30 to handle complex multi-agent workflows
-            }
-          );
+          // Build input: for continuation only send the new message (checkpoint has the rest, including correlation_id)
+          const input = isContinuation
+            ? { messages: [humanMessage] }
+            : {
+                messages: [humanMessage],
+                correlation_id,
+                next_agent: '',
+                route_data: initialRouteData,
+                vessel_timeline: null,
+                weather_forecast: null,
+                weather_consumption: null,
+                port_weather_status: null,
+                bunker_ports: null,
+                port_prices: null,
+                bunker_analysis: null,
+                multi_bunker_plan: null,
+                final_recommendation: null,
+                agent_errors: {},
+                agent_status: {},
+                agent_context: null,
+                selected_route_id: selectedRouteId || null,
+              };
+
+          // Stream graph execution with checkpoint config for persistence and recovery
+          const streamResult = await app.stream(input, {
+            streamMode: 'values',
+            recursionLimit: 60,
+            configurable: { thread_id, correlation_id },
+          });
 
           // Process stream events
           for await (const event of streamResult) {
@@ -247,6 +298,7 @@ export async function POST(req: Request) {
             if (event.bunker_ports) accumulatedState.bunker_ports = event.bunker_ports;
             if (event.port_prices) accumulatedState.port_prices = event.port_prices;
             if (event.bunker_analysis) accumulatedState.bunker_analysis = event.bunker_analysis;
+            if (event.multi_bunker_plan) accumulatedState.multi_bunker_plan = event.multi_bunker_plan;
             if (event.final_recommendation) accumulatedState.final_recommendation = event.final_recommendation;
             if (event.formatted_response) accumulatedState.formatted_response = event.formatted_response;
             if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
@@ -451,9 +503,14 @@ export async function POST(req: Request) {
             lastSentFinal = true;
           }
 
+          // Verify deserialized state shape after checkpoint persistence
+          if (!validateMultiAgentStateShape(accumulatedState)) {
+            console.warn('⚠️ [MULTI-AGENT-API] State shape validation failed; checkpoint may have serialization issues.');
+          }
+
           // Send completion signal
           const executionTime = Date.now() - startTime;
-          console.log(`✅ [MULTI-AGENT-API] Stream completed in ${executionTime}ms`);
+          console.log(formatLogWithCorrelation(correlation_id, 'Request completed', { executionTime, success: true }));
 
           // Record metrics
           recordRequest(true, executionTime);
@@ -463,23 +520,31 @@ export async function POST(req: Request) {
           controller.close();
         } catch (error) {
           const executionTime = Date.now() - startTime;
-          console.error('❌ [MULTI-AGENT-API] Stream error:', error);
-          
+          console.error(formatLogWithCorrelation(correlation_id, 'Stream error', { error: String(error), executionTime }));
+
           recordRequest(false, executionTime);
 
-          // Send error with any partial results we have
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          let errorMessage = error instanceof Error ? error.message : String(error);
+          const isCheckpointOrRedis =
+            /redis|checkpoint|ECONNREFUSED|ETIMEDOUT|ECONNRESET|putWrites|put\(/i.test(errorMessage);
+          const retryAfter = 30;
+          if (isCheckpointOrRedis) {
+            errorMessage = `Checkpoint persistence failed after retries. Please retry after ${retryAfter} seconds.`;
+          }
+
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
                 error: errorMessage,
                 execution_time_ms: executionTime,
+                ...(isCheckpointOrRedis && { retry_after_seconds: retryAfter }),
               })}\n\n`
             )
           );
           controller.close();
         }
+        });
       },
     });
 
@@ -491,6 +556,7 @@ export async function POST(req: Request) {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
+        'X-Correlation-ID': correlation_id,
       },
     });
   } catch (error: any) {
@@ -532,6 +598,7 @@ export async function POST(req: Request) {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
+            'X-Correlation-ID': correlation_id,
           },
         }
       );
@@ -552,6 +619,7 @@ export async function POST(req: Request) {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type',
+          'X-Correlation-ID': correlation_id,
         },
       }
     );

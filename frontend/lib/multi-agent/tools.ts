@@ -7,6 +7,11 @@
  */
 
 import { tool } from '@langchain/core/tools';
+import { getCorrelationId } from '@/lib/monitoring/correlation-context';
+import { generateCorrelationId } from '@/lib/utils/correlation';
+import { logToolCall } from '@/lib/monitoring/axiom-logger';
+import { sanitizeToolInput, sanitizeToolOutput } from '@/lib/monitoring/sanitize';
+import { createToolCircuitBreaker } from '@/lib/resilience/circuit-breaker';
 
 // Route Agent Tools
 import {
@@ -47,6 +52,19 @@ import {
 } from '@/lib/tools/bunker-analyzer';
 
 // ============================================================================
+// Circuit breakers (wrap external API calls)
+// ============================================================================
+
+const calculateRouteBreaker = createToolCircuitBreaker('calculate_route', (i) => executeRouteCalculatorTool(i), 'route');
+const calculateWeatherTimelineBreaker = createToolCircuitBreaker('calculate_weather_timeline', (i) => executeWeatherTimelineTool(i), 'route');
+const fetchMarineWeatherBreaker = createToolCircuitBreaker('fetch_marine_weather', (i) => executeMarineWeatherTool(i), 'weather');
+const calculateWeatherConsumptionBreaker = createToolCircuitBreaker('calculate_weather_consumption', (i) => executeWeatherConsumptionTool(i), 'weather');
+const checkPortWeatherBreaker = createToolCircuitBreaker('check_bunker_port_weather', (i) => executePortWeatherTool(i), 'weather');
+const findBunkerPortsBreaker = createToolCircuitBreaker('find_bunker_ports', (i) => executePortFinderTool(i), 'analysis');
+const getFuelPricesBreaker = createToolCircuitBreaker('get_fuel_prices', (i) => executePriceFetcherTool(i), 'price');
+const analyzeBunkerOptionsBreaker = createToolCircuitBreaker('analyze_bunker_options', (i) => executeBunkerAnalyzerTool(i), 'analysis');
+
+// ============================================================================
 // Route Agent Tools
 // ============================================================================
 
@@ -57,11 +75,16 @@ import {
  */
 export const calculateRouteTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('calculate_route', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('🗺️ [ROUTE-AGENT] Executing calculate_route');
     try {
-      const result = await executeRouteCalculatorTool(input);
+      const result = await calculateRouteBreaker.fire(input);
+      logToolCall('calculate_route', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('calculate_route', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [ROUTE-AGENT] Route calculation error:', error.message);
       return JSON.stringify({ error: error.message });
     }
@@ -101,11 +124,16 @@ Use this tool first to get the route waypoints needed for weather timeline calcu
  */
 export const calculateWeatherTimelineTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('calculate_weather_timeline', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('⏱️ [ROUTE-AGENT] Executing calculate_weather_timeline');
     try {
-      const result = await executeWeatherTimelineTool(input);
+      const result = await calculateWeatherTimelineBreaker.fire(input);
+      logToolCall('calculate_weather_timeline', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('calculate_weather_timeline', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [ROUTE-AGENT] Weather timeline error:', error.message);
       return JSON.stringify({ error: error.message });
     }
@@ -150,6 +178,9 @@ The waypoints should come from the calculate_route tool result.`,
 export function createFetchMarineWeatherTool(state: { vessel_timeline?: any[] | null }) {
   return tool(
     async (input: any) => {
+      const cid = getCorrelationId() || generateCorrelationId();
+      const t0 = Date.now();
+      logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), undefined, 0, 'started');
       console.log('🌊 [WEATHER-AGENT] Executing fetch_marine_weather');
       
       // CRITICAL FIX: Check if LLM provided too few positions
@@ -179,18 +210,12 @@ export function createFetchMarineWeatherTool(state: { vessel_timeline?: any[] | 
       }
       
       try {
-        const result = await executeMarineWeatherTool(input);
+        const result = await fetchMarineWeatherBreaker.fire(input);
+        logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
         return result;
       } catch (error: any) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
-        
-        if (isTimeout) {
-          console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
-          // Return empty array to allow supervisor to proceed with partial data
-          return [];
-        }
-        
+        logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), { error: errorMessage }, Date.now() - t0, 'failed');
         console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
         return { error: errorMessage };
       }
@@ -240,19 +265,17 @@ Use this tool with vessel positions from calculate_weather_timeline to get weath
  */
 export const fetchMarineWeatherTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('🌊 [WEATHER-AGENT] Executing fetch_marine_weather');
     try {
-      const result = await executeMarineWeatherTool(input);
+      const result = await fetchMarineWeatherBreaker.fire(input);
+      logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return result;
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('timed out');
-      
-      if (isTimeout) {
-        console.warn('⚠️ [WEATHER-AGENT] Marine weather API timed out - returning partial data');
-        return [];
-      }
-      
+      logToolCall('fetch_marine_weather', cid, sanitizeToolInput(input), { error: errorMessage }, Date.now() - t0, 'failed');
       console.error('❌ [WEATHER-AGENT] Marine weather error:', errorMessage);
       return { error: errorMessage };
     }
@@ -302,11 +325,16 @@ Use this tool with vessel positions from calculate_weather_timeline to get weath
  */
 export const calculateWeatherConsumptionTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('calculate_weather_consumption', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('⛽ [WEATHER-AGENT] Executing calculate_weather_consumption');
     try {
-      const result = await executeWeatherConsumptionTool(input);
+      const result = await calculateWeatherConsumptionBreaker.fire(input);
+      logToolCall('calculate_weather_consumption', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return result;
     } catch (error: any) {
+      logToolCall('calculate_weather_consumption', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [WEATHER-AGENT] Weather consumption error:', error.message);
       return { error: error.message };
     }
@@ -362,11 +390,16 @@ Use this tool with weather data from fetch_marine_weather to calculate weather i
  */
 export const checkPortWeatherTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('check_bunker_port_weather', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('⚓ [BUNKER-AGENT] Executing check_bunker_port_weather');
     try {
-      const result = await executePortWeatherTool(input);
+      const result = await checkPortWeatherBreaker.fire(input);
+      logToolCall('check_bunker_port_weather', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('check_bunker_port_weather', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [BUNKER-AGENT] Port weather error:', error.message);
       return JSON.stringify({ error: error.message });
     }
@@ -434,12 +467,17 @@ Use this tool to check weather conditions at bunker ports before making final re
  */
 export const findBunkerPortsTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('find_bunker_ports', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('🔍 [BUNKER-AGENT] Executing find_bunker_ports');
     console.log('🔍 [BUNKER-AGENT] Input received:', JSON.stringify(input).substring(0, 200));
     try {
-      const result = await executePortFinderTool(input);
+      const result = await findBunkerPortsBreaker.fire(input);
+      logToolCall('find_bunker_ports', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('find_bunker_ports', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [BUNKER-AGENT] Port finder error:', error.message);
       return JSON.stringify({ error: error.message });
     }
@@ -499,11 +537,16 @@ Use this tool after calculate_route to find bunker ports along the route.`,
  */
 export const getFuelPricesTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('get_fuel_prices', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('💰 [BUNKER-AGENT] Executing get_fuel_prices');
     try {
-      const result = await executePriceFetcherTool(input);
+      const result = await getFuelPricesBreaker.fire(input);
+      logToolCall('get_fuel_prices', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('get_fuel_prices', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [BUNKER-AGENT] Price fetcher error:', error.message);
       return JSON.stringify({ error: error.message });
     }
@@ -555,11 +598,16 @@ Use this tool with port codes from find_bunker_ports to get current fuel prices.
  */
 export const analyzeBunkerOptionsTool = tool(
   async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('analyze_bunker_options', cid, sanitizeToolInput(input), undefined, 0, 'started');
     console.log('📊 [BUNKER-AGENT] Executing analyze_bunker_options');
     try {
-      const result = await executeBunkerAnalyzerTool(input);
+      const result = await analyzeBunkerOptionsBreaker.fire(input);
+      logToolCall('analyze_bunker_options', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
       return JSON.stringify(result);
     } catch (error: any) {
+      logToolCall('analyze_bunker_options', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
       console.error('❌ [BUNKER-AGENT] Bunker analyzer error:', error.message);
       return JSON.stringify({ error: error.message });
     }

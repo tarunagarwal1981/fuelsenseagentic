@@ -1,11 +1,12 @@
 /**
  * Multi-Agent State Definition
- * 
+ *
  * Defines the shared state for the multi-agent LangGraph system.
  * This state is used by all agents (Route, Weather, Bunker) and the supervisor
  * to coordinate the complete bunker optimization workflow.
  */
 
+import { randomUUID } from 'crypto';
 import { Annotation } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { Coordinates, Port, FuelType } from '@/lib/types';
@@ -445,6 +446,15 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
     reducer: (x, y) => x.concat(y),
     default: () => [],
+  }),
+
+  /**
+   * Correlation ID for tracing a single request across all agent hops.
+   * Persists in Redis checkpoints. Reducer keeps first ID (y || x).
+   */
+  correlation_id: Annotation<string>({
+    reducer: (x, y) => y || x,
+    default: () => randomUUID(),
   }),
 
   /**
@@ -944,6 +954,30 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     default: () => ({}),
   }),
 
+  /**
+   * Degraded mode flag - indicates system is operating with reduced functionality
+   */
+  degraded_mode: Annotation<boolean>({
+    reducer: (x, y) => {
+      // Once degraded, stay degraded (true wins)
+      return y !== null && y !== undefined ? (y || x) : x;
+    },
+    default: () => false,
+  }),
+
+  /**
+   * List of missing data components that caused degraded mode
+   */
+  missing_data: Annotation<string[]>({
+    reducer: (x, y) => {
+      // Merge arrays, deduplicate
+      if (!y || y.length === 0) return x || [];
+      if (!x || x.length === 0) return y;
+      return Array.from(new Set([...x, ...y]));
+    },
+    default: () => [],
+  }),
+
   // ========================================================================
   // Agentic Supervisor State (ReAct Pattern)
   // ========================================================================
@@ -1039,9 +1073,30 @@ export const MultiAgentStateAnnotation = Annotation.Root({
 export type MultiAgentState = typeof MultiAgentStateAnnotation.State;
 
 // ============================================================================
-// Type Exports
+// State shape validation (for checkpoint deserialization verification)
 // ============================================================================
 
-// Types are already exported above with their interface declarations
-// No need for duplicate export type statement
+/**
+ * Validates that a deserialized state object has the expected MultiAgentState shape.
+ * Used to verify that complex objects (Route, Port[], BunkerAnalysis, etc.) persist
+ * and deserialize correctly across Redis checkpoint save/load.
+ *
+ * @returns true if the object has the expected structure; false otherwise.
+ */
+export function validateMultiAgentStateShape(obj: unknown): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  const o = obj as Record<string, unknown>;
+  if (o.messages != null && !Array.isArray(o.messages)) return false;
+  if (o.route_data != null && typeof o.route_data === 'object') {
+    const r = o.route_data as Record<string, unknown>;
+    if (typeof r.distance_nm !== 'number') return false;
+    if (!Array.isArray(r.waypoints)) return false;
+  }
+  if (o.bunker_analysis != null && typeof o.bunker_analysis === 'object') {
+    const b = o.bunker_analysis as Record<string, unknown>;
+    if (!Array.isArray(b.recommendations)) return false;
+  }
+  if (o.bunker_ports != null && !Array.isArray(o.bunker_ports)) return false;
+  return true;
+}
 

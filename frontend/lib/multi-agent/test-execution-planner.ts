@@ -19,6 +19,7 @@ import type { MultiAgentState } from './state';
 function createEmptyState(): MultiAgentState {
   return {
     messages: [],
+    correlation_id: 'test-correlation-id',
     next_agent: '',
     agent_context: null,
     agent_call_counts: {

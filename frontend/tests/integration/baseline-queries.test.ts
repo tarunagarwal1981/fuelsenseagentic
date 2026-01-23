@@ -121,6 +121,7 @@ const BASELINE_QUERIES: TestQuery[] = [
 function buildInitialState(query: string): MultiAgentState {
   return {
     messages: [new HumanMessage(query)],
+    correlation_id: 'test-correlation-id',
     next_agent: '',
     agent_context: null,
     agent_call_counts: { route_agent: 0, weather_agent: 0, bunker_agent: 0 },
