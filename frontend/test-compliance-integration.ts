@@ -101,6 +101,9 @@ async function testComplianceIntegration() {
         // Parameter override fields (supervisor → agent communication)
         port_overrides: undefined,
         agent_overrides: undefined,
+        // Graceful degradation fields
+        degraded_mode: false,
+        missing_data: [],
       };
       
       console.log('🚀 Starting multi-agent workflow...\n');
