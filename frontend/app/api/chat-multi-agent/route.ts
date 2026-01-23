@@ -295,7 +295,7 @@ export async function POST(req: Request) {
           }, null, 2));
           
           const streamConfig = {
-            streamMode: 'values',
+            streamMode: 'values' as const,
             recursionLimit: 60,
             configurable: { thread_id, correlation_id },
           };
