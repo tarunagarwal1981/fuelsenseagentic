@@ -228,7 +228,7 @@ async function createCheckpointer(): Promise<BaseCheckpointSaver> {
       `${PERSISTENCE_LOG_PREFIX} UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN not set → using MemorySaver (in-memory)`
     );
     resolvedKind = "memory";
-    return wrapWithRetryAndLogging(new MemorySaver());
+    return new MemorySaver();
   }
 
   // NEW: Detect Upstash and skip RedisSaver entirely (Upstash doesn't support RediSearch)
@@ -239,7 +239,7 @@ async function createCheckpointer(): Promise<BaseCheckpointSaver> {
       `Using MemorySaver instead.`
     );
     resolvedKind = "memory";
-    return wrapWithRetryAndLogging(new MemorySaver());
+    return new MemorySaver();
   }
 
   // Continue with RedisSaver for standard Redis (with RediSearch support)
@@ -275,7 +275,7 @@ async function createCheckpointer(): Promise<BaseCheckpointSaver> {
       );
     }
     resolvedKind = "memory";
-    return wrapWithRetryAndLogging(new MemorySaver());
+    return new MemorySaver();
   }
 }
 
