@@ -1470,31 +1470,47 @@ function extractVesselSpecsFromQuery(query: string, state: MultiAgentState): any
 
 /**
  * Extract fuel requirements from user message
+ * Distinguishes between total bunker quantities and daily consumption rates
  */
 function extractFuelRequirements(message: string): {
   fuel_types: string[];
-  quantities: { [key: string]: number };
+  quantities: { [key: string]: number };  // Total bunker quantities (MT)
+  consumption_rates: { [key: string]: number };  // Daily consumption rates (MT/day)
   total_quantity: number;
 } {
   const fuelTypes: string[] = [];
-  const quantities: { [key: string]: number } = {};
+  const quantities: { [key: string]: number } = {};  // Total quantities
+  const consumptionRates: { [key: string]: number } = {};  // Daily rates
   let totalQuantity = 0;
   
-  // Enhanced patterns to match Query 15 complexity
-  const fuelPatterns = [
-    { type: 'VLSFO', regex: /(\d+)\s*MT\s*VLSFO/i },
-    { type: 'LSGO', regex: /(\d+)\s*MT\s*LSGO/i },
-    { type: 'MGO', regex: /(\d+)\s*MT\s*MGO/i },
-    { type: 'HSFO', regex: /(\d+)\s*MT\s*HSFO/i },
-    // Also match "35 MT/day VLSFO" consumption patterns
-    { type: 'VLSFO', regex: /(\d+)\s*MT\/day\s*VLSFO/i },
-    { type: 'LSGO', regex: /(\d+)\s*MT\/day\s*LSGO/i },
+  const lower = message.toLowerCase();
+  
+  // Patterns for TOTAL bunker quantities (bunker, load, take)
+  const bunkerQuantityPatterns = [
+    { type: 'VLSFO', regex: /(?:bunker|load|take)\s+(\d+(?:\.\d+)?)\s*(?:mt|tons?)?\s*vlsfo/i },
+    { type: 'LSGO', regex: /(?:bunker|load|take)\s+(\d+(?:\.\d+)?)\s*(?:mt|tons?)?\s*lsgo/i },
+    { type: 'MGO', regex: /(?:bunker|load|take)\s+(\d+(?:\.\d+)?)\s*(?:mt|tons?)?\s*mgo/i },
+    // Also match "X MT VLSFO" when NOT followed by "/day"
+    { type: 'VLSFO', regex: /(\d+(?:\.\d+)?)\s*mt\s*vlsfo(?!\s*\/?\s*day)/i },
+    { type: 'LSGO', regex: /(\d+(?:\.\d+)?)\s*mt\s*lsgo(?!\s*\/?\s*day)/i },
+    { type: 'MGO', regex: /(\d+(?:\.\d+)?)\s*mt\s*mgo(?!\s*\/?\s*day)/i },
   ];
   
-  for (const pattern of fuelPatterns) {
+  // Patterns for DAILY consumption rates
+  const consumptionRatePatterns = [
+    { type: 'VLSFO', regex: /(?:consuming|consumption)\s+(\d+(?:\.\d+)?)\s*mt\/?\s*day\s*vlsfo/i },
+    { type: 'LSGO', regex: /(?:consuming|consumption)\s+(\d+(?:\.\d+)?)\s*mt\/?\s*day\s*lsgo/i },
+    { type: 'MGO', regex: /(?:consuming|consumption)\s+(\d+(?:\.\d+)?)\s*mt\/?\s*day\s*mgo/i },
+    { type: 'VLSFO', regex: /(\d+(?:\.\d+)?)\s*mt\/day\s*vlsfo/i },
+    { type: 'LSGO', regex: /(\d+(?:\.\d+)?)\s*mt\/day\s*lsgo/i },
+    { type: 'MGO', regex: /(\d+(?:\.\d+)?)\s*mt\/day\s*mgo/i },
+  ];
+  
+  // Extract total quantities
+  for (const pattern of bunkerQuantityPatterns) {
     const match = message.match(pattern.regex);
     if (match) {
-      const quantity = parseInt(match[1]);
+      const quantity = parseFloat(match[1]);
       if (!fuelTypes.includes(pattern.type)) {
         fuelTypes.push(pattern.type);
       }
@@ -1503,13 +1519,31 @@ function extractFuelRequirements(message: string): {
     }
   }
   
+  // Extract consumption rates (separate from quantities)
+  for (const pattern of consumptionRatePatterns) {
+    const match = message.match(pattern.regex);
+    if (match) {
+      const rate = parseFloat(match[1]);
+      if (!fuelTypes.includes(pattern.type)) {
+        fuelTypes.push(pattern.type);
+      }
+      consumptionRates[pattern.type] = (consumptionRates[pattern.type] || 0) + rate;
+      // Don't add to totalQuantity - these are rates, not quantities
+    }
+  }
+  
   // Default to VLSFO if nothing found
   if (fuelTypes.length === 0) {
     fuelTypes.push('VLSFO');
-    quantities['VLSFO'] = 0; // Will be calculated from consumption
+    quantities['VLSFO'] = 0;
   }
   
-  return { fuel_types: fuelTypes, quantities, total_quantity: totalQuantity };
+  return { 
+    fuel_types: fuelTypes, 
+    quantities,  // Total bunker quantities only
+    consumption_rates: consumptionRates,  // Daily consumption rates
+    total_quantity: totalQuantity 
+  };
 }
 
 /**
@@ -2492,6 +2526,14 @@ export async function bunkerAgentNode(
     const fuelRequirements = extractFuelRequirements(userQuery);
     console.log('📊 [BUNKER-WORKFLOW] Fuel requirements:', fuelRequirements);
     
+    // Log consumption rates separately (for reference, not for override)
+    if (fuelRequirements.consumption_rates && Object.keys(fuelRequirements.consumption_rates).length > 0) {
+      console.log(`📊 [BUNKER-WORKFLOW] User specified consumption rates (not used for bunker quantity):`);
+      Object.entries(fuelRequirements.consumption_rates).forEach(([type, rate]) => {
+        console.log(`   - ${type}: ${rate} MT/day`);
+      });
+    }
+    
     // ========================================================================
     // Check for ECA compliance requirements
     // ========================================================================
@@ -2515,7 +2557,7 @@ export async function bunkerAgentNode(
     // This section just captures user-specified quantities if any.
     // Actual requirements are calculated AFTER calculateROBForVoyage() below.
     //
-    const userSpecifiedVlsfo = fuelRequirements.quantities['VLSFO'] || 0;
+    const userSpecifiedVlsfo = fuelRequirements.quantities['VLSFO'] || 0;  // Only total quantities
     const userSpecifiedMgo = fuelRequirements.quantities['MGO'] || fuelRequirements.quantities['LSGO'] || 0;
     
     // ECA MGO requirement (from compliance data)
@@ -2711,14 +2753,22 @@ export async function bunkerAgentNode(
       lsmgoRequired = Math.min(ecaMgoRequired, lsmgoAvailableCapacity);
     }
     
-    // Override with user-specified quantities if provided
-    if (userSpecifiedVlsfo > 0) {
+    // Override with user-specified TOTAL quantities if provided (not consumption rates)
+    // Only override if value is > 100 MT (likely a total, not a daily rate)
+    if (userSpecifiedVlsfo > 100) {
       vlsfoRequired = Math.min(userSpecifiedVlsfo, vlsfoAvailableCapacity);
-      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified VLSFO quantity: ${vlsfoRequired.toFixed(0)} MT`);
+      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified VLSFO total quantity: ${vlsfoRequired.toFixed(0)} MT`);
+    } else if (userSpecifiedVlsfo > 0) {
+      console.log(`📊 [BUNKER-WORKFLOW] Ignoring user-specified VLSFO value (${userSpecifiedVlsfo} MT) - too small, likely a consumption rate`);
+      console.log(`   Using calculated voyage requirement: ${vlsfoRequired.toFixed(0)} MT`);
     }
-    if (userSpecifiedMgo > 0) {
+    
+    if (userSpecifiedMgo > 100) {
       lsmgoRequired = Math.min(userSpecifiedMgo, lsmgoAvailableCapacity);
-      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified MGO quantity: ${lsmgoRequired.toFixed(0)} MT`);
+      console.log(`📊 [BUNKER-WORKFLOW] Using user-specified MGO total quantity: ${lsmgoRequired.toFixed(0)} MT`);
+    } else if (userSpecifiedMgo > 0) {
+      console.log(`📊 [BUNKER-WORKFLOW] Ignoring user-specified MGO value (${userSpecifiedMgo} MT) - too small, likely a consumption rate`);
+      console.log(`   Using calculated voyage requirement: ${lsmgoRequired.toFixed(0)} MT`);
     }
     
     console.log(`📊 [BUNKER-WORKFLOW] Bunker requirements calculated:`);
