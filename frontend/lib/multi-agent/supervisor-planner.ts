@@ -45,18 +45,13 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 100; // Maximum cached plans
 
 /**
- * Generate cache key from query and state signature
+ * Generate cache key from query only (not state)
+ * State changes shouldn't invalidate the plan - the plan is based on query intent
  */
 function getCacheKey(query: string, state: MultiAgentState): string {
-  const stateSig = [
-    state.route_data ? 'R' : '',
-    state.weather_forecast ? 'W' : '',
-    state.weather_consumption ? 'WC' : '',
-    state.bunker_ports ? 'B' : '',
-    state.port_prices ? 'P' : '',
-    state.bunker_analysis ? 'BA' : '',
-  ].join('');
-  return `${query.substring(0, 100)}_${stateSig}`;
+  // Use only query for cache key - plan should be consistent regardless of current state
+  // The plan is about what agents to run, not what data already exists
+  return query.substring(0, 200).toLowerCase().trim();
 }
 
 /**
