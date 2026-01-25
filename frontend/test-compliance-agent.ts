@@ -87,6 +87,13 @@ async function testComplianceAgent() {
         // Parameter override fields (supervisor → agent communication)
         port_overrides: undefined,
         agent_overrides: undefined,
+        execution_result: null,
+        execution_plan: null,
+        workflow_stage: 0,
+        _schema_version: '2.0.0',
+        synthesized_response: null,
+        request_context: null,
+        synthesis_data: null,
         // Graceful degradation fields
         degraded_mode: false,
         missing_data: [],

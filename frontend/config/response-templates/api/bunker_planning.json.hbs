@@ -1,0 +1,94 @@
+{
+  "status": "{{#if success}}success{{else}}partial{{/if}}",
+  "timestamp": "{{synthesizedAt}}",
+  "correlationId": "{{correlationId}}",
+  "queryType": "{{queryType}}",
+  "data": {
+    "route": {
+      "origin": "{{data.route.origin}}",
+      "destination": "{{data.route.destination}}",
+      "distanceNm": {{data.route.distance_nm}},
+      "estimatedHours": {{data.route.estimated_hours}},
+      "waypointsCount": {{data.route.waypoints_count}}
+    },
+    "bunker": {
+      "recommendedPort": {
+        "code": "{{data.bunker.best_option.port_code}}",
+        "name": "{{data.bunker.best_option.port_name}}",
+        "costs": {
+          "fuel": {{data.bunker.best_option.fuel_cost_usd}},
+          "deviation": {{data.bunker.best_option.deviation_cost_usd}},
+          "total": {{data.bunker.best_option.total_cost_usd}}
+        }
+      },
+      "alternativesCount": {{data.bunker.alternatives_count}},
+      "maxSavings": {{data.bunker.max_savings_usd}}
+    }{{#if data.weather}},
+    "weather": {
+      "overallRisk": "{{data.weather.overall_risk}}",
+      "unsafeSegments": {{data.weather.unsafe_segments}}
+    }{{/if}}{{#if data.cii}},
+    "cii": {
+      "rating": "{{data.cii.rating}}",
+      "value": {{data.cii.cii_value}},
+      "required": {{data.cii.required_cii}},
+      "improvementNeeded": {{data.cii.improvement_needed}}
+    }{{/if}}
+  },
+  "insights": [
+    {{#each insights}}
+    {
+      "type": "{{type}}",
+      "priority": "{{priority}}",
+      "category": "{{category}}",
+      "title": "{{title}}",
+      "description": "{{description}}",
+      "confidence": {{confidence}}
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "recommendations": [
+    {{#each recommendations}}
+    {
+      "id": "{{id}}",
+      "priority": {{priority}},
+      "category": "{{category}}",
+      "action": "{{action}}",
+      "rationale": "{{rationale}}",
+      "urgency": "{{urgency}}",
+      "owner": "{{owner}}"
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "warnings": [
+    {{#each warnings}}
+    {
+      "level": "{{level}}",
+      "category": "{{category}}",
+      "message": "{{message}}",
+      "impact": "{{impact}}"
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "alerts": [
+    {{#each alerts}}
+    {
+      "level": "{{level}}",
+      "type": "{{type}}",
+      "title": "{{title}}",
+      "message": "{{message}}",
+      "actionRequired": "{{action_required}}",
+      "urgency": "{{urgency}}"
+    }{{#unless @last}},{{/unless}}
+    {{/each}}
+  ],
+  "metrics": {
+    "durationMs": {{metrics.duration_ms}},
+    "stagesCompleted": {{metrics.stages_completed}},
+    "stagesFailed": {{metrics.stages_failed}},
+    "llmCalls": {{metrics.llm_calls}},
+    "apiCalls": {{metrics.api_calls}},
+    "costUsd": {{metrics.total_cost_usd}},
+    "successRate": {{metrics.success_rate}}
+  }
+}

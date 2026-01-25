@@ -1,0 +1,83 @@
+# Safety Business Rules
+# Rules for ensuring safe operations
+
+rules:
+  - id: bunker_safety_margin
+    name: Bunker Safety Margin Rule
+    description: Ensure minimum fuel safety buffer after bunkering to prevent running out of fuel
+    category: safety
+    
+    rule:
+      condition: "rob_after_bunker < (total_consumption * 0.15)"
+      action: add_warning
+      priority: 1
+      severity: warning
+    
+    parameters:
+      min_safety_days: 3
+      min_safety_percentage: 15
+      critical_threshold_days: 1
+    
+    timing: post_execution
+    appliesTo:
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Industry standard is 15% safety margin for maritime fuel"
+
+  - id: critical_rob_threshold
+    name: Critical ROB Threshold
+    description: Block operation if remaining fuel would fall below critical threshold
+    category: safety
+    
+    rule:
+      condition: "min_rob_during_voyage < (daily_consumption * 1)"
+      action: block_operation
+      priority: 1
+      severity: blocking
+    
+    parameters:
+      critical_days: 1
+    
+    timing: pre_execution
+    appliesTo:
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Safety regulations require minimum 1 day fuel reserve"
+
+  - id: weather_safety_limit
+    name: Weather Safety Limit
+    description: Warn if bunkering conditions exceed safe weather limits
+    category: safety
+    
+    rule:
+      condition: "wind_speed > 25 || wave_height > 2.5"
+      action: add_warning
+      priority: 2
+      severity: warning
+    
+    parameters:
+      max_wind_speed_knots: 25
+      max_wave_height_meters: 2.5
+      max_visibility_threshold_nm: 1
+    
+    timing: always
+    appliesTo:
+      - weather_agent
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Standard bunkering weather limits"

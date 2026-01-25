@@ -1,61 +1,81 @@
 # Weather Agent Configuration
-# Fetches marine weather forecasts and calculates weather impact factors
+# Fetches marine weather and calculates fuel consumption impact
 
-agent_id: weather_agent
-agent_name: "Weather Analyzer Agent"
-agent_type: deterministic
-description: "Fetches marine weather forecast for route and calculates weather adjustment factors for fuel consumption"
+id: weather_agent
+name: Weather Analyzer Agent
+description: Fetches marine weather forecasts from Open-Meteo API, calculates weather-adjusted fuel consumption, and validates bunker port weather safety. Deterministic workflow - no LLM tool-calling.
+type: specialist
+
+domain:
+  - weather_analysis
+  - fuel_consumption
+  - safety
 
 capabilities:
-  - weather_forecast
-  - weather_factor_calculation
-  - bunker_port_weather_check
-  - weather_risk_assessment
-
-dependencies:
-  - route_agent  # Needs route data to fetch weather along route
-
-tools:
   - fetch_marine_weather
   - calculate_weather_consumption
-  - check_bunker_port_weather
+  - check_port_weather
+  - assess_sea_state
+  - generate_weather_alerts
 
-status: available
+intents:
+  - check_weather
+  - weather_forecast
+  - calculate_consumption
+  - check_port_safety
+  - weather_impact
+
+tools:
+  required:
+    - fetch_marine_weather
+  optional:
+    - calculate_weather_consumption
+    - check_bunker_port_weather
+
+dependencies:
+  upstream:
+    - route_agent
+  downstream:
+    - bunker_agent
 
 execution:
-  type: workflow
-  average_duration_ms: 3000
-  max_duration_ms: 8000
-  cost_per_call: 0.00
-  retry_strategy:
-    max_retries: 3
-    backoff: exponential
+  type: deterministic
+  canRunInParallel: true
+  maxExecutionTimeMs: 45000
+  retryPolicy:
+    maxRetries: 3
+    backoffMs: 2000
+  costPerCall: 0.00
 
 produces:
-  - weather_data
-  - weather_factors
-  - bunker_port_weather_status
-  - weather_risk_level
+  stateFields:
+    - weather_forecast
+    - weather_consumption
+    - port_weather_status
+  messageTypes:
+    - weather_fetched
+    - consumption_calculated
+    - weather_error
 
 consumes:
   required:
-    - route_data  # From route_agent
+    - vessel_timeline
   optional:
-    - bunker_ports  # If available from bunker_agent
+    - bunker_ports
+    - vessel_consumption
+    - vessel_heading
 
 validation:
-  pre_execution:
-    - route_data_exists
-  post_execution:
-    - weather_factors_valid_range  # Must be 1.0 to 1.5
-    - all_segments_have_weather
+  preExecution:
+    - vessel_timeline_exists
+  postExecution:
+    - weather_forecast_received
+    - consumption_calculated
 
-human_approval:
-  required: false
-  threshold: null
+enabled: true
 
 metadata:
   version: "1.0.0"
-  last_updated: "2025-01-15"
-  maintainer: "FuelSense Team"
-  documentation: "docs/agents/weather-agent.md"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team
+  documentation: docs/agents/weather-agent.md

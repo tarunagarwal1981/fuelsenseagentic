@@ -1,4 +1,71 @@
 # Bunker Planning Workflow
-# TODO: Implement in Prompt 6
-workflow_id: bunker_planning
-workflow_name: "Bunker Planning Workflow"
+# Complete workflow for bunker optimization queries
+
+id: bunker_planning
+name: Bunker Planning Workflow
+description: Complete bunker planning workflow with route calculation, weather analysis, compliance checks, and cost optimization
+
+queryTypes:
+  - bunker_planning
+  - route_optimization
+  - cost_optimization
+  - fuel_procurement
+
+intentPatterns:
+  - ".*bunker.*"
+  - ".*fuel.*port.*"
+  - ".*cheapest.*fuel.*"
+  - ".*refuel.*"
+
+stages:
+  - id: route_calculation
+    agentId: route_agent
+    order: 1
+    required: true
+
+  - id: compliance_check
+    agentId: compliance_agent
+    order: 2
+    required: false
+    parallelWith:
+      - weather_analysis
+
+  - id: weather_analysis
+    agentId: weather_agent
+    order: 2
+    required: false
+    skipIf:
+      skip_weather: true
+    parallelWith:
+      - compliance_check
+
+  - id: bunker_planning
+    agentId: bunker_agent
+    order: 3
+    required: true
+
+  - id: finalization
+    agentId: finalize
+    order: 4
+    required: true
+
+execution:
+  maxTotalTimeMs: 120000
+  allowParallelStages: true
+  continueOnError: true
+
+requiredInputs:
+  - origin
+  - destination
+
+finalOutputs:
+  - route_data
+  - weather_forecast
+  - bunker_analysis
+  - final_response
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

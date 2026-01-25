@@ -60,7 +60,15 @@ export class ToolRegistry {
     }
 
     // Check for circular dependencies
-    const circularCheck = this.checkCircularDependencies(tool.id, tool.dependencies.internal);
+    // Pass the tool being registered so we can detect if any dependency chain leads back to it
+    const circularCheck = this.checkCircularDependencies(
+      tool.id,
+      tool.dependencies.internal,
+      new Set(),
+      new Set(),
+      [],
+      tool.id
+    );
     if (!circularCheck.valid) {
       throw new Error(
         `Circular dependency detected for tool ${tool.id}: ${circularCheck.errors.join(', ')}`
@@ -458,14 +466,23 @@ export class ToolRegistry {
     dependencies: string[],
     visited: Set<string> = new Set(),
     recStack: Set<string> = new Set(),
-    path: string[] = []
+    path: string[] = [],
+    originalToolId?: string
   ): ValidationResult {
     const errors: string[] = [];
+    const rootToolId = originalToolId || toolId;
 
     // If we're currently exploring this node (in recursion stack), we found a cycle
     if (recStack.has(toolId)) {
       const cycleStart = path.indexOf(toolId);
       const cycle = [...path.slice(cycleStart), toolId].join(' -> ');
+      errors.push(`Circular dependency detected: ${cycle}`);
+      return { valid: false, errors, warnings: [] };
+    }
+
+    // If this dependency is the original tool being registered, we found a cycle
+    if (toolId === rootToolId && path.length > 0) {
+      const cycle = [...path, toolId].join(' -> ');
       errors.push(`Circular dependency detected: ${cycle}`);
       return { valid: false, errors, warnings: [] };
     }
@@ -489,11 +506,16 @@ export class ToolRegistry {
           depTool.dependencies.internal,
           visited,
           recStack,
-          path
+          path,
+          rootToolId
         );
         if (!depCheck.valid) {
           errors.push(...depCheck.errors);
         }
+      } else if (depId === rootToolId) {
+        // If a dependency is the tool being registered, that's a cycle
+        const cycle = [...path, depId].join(' -> ');
+        errors.push(`Circular dependency detected: ${cycle}`);
       }
     }
 

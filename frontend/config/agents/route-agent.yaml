@@ -1,74 +1,87 @@
 # Route Agent Configuration
 # Calculates optimal maritime routes between ports
 
-agent_id: route_agent
-agent_name: "Route Calculator Agent"
-agent_type: deterministic
-description: "Calculates optimal maritime route between origin and destination ports with ECA zone identification"
+id: route_agent
+name: Route Calculator Agent
+description: Calculates maritime routes between ports using Maritime Route API and generates vessel position timeline for weather analysis. Deterministic workflow - no LLM tool-calling.
+type: specialist
 
-# Capabilities this agent provides
+domain:
+  - route_planning
+  - voyage_planning
+  - navigation
+
 capabilities:
-  - route_calculation
-  - distance_calculation
-  - eca_zone_identification
-  - waypoint_generation
-  - voyage_duration_estimation
-
-# What this agent depends on (other agents that must run first)
-dependencies: []
-
-# Tools this agent uses (from tool registry)
-tools:
   - calculate_route
+  - estimate_distance
+  - generate_waypoints
   - calculate_weather_timeline
+  - estimate_travel_time
+  - identify_eca_zones
 
-# Current implementation status
-status: available
+intents:
+  - plan_route
+  - calculate_distance
+  - find_waypoints
+  - how_far
+  - how_long
 
-# Execution characteristics
+tools:
+  required:
+    - calculate_route
+  optional:
+    - calculate_weather_timeline
+
+dependencies:
+  upstream:
+    - supervisor
+  downstream:
+    - compliance_agent
+    - weather_agent
+    - bunker_agent
+
 execution:
-  type: workflow  # Runs as deterministic workflow, not LLM-based
-  average_duration_ms: 2000
-  max_duration_ms: 5000
-  cost_per_call: 0.00  # No LLM cost
-  retry_strategy:
-    max_retries: 3
-    backoff: exponential
-  
-# What this agent produces (state fields)
-produces:
-  - route_data
-  - total_distance
-  - eca_zones
-  - waypoints
-  - estimated_duration
+  type: deterministic
+  canRunInParallel: false
+  maxExecutionTimeMs: 30000
+  retryPolicy:
+    maxRetries: 3
+    backoffMs: 1000
+  costPerCall: 0.00
 
-# What this agent requires as input (state fields)
+produces:
+  stateFields:
+    - route_data
+    - vessel_timeline
+    - waypoints
+    - total_distance
+    - eca_zones
+  messageTypes:
+    - route_calculated
+    - route_error
+
 consumes:
   required:
-    - origin_port
-    - destination_port
+    - messages
   optional:
-    - route_preferences
+    - origin
+    - destination
+    - vessel_speed
+    - departure_datetime
 
-# Validation rules to check before/after execution
 validation:
-  pre_execution:
+  preExecution:
     - port_names_valid
     - origin_destination_different
-  post_execution:
+  postExecution:
     - route_calculated_successfully
     - distance_positive
     - waypoints_generated
 
-# Human approval requirements
-human_approval:
-  required: false
-  threshold: null
+enabled: true
 
-# Metadata
 metadata:
   version: "1.0.0"
-  last_updated: "2025-01-15"
-  maintainer: "FuelSense Team"
-  documentation: "docs/agents/route-agent.md"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team
+  documentation: docs/agents/route-agent.md

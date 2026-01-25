@@ -1,0 +1,36 @@
+# Fetch Marine Weather Tool Configuration
+
+id: fetch_marine_weather
+name: Marine Weather Fetcher
+description: Fetch marine weather forecast from Open-Meteo API for vessel positions along route, including wind, waves, visibility, and sea state
+category: weather
+
+domain:
+  - weather_analysis
+  - safety
+  - fuel_consumption
+
+cost: api_call
+avgLatencyMs: 3000
+maxLatencyMs: 15000
+reliability: 0.95
+
+dependencies:
+  external:
+    - open_meteo_marine_api
+  internal: []
+
+agentIds:
+  - weather_agent
+
+requiresAuth: false
+
+rateLimit:
+  calls: 60
+  windowMs: 60000
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

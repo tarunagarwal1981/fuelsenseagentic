@@ -1,0 +1,47 @@
+# Route Only Workflow
+# Simple route calculation without bunker planning
+
+id: route_only
+name: Route Only Workflow
+description: Simple route calculation for distance and duration queries
+
+queryTypes:
+  - route_calculation
+  - distance_query
+  - duration_query
+
+intentPatterns:
+  - ".*distance.*"
+  - ".*how far.*"
+  - ".*how long.*"
+  - ".*route.*"
+
+stages:
+  - id: route_calculation
+    agentId: route_agent
+    order: 1
+    required: true
+
+  - id: finalization
+    agentId: finalize
+    order: 2
+    required: true
+
+execution:
+  maxTotalTimeMs: 60000
+  allowParallelStages: false
+  continueOnError: false
+
+requiredInputs:
+  - origin
+  - destination
+
+finalOutputs:
+  - route_data
+  - final_response
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

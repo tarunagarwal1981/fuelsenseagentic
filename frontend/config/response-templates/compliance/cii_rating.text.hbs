@@ -1,0 +1,66 @@
+CII RATING REPORT - COMPLIANCE VIEW
+====================================
+
+{{#if success}}
+✅ CII Analysis Complete
+{{else}}
+⚠️  Analysis Completed with Warnings
+{{/if}}
+
+CII RATING SUMMARY
+-----------------
+Current Rating: {{uppercase data.cii.rating}}
+CII Value: {{number data.cii.cii_value 2}}
+Required CII: {{number data.cii.required_cii 2}}
+
+{{#if data.cii.improvement_needed}}
+⚠️  IMPROVEMENT REQUIRED
+   Current CII ({{number data.cii.cii_value 2}}) exceeds required ({{number data.cii.required_cii 2}})
+   Action plan required per IMO regulations
+{{/if}}
+
+{{#if insights}}
+COMPLIANCE INSIGHTS
+-------------------
+{{#each insights}}
+{{#if (eq category "regulatory")}}
+{{#if (eq priority "critical")}}🔴{{/if}}{{#if (eq priority "high")}}🟠{{/if}} {{title}}
+   {{description}}
+   {{#if impact.regulatory}}Impact: {{impact.regulatory}}{{/if}}
+   {{#if impact.deadline}}Deadline: {{impact.deadline}}{{/if}}
+
+{{/if}}
+{{/each}}
+{{/if}}
+
+{{#if recommendations}}
+RECOMMENDED ACTIONS
+-------------------
+{{#each recommendations}}
+{{#if (eq category "compliance")}}
+{{priority}}. {{action}}
+   {{rationale}}
+   Owner: {{uppercase owner}}
+   Urgency: {{uppercase urgency}}
+
+{{/if}}
+{{/each}}
+{{/if}}
+
+{{#if alerts}}
+COMPLIANCE ALERTS
+-----------------
+{{#each alerts}}
+{{#if (eq type "compliance_violation")}}
+🚨 {{title}}
+   {{message}}
+   Action Required: {{action_required}}
+   Urgency: {{uppercase urgency}}
+
+{{/if}}
+{{/each}}
+{{/if}}
+
+---
+Report Generated: {{date synthesizedAt long}}
+Correlation ID: {{correlationId}}

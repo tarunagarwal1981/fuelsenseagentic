@@ -5,7 +5,7 @@
  * Supports loading from configuration files, directories, and programmatic registration.
  */
 
-import ToolRegistry from '@/lib/registry/tool-registry';
+import { ToolRegistry } from '@/lib/registry/tool-registry';
 import type {
   ToolDefinition,
   ValidationResult,

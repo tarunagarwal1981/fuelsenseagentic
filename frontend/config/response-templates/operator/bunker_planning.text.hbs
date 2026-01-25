@@ -1,0 +1,56 @@
+BUNKER PLANNING REPORT - OPERATIONAL VIEW
+==========================================
+
+VESSEL & ROUTE
+--------------
+Route: {{data.route.origin}} → {{data.route.destination}}
+Distance: {{number data.route.distance_nm 0}} nm
+Estimated Duration: {{number data.route.estimated_hours 1}} hours
+Waypoints: {{data.route.waypoints_count}}
+
+BUNKER RECOMMENDATION
+---------------------
+Port: {{data.bunker.best_option.port_name}} ({{data.bunker.best_option.port_code}})
+
+Cost Summary:
+  Fuel: {{currency data.bunker.best_option.fuel_cost_usd}}
+  Deviation: {{currency data.bunker.best_option.deviation_cost_usd}}
+  Total: {{currency data.bunker.best_option.total_cost_usd}}
+
+{{#if data.weather}}
+WEATHER CONDITIONS
+------------------
+Overall Risk: {{uppercase data.weather.overall_risk}}
+{{#if (gt data.weather.unsafe_segments 0)}}
+⚠️  Unsafe Segments: {{data.weather.unsafe_segments}}
+{{#each data.weather.warnings}}
+   • {{this}}
+{{/each}}
+{{/if}}
+{{/if}}
+
+OPERATIONAL ACTIONS
+-------------------
+{{#each recommendations}}
+{{#if (eq category "operational")}}
+{{priority}}. {{action}}
+   Urgency: {{uppercase urgency}}
+   {{rationale}}
+   
+{{/if}}
+{{/each}}
+
+{{#if warnings}}
+OPERATIONAL WARNINGS
+--------------------
+{{#each warnings}}
+{{#if (eq category "operational")}}
+⚠️  {{message}}
+   Impact: {{impact}}
+{{/if}}
+{{/each}}
+{{/if}}
+
+---
+Report Generated: {{date synthesizedAt long}}
+Analysis Duration: {{duration metrics.duration_ms}}

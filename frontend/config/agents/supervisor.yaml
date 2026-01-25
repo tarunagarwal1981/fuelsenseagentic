@@ -1,0 +1,80 @@
+# Supervisor Agent Configuration
+# Orchestrates the multi-agent workflow
+
+id: supervisor
+name: Supervisor Agent
+description: Orchestrates the multi-agent workflow by analyzing user queries, determining execution plans, validating prerequisites, and routing to appropriate specialist agents
+type: supervisor
+
+llm:
+  model: claude-sonnet-4-5
+  temperature: 0.3
+  maxTokens: 4000
+
+domain:
+  - orchestration
+  - planning
+  - routing
+
+capabilities:
+  - query_analysis
+  - intent_detection
+  - execution_planning
+  - agent_routing
+  - error_recovery
+  - clarification_handling
+
+intents:
+  - analyze_query
+  - plan_execution
+  - route_to_agent
+  - handle_error
+  - request_clarification
+
+tools:
+  required: []
+  optional: []
+
+dependencies:
+  upstream: []
+  downstream:
+    - route_agent
+    - compliance_agent
+    - weather_agent
+    - bunker_agent
+    - finalize
+
+execution:
+  type: llm
+  canRunInParallel: false
+  maxExecutionTimeMs: 30000
+  retryPolicy:
+    maxRetries: 2
+    backoffMs: 1000
+
+produces:
+  stateFields:
+    - next_agent
+    - agent_context
+    - execution_plan
+    - reasoning_history
+  messageTypes:
+    - supervisor_decision
+    - clarification_request
+    - error
+
+consumes:
+  required:
+    - messages
+  optional:
+    - route_data
+    - weather_forecast
+    - bunker_analysis
+    - compliance_data
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team

@@ -1,0 +1,60 @@
+HULL PERFORMANCE ANALYSIS - TECHNICAL VIEW
+==========================================
+
+{{#if success}}
+✅ Analysis Complete
+{{else}}
+⚠️  Analysis Completed with Warnings
+{{/if}}
+
+VESSEL PERFORMANCE
+------------------
+{{#if data.vessel}}
+Vessel: {{data.vessel.name}} (IMO: {{data.vessel.imo}})
+{{/if}}
+
+{{#if data.hull_performance}}
+HULL PERFORMANCE METRICS
+------------------------
+{{#each data.hull_performance}}
+{{@key}}: {{this}}
+{{/each}}
+{{/if}}
+
+{{#if data.fouling_assessment}}
+FOULING ASSESSMENT
+------------------
+{{#each data.fouling_assessment}}
+{{@key}}: {{this}}
+{{/each}}
+{{/if}}
+
+{{#if insights}}
+TECHNICAL INSIGHTS
+-----------------
+{{#each insights}}
+{{#if (eq category "operational")}}
+{{#if (eq priority "critical")}}🔴{{/if}}{{#if (eq priority "high")}}🟠{{/if}} {{title}}
+   {{description}}
+   {{#if impact.operational}}Impact: {{impact.operational}}{{/if}}
+
+{{/if}}
+{{/each}}
+{{/if}}
+
+{{#if recommendations}}
+TECHNICAL RECOMMENDATIONS
+-------------------------
+{{#each recommendations}}
+{{#if (eq category "technical")}}
+{{priority}}. {{action}}
+   {{rationale}}
+   Owner: {{uppercase owner}}
+
+{{/if}}
+{{/each}}
+{{/if}}
+
+---
+Report Generated: {{date synthesizedAt long}}
+Correlation ID: {{correlationId}}

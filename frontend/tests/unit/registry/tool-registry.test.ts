@@ -6,7 +6,7 @@
  * and edge cases including duplicate IDs and circular dependencies.
  */
 
-import ToolRegistry from '@/lib/registry/tool-registry';
+import { ToolRegistry } from '@/lib/registry/tool-registry';
 import { registerTool, validateToolDefinition, createToolTemplate } from '@/lib/registry/tool-loader';
 import type { ToolDefinition, ToolCategory } from '@/lib/types/tool-registry';
 
@@ -34,6 +34,7 @@ function createMockTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition
       properties: {
         result: { type: 'string', description: 'Test output' },
       },
+      required: [],
     },
     cost: 'free',
     avgLatencyMs: 100,

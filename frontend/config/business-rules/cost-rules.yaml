@@ -1,0 +1,86 @@
+# Cost Business Rules
+# Rules for cost optimization and thresholds
+
+rules:
+  - id: high_value_bunker_approval
+    name: High Value Bunker Approval
+    description: Require human approval for bunker purchases above threshold
+    category: cost
+    
+    rule:
+      condition: "total_bunker_cost > 500000"
+      action: require_approval
+      priority: 2
+      severity: info
+    
+    parameters:
+      threshold_usd: 500000
+      approval_levels:
+        - level: 1
+          threshold: 500000
+          approver: operations_manager
+        - level: 2
+          threshold: 1000000
+          approver: fleet_manager
+    
+    timing: post_execution
+    appliesTo:
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Financial controls for large fuel purchases"
+
+  - id: deviation_cost_warning
+    name: Deviation Cost Warning
+    description: Warn if deviation cost exceeds fuel savings
+    category: cost
+    
+    rule:
+      condition: "deviation_cost > fuel_savings"
+      action: add_warning
+      priority: 3
+      severity: warning
+    
+    parameters:
+      min_savings_ratio: 1.1
+    
+    timing: post_execution
+    appliesTo:
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Ensure bunker deviations are economically justified"
+
+  - id: price_spike_alert
+    name: Price Spike Alert
+    description: Alert if fuel price is significantly above average
+    category: cost
+    
+    rule:
+      condition: "fuel_price > (average_regional_price * 1.2)"
+      action: add_info
+      priority: 4
+      severity: info
+    
+    parameters:
+      spike_threshold_percentage: 20
+      lookback_days: 30
+    
+    timing: always
+    appliesTo:
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "Help identify pricing anomalies"

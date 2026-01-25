@@ -1,0 +1,32 @@
+# Analyze Bunker Options Tool Configuration
+
+id: analyze_bunker_options
+name: Bunker Options Analyzer
+description: Analyze and rank bunker options based on total cost including fuel price, deviation cost, and operational factors
+category: bunker
+
+domain:
+  - bunker_planning
+  - cost_optimization
+
+cost: free
+avgLatencyMs: 200
+maxLatencyMs: 1000
+reliability: 0.99
+
+dependencies:
+  external: []
+  internal:
+    - find_bunker_ports
+    - get_fuel_prices
+
+agentIds:
+  - bunker_agent
+
+requiresAuth: false
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

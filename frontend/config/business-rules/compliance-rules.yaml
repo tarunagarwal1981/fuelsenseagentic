@@ -1,0 +1,89 @@
+# Compliance Business Rules
+# Rules for regulatory compliance
+
+rules:
+  - id: eca_zone_fuel_requirement
+    name: ECA Zone Fuel Requirement
+    description: Ensure MGO is available for ECA zone transit
+    category: compliance
+    
+    rule:
+      condition: "eca_transit_distance > 0 && mgo_quantity < required_mgo"
+      action: add_warning
+      priority: 1
+      severity: warning
+    
+    parameters:
+      sulfur_limit_in_eca: 0.1
+      required_fuel_type: LSMGO
+    
+    timing: post_execution
+    appliesTo:
+      - compliance_agent
+      - bunker_agent
+    
+    enabled: true
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "MARPOL Annex VI requires 0.1% sulfur fuel in ECAs"
+
+  - id: eu_ets_reporting
+    name: EU ETS Reporting
+    description: Flag voyages that require EU ETS reporting
+    category: compliance
+    
+    rule:
+      condition: "eu_port_calls > 0"
+      action: add_info
+      priority: 3
+      severity: info
+    
+    parameters:
+      applicable_vessel_sizes_gt: 5000
+      reporting_threshold_mt: 0
+    
+    timing: post_execution
+    appliesTo:
+      - compliance_agent
+    
+    enabled: true
+    featureFlag: enable_eu_ets_agent
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "EU ETS applies to all voyages to/from EU ports"
+
+  - id: cii_impact_warning
+    name: CII Impact Warning
+    description: Warn if voyage will negatively impact CII rating
+    category: compliance
+    
+    rule:
+      condition: "projected_cii_impact < -5"
+      action: add_warning
+      priority: 2
+      severity: warning
+    
+    parameters:
+      impact_threshold_percentage: -5
+      rating_categories:
+        - A
+        - B
+        - C
+        - D
+        - E
+    
+    timing: post_execution
+    appliesTo:
+      - compliance_agent
+    
+    enabled: false
+    featureFlag: enable_cii_agent
+    
+    metadata:
+      version: "1.0.0"
+      lastUpdated: "2025-01-24"
+      rationale: "IMO CII regulations require annual improvement"

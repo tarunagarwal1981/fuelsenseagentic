@@ -20,6 +20,7 @@ function createEmptyState(): MultiAgentState {
   return {
     messages: [],
     correlation_id: 'test-correlation-id',
+    _schema_version: '2.0.0',
     next_agent: '',
     agent_context: null,
     agent_call_counts: {
@@ -51,6 +52,9 @@ function createEmptyState(): MultiAgentState {
     final_recommendation: null,
     formatted_response: null,
     synthesized_insights: null,
+    synthesized_response: null,
+    request_context: null,
+    synthesis_data: null,
     agent_errors: {},
     agent_status: {},
     // Agentic supervisor state
@@ -63,6 +67,9 @@ function createEmptyState(): MultiAgentState {
     // Parameter override fields (supervisor → agent communication)
     port_overrides: undefined,
     agent_overrides: undefined,
+    execution_result: null,
+    execution_plan: null,
+    workflow_stage: 0,
     // Graceful degradation fields
     degraded_mode: false,
     missing_data: [],

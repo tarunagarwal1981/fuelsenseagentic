@@ -1,0 +1,32 @@
+# Check Bunker Port Weather Tool Configuration
+
+id: check_bunker_port_weather
+name: Port Weather Checker
+description: Check weather safety conditions at bunker ports, assessing wind speed, wave height, and visibility for safe bunkering operations
+category: weather
+
+domain:
+  - bunker_planning
+  - safety
+
+cost: api_call
+avgLatencyMs: 2000
+maxLatencyMs: 10000
+reliability: 0.95
+
+dependencies:
+  external:
+    - open_meteo_marine_api
+  internal: []
+
+agentIds:
+  - weather_agent
+  - bunker_agent
+
+requiresAuth: false
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

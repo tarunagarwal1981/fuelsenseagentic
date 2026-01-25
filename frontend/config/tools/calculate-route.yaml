@@ -1,0 +1,37 @@
+# Calculate Route Tool Configuration
+
+id: calculate_route
+name: Route Calculator
+description: Calculate maritime route between two ports using SeaRoute API with waypoint generation, distance estimation, and ECA zone identification
+category: routing
+
+domain:
+  - bunker_planning
+  - voyage_planning
+  - route_optimization
+
+cost: api_call
+avgLatencyMs: 2000
+maxLatencyMs: 10000
+reliability: 0.98
+
+dependencies:
+  external:
+    - searoute_api
+  internal: []
+
+agentIds:
+  - route_agent
+  - supervisor
+
+requiresAuth: false
+
+rateLimit:
+  calls: 100
+  windowMs: 60000
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

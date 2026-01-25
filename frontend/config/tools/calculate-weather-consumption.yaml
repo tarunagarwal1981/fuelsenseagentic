@@ -1,0 +1,32 @@
+# Calculate Weather Consumption Tool Configuration
+
+id: calculate_weather_consumption
+name: Weather Consumption Calculator
+description: Calculate weather-adjusted fuel consumption based on marine weather forecast, accounting for wind, waves, and current effects
+category: weather
+
+domain:
+  - fuel_consumption
+  - weather_analysis
+  - bunker_planning
+
+cost: free
+avgLatencyMs: 50
+maxLatencyMs: 200
+reliability: 0.99
+
+dependencies:
+  external: []
+  internal:
+    - fetch_marine_weather
+
+agentIds:
+  - weather_agent
+
+requiresAuth: false
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

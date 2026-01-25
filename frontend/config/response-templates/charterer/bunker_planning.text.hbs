@@ -1,0 +1,101 @@
+📊 BUNKER PLANNING RECOMMENDATION
+================================
+
+{{#if success}}
+✅ Analysis Complete
+{{else}}
+⚠️  Analysis Completed with Warnings
+{{/if}}
+
+{{#if hasCriticalIssues}}
+🚨 CRITICAL ALERTS:
+{{#each alerts}}
+{{#if (eq level "critical")}}
+   • {{title}}: {{message}}
+     Action Required: {{action_required}}
+{{/if}}
+{{/each}}
+
+{{/if}}
+
+ROUTE SUMMARY
+-------------
+Origin: {{data.route.origin}}
+Destination: {{data.route.destination}}
+Distance: {{number data.route.distance_nm 0}} nm
+Estimated Duration: {{duration data.route.estimated_hours h}}
+
+RECOMMENDED BUNKER PLAN
+-----------------------
+🏆 Best Option: {{data.bunker.best_option.port_name}} ({{data.bunker.best_option.port_code}})
+
+Cost Breakdown:
+  • Fuel Cost: {{currency data.bunker.best_option.fuel_cost_usd}}
+  • Deviation Cost: {{currency data.bunker.best_option.deviation_cost_usd}}
+  • TOTAL: {{currency data.bunker.best_option.total_cost_usd}}
+
+{{#if (gt data.bunker.max_savings_usd 0)}}
+💰 Savings: {{currency data.bunker.max_savings_usd}} vs worst option
+{{/if}}
+
+{{#if (gt data.bunker.alternatives_count 0)}}
+Alternative Options: {{data.bunker.alternatives_count}} other ports evaluated
+{{/if}}
+
+{{#if insights}}
+KEY INSIGHTS
+------------
+{{#each insights}}
+{{#if (eq priority "critical")}}🔴{{/if}}{{#if (eq priority "high")}}🟠{{/if}}{{#if (eq priority "medium")}}🟡{{/if}}{{#if (eq priority "low")}}🟢{{/if}} {{title}}
+   {{description}}
+   {{#if impact.financial}}Impact: {{currency impact.financial}}{{/if}}
+   {{#if impact.percentage}}({{percent impact.percentage 1}}% savings){{/if}}
+
+{{/each}}
+{{/if}}
+
+{{#if recommendations}}
+RECOMMENDED ACTIONS
+-------------------
+{{#each recommendations}}
+{{priority}}. {{action}}
+   {{rationale}}
+   Owner: {{uppercase owner}}
+   Urgency: {{uppercase urgency}}
+   {{#if impact.cost_savings_usd}}Expected Savings: {{currency impact.cost_savings_usd}}{{/if}}
+
+{{/each}}
+{{/if}}
+
+{{#if warnings}}
+⚠️  WARNINGS
+-----------
+{{#each warnings}}
+- [{{uppercase level}}] {{message}}
+  {{#if details}}Details: {{#each details}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{/each}}
+
+{{/if}}
+
+{{#if nextSteps}}
+NEXT STEPS
+----------
+{{#each nextSteps}}
+{{order}}. {{action}} ({{owner}})
+   {{description}}
+   Deadline: {{deadline}}
+   {{#if dependencies.length}}Dependencies: {{#each dependencies}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+
+{{/each}}
+{{/if}}
+
+{{#if options.includeMetrics}}
+---
+Performance Metrics:
+- Analysis Duration: {{duration metrics.duration_ms}}
+- Success Rate: {{percent metrics.success_rate 1}}
+- Cost: {{currency metrics.total_cost_usd}}
+{{/if}}
+
+Generated: {{date synthesizedAt long}}
+Correlation ID: {{correlationId}}

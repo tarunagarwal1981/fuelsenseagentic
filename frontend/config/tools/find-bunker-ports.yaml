@@ -1,0 +1,31 @@
+# Find Bunker Ports Tool Configuration
+
+id: find_bunker_ports
+name: Bunker Port Finder
+description: Find available bunker ports along the vessel route based on proximity, deviation distance, and port capabilities
+category: bunker
+
+domain:
+  - bunker_planning
+  - route_optimization
+
+cost: free
+avgLatencyMs: 100
+maxLatencyMs: 500
+reliability: 0.99
+
+dependencies:
+  external: []
+  internal:
+    - calculate_route
+
+agentIds:
+  - bunker_agent
+
+requiresAuth: false
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

@@ -4,6 +4,24 @@
  * Configures tool sets for each specialized agent in the multi-agent system.
  * Tools are organized by agent type (Route, Weather, Bunker) for better
  * organization and agent-specific tool binding.
+ * 
+ * MIGRATION NOTE:
+ * ===============
+ * Tool implementations are now registered in the Tool Registry system.
+ * See: lib/registry/tools/ for tool definitions
+ * 
+ * This file contains:
+ * - Tool implementations (execute* functions) - KEPT for backward compatibility
+ * - LangChain tool wrappers - KEPT for agent binding
+ * - Circuit breakers - KEPT for resilience
+ * 
+ * Tool metadata (schemas, descriptions, categories) is now managed by:
+ * - lib/registry/tools/routing-tools.ts
+ * - lib/registry/tools/weather-tools.ts
+ * - lib/registry/tools/bunker-tools.ts
+ * 
+ * To register tools, call registerAllTools() from lib/registry/tools/index.ts
+ * at application startup.
  */
 
 import { tool } from '@langchain/core/tools';

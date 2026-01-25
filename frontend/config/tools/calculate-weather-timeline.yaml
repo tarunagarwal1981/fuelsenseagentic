@@ -1,0 +1,31 @@
+# Calculate Weather Timeline Tool Configuration
+
+id: calculate_weather_timeline
+name: Weather Timeline Generator
+description: Generate vessel position timeline from route for weather analysis, calculating positions at regular intervals along the voyage
+category: routing
+
+domain:
+  - weather_analysis
+  - voyage_planning
+
+cost: free
+avgLatencyMs: 100
+maxLatencyMs: 500
+reliability: 0.99
+
+dependencies:
+  external: []
+  internal:
+    - calculate_route
+
+agentIds:
+  - route_agent
+
+requiresAuth: false
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

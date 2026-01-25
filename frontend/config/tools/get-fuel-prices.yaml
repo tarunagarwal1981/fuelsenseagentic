@@ -1,0 +1,35 @@
+# Get Fuel Prices Tool Configuration
+
+id: get_fuel_prices
+name: Fuel Price Fetcher
+description: Fetch current fuel prices at bunker ports for various fuel types including VLSFO, LSMGO, and HSFO
+category: bunker
+
+domain:
+  - bunker_planning
+  - cost_optimization
+
+cost: api_call
+avgLatencyMs: 500
+maxLatencyMs: 3000
+reliability: 0.97
+
+dependencies:
+  external:
+    - fuel_price_api
+  internal: []
+
+agentIds:
+  - bunker_agent
+
+requiresAuth: false
+
+rateLimit:
+  calls: 200
+  windowMs: 60000
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"

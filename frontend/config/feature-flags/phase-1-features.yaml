@@ -1,0 +1,137 @@
+# Phase 1 Feature Flags
+# Controls feature rollout for Phase 1 development
+
+features:
+  # ============================================================================
+  # Core Features (Enabled)
+  # ============================================================================
+  
+  - id: enable_route_agent
+    name: Route Calculator Agent
+    description: Enable maritime route calculation
+    enabled: true
+    rolloutPercentage: 100
+
+  - id: enable_weather_integration
+    name: Weather Integration
+    description: Enable marine weather analysis and consumption adjustments
+    enabled: true
+    rolloutPercentage: 100
+
+  - id: enable_bunker_agent
+    name: Bunker Planner Agent
+    description: Enable bunker port finding and cost optimization
+    enabled: true
+    rolloutPercentage: 100
+
+  - id: enable_response_formatter
+    name: Response Formatter
+    description: Enable structured response formatting
+    enabled: true
+    rolloutPercentage: 100
+
+  - id: enable_synthesis
+    name: Cross-Agent Synthesis
+    description: Enable synthesis of results across agents
+    enabled: true
+    rolloutPercentage: 100
+
+  # ============================================================================
+  # Compliance Features (Partially Enabled)
+  # ============================================================================
+  
+  - id: enable_eca_validation
+    name: ECA Zone Validation
+    description: Enable ECA zone detection and compliance checks
+    enabled: true
+    rolloutPercentage: 100
+
+  - id: enable_cii_agent
+    name: CII Calculator Agent
+    description: Enable Carbon Intensity Indicator calculations
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: enable_eu_ets_agent
+    name: EU ETS Calculator Agent
+    description: Enable EU Emissions Trading System cost calculations
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: enable_fueleu_maritime
+    name: FuelEU Maritime Compliance
+    description: Enable FuelEU Maritime regulation compliance
+    enabled: false
+    rolloutPercentage: 0
+
+  # ============================================================================
+  # Advanced Features (Disabled)
+  # ============================================================================
+  
+  - id: enable_multi_port_bunker
+    name: Multi-Port Bunkering
+    description: Enable optimization of bunkering across multiple ports
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: enable_agentic_supervisor
+    name: Agentic Supervisor
+    description: Enable LLM-based reasoning for agent routing (ReAct pattern)
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: enable_parallel_agents
+    name: Parallel Agent Execution
+    description: Enable running compatible agents in parallel
+    enabled: false
+    rolloutPercentage: 0
+
+  # ============================================================================
+  # UI Features
+  # ============================================================================
+  
+  - id: show_compliance_card
+    name: Compliance Card UI
+    description: Show compliance information card in response
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: show_weather_card
+    name: Weather Card UI
+    description: Show weather information card in response
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: show_enhanced_bunker_table
+    name: Enhanced Bunker Table
+    description: Show enhanced bunker options table with all details
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: show_voyage_timeline
+    name: Voyage Timeline UI
+    description: Show interactive voyage timeline visualization
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: show_map_overlays
+    name: Map Overlays
+    description: Show weather and ECA zone overlays on route map
+    enabled: false
+    rolloutPercentage: 0
+
+  # ============================================================================
+  # Development/Debug Features
+  # ============================================================================
+  
+  - id: synthesis_debug
+    name: Synthesis Debug Mode
+    description: Enable extra debug logging for synthesis
+    enabled: false
+    rolloutPercentage: 0
+
+  - id: enable_hot_reload
+    name: Config Hot Reload
+    description: Enable hot reload of YAML configurations in development
+    enabled: true
+    rolloutPercentage: 100

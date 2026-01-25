@@ -37,6 +37,88 @@ import {
   getTestVariant,
   recordABTestResult,
 } from '@/lib/utils/ab-testing';
+import { registerAllTools, verifyToolRegistration } from '@/lib/registry/tools';
+import { registerAllAgents, verifyAgentRegistration } from '@/lib/registry/agents';
+import {
+  initializeConfigurations,
+  getConfigurationSummary,
+  verifyConfigurations,
+  isFeatureEnabled,
+} from '@/lib/config/registry-loader';
+
+// ============================================================================
+// System Initialization
+// ============================================================================
+
+let systemInitialized = false;
+
+/**
+ * Initialize all system components (configurations, registries)
+ * Called lazily on first request to avoid blocking module load
+ */
+async function initializeSystem(): Promise<void> {
+  if (systemInitialized) return;
+
+  console.log('🚀 [SYSTEM] Initializing FuelSense 360...');
+  const startTime = Date.now();
+
+  // Step 1: Load YAML configurations
+  try {
+    await initializeConfigurations({
+      enableHotReload: process.env.NODE_ENV === 'development',
+    });
+
+    const summary = getConfigurationSummary();
+    console.log('📊 [CONFIG] Configuration summary:');
+    console.log(`   Agents: ${summary.agents} (${summary.enabled.agents.length} enabled)`);
+    console.log(`   Tools: ${summary.tools} (${summary.enabled.tools.length} enabled)`);
+    console.log(`   Workflows: ${summary.workflows}`);
+    console.log(`   Business Rules: ${summary.rules}`);
+    console.log(`   Feature Flags: ${summary.features} (${summary.enabled.features.length} enabled)`);
+
+    // Verify configuration integrity
+    const verification = verifyConfigurations();
+    if (!verification.valid) {
+      console.error('❌ [CONFIG] Configuration verification failed:', verification.errors);
+    }
+    if (verification.warnings.length > 0) {
+      console.warn('⚠️  [CONFIG] Configuration warnings:', verification.warnings);
+    }
+  } catch (error) {
+    console.error('❌ [CONFIG] Failed to initialize configurations:', error);
+    // Continue without YAML configs - registries can still work
+  }
+
+  // Step 2: Initialize Tool Registry
+  try {
+    registerAllTools();
+    const verification = verifyToolRegistration();
+    if (!verification.allRegistered) {
+      console.error('❌ [TOOL-REGISTRY] Tool registration verification failed:', verification);
+    } else {
+      console.log('✅ [TOOL-REGISTRY] All tools registered and verified');
+    }
+  } catch (error) {
+    console.error('❌ [TOOL-REGISTRY] Failed to initialize tool registry:', error);
+  }
+
+  // Step 3: Initialize Agent Registry
+  try {
+    registerAllAgents();
+    const verification = verifyAgentRegistration();
+    if (!verification.allRegistered) {
+      console.error('❌ [AGENT-REGISTRY] Agent registration verification failed:', verification);
+    } else {
+      console.log('✅ [AGENT-REGISTRY] All agents registered and verified');
+    }
+  } catch (error) {
+    console.error('❌ [AGENT-REGISTRY] Failed to initialize agent registry:', error);
+  }
+
+  systemInitialized = true;
+  const duration = Date.now() - startTime;
+  console.log(`✅ [SYSTEM] FuelSense 360 initialized in ${duration}ms`);
+}
 
 /**
  * Request body interface
@@ -56,6 +138,9 @@ interface MultiAgentRequest {
 }
 
 export async function POST(req: Request) {
+  // Initialize system on first request (lazy initialization)
+  await initializeSystem();
+
   const startTime = Date.now();
   let correlation_id = generateCorrelationId();
   console.log('📨 [MULTI-AGENT-API] Received request');

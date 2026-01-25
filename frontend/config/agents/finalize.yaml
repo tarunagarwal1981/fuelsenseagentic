@@ -1,0 +1,80 @@
+# Finalize Agent Configuration
+# Synthesizes results into recommendations
+
+id: finalize
+name: Finalize Agent
+description: Synthesizes results from all specialist agents into a comprehensive, actionable recommendation for the user. Uses LLM for natural language generation and formatting.
+type: finalizer
+
+llm:
+  model: claude-sonnet-4-5
+  temperature: 0.5
+  maxTokens: 4000
+
+domain:
+  - synthesis
+  - recommendation
+  - reporting
+
+capabilities:
+  - synthesize_results
+  - generate_recommendation
+  - format_response
+  - handle_clarification
+  - summarize_analysis
+
+intents:
+  - finalize
+  - summarize
+  - recommend
+
+tools:
+  required: []
+  optional: []
+
+dependencies:
+  upstream:
+    - supervisor
+    - route_agent
+    - weather_agent
+    - bunker_agent
+    - compliance_agent
+  downstream: []
+
+execution:
+  type: llm
+  canRunInParallel: false
+  maxExecutionTimeMs: 30000
+  retryPolicy:
+    maxRetries: 2
+    backoffMs: 1000
+
+produces:
+  stateFields:
+    - final_recommendation
+    - formatted_response
+  messageTypes:
+    - recommendation
+    - clarification_question
+    - error
+
+consumes:
+  required:
+    - messages
+  optional:
+    - route_data
+    - vessel_timeline
+    - weather_forecast
+    - weather_consumption
+    - compliance_data
+    - bunker_analysis
+    - port_weather_status
+    - needs_clarification
+    - clarification_question
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team

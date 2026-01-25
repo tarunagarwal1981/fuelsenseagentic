@@ -1,0 +1,72 @@
+# Compliance Agent Configuration
+# Validates regulatory compliance including ECA zones
+
+id: compliance_agent
+name: Compliance Validator Agent
+description: Validates regulatory compliance including ECA zones, EU ETS, FuelEU Maritime, and CII ratings. Deterministic workflow - no LLM tool-calling.
+type: specialist
+
+domain:
+  - compliance
+  - regulations
+  - eca_zones
+  - emissions
+
+capabilities:
+  - validate_eca_zones
+  - calculate_mgo_requirements
+  - check_eu_ets
+  - validate_fueleu_maritime
+  - calculate_cii_impact
+
+intents:
+  - check_compliance
+  - validate_eca
+  - calculate_emissions
+  - check_regulations
+
+tools:
+  required: []
+  optional: []
+
+dependencies:
+  upstream:
+    - route_agent
+  downstream:
+    - bunker_agent
+
+execution:
+  type: deterministic
+  canRunInParallel: true
+  maxExecutionTimeMs: 15000
+  retryPolicy:
+    maxRetries: 2
+    backoffMs: 500
+  costPerCall: 0.00
+
+produces:
+  stateFields:
+    - compliance_data
+  messageTypes:
+    - compliance_validated
+    - compliance_error
+
+consumes:
+  required:
+    - route_data
+  optional:
+    - vessel_speed
+    - vessel_consumption
+
+validation:
+  preExecution:
+    - route_data_exists
+  postExecution:
+    - compliance_data_complete
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team

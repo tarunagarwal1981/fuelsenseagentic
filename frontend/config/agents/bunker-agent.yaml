@@ -1,77 +1,101 @@
 # Bunker Agent Configuration
-# Optimizes bunker planning with ROB tracking and port recommendations
+# Finds optimal bunker ports and analyzes costs
 
-agent_id: bunker_agent
-agent_name: "Bunker Planner Agent"
-agent_type: deterministic
-description: "Finds optimal bunker ports, calculates quantities, tracks ROB, and recommends best bunker strategy"
+id: bunker_agent
+name: Bunker Planner Agent
+description: Finds bunker ports along route, validates weather safety, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis. Deterministic workflow - executes workflow directly without LLM tool-calling.
+type: specialist
+
+domain:
+  - bunker_planning
+  - cost_optimization
+  - fuel_procurement
 
 capabilities:
-  - bunker_port_finding
-  - bunker_quantity_calculation
-  - rob_tracking
-  - cost_optimization
-  - port_ranking
+  - find_bunker_ports
+  - fetch_fuel_prices
+  - analyze_bunker_options
+  - calculate_deviation_cost
+  - rank_bunker_options
+  - multi_port_planning
   - capacity_validation
+  - rob_tracking
 
-dependencies:
-  - route_agent    # Needs route for distance calculations
-  - weather_agent  # Needs weather for consumption adjustments
+intents:
+  - plan_bunker
+  - find_fuel
+  - cheapest_bunker
+  - optimize_bunker
+  - compare_ports
+  - fuel_cost
 
 tools:
-  - find_bunker_ports
-  - get_fuel_prices
-  - analyze_bunker_options
-  - check_bunker_port_weather  # Shared with weather_agent
+  required: []
+  optional: []
 
-status: available
+dependencies:
+  upstream:
+    - route_agent
+    - weather_agent
+  downstream:
+    - finalize
 
 execution:
-  type: workflow
-  average_duration_ms: 5000
-  max_duration_ms: 12000
-  cost_per_call: 0.00
-  retry_strategy:
-    max_retries: 3
-    backoff: exponential
+  type: deterministic
+  canRunInParallel: false
+  maxExecutionTimeMs: 30000
+  retryPolicy:
+    maxRetries: 2
+    backoffMs: 1000
+  costPerCall: 0.00
 
 produces:
-  - bunker_ports
-  - recommended_port
-  - bunker_quantities
-  - total_bunker_cost
-  - rob_tracking_data
-  - alternative_options
+  stateFields:
+    - bunker_ports
+    - port_prices
+    - bunker_analysis
+    - multi_bunker_analysis
+    - recommended_port
+    - bunker_quantities
+    - total_bunker_cost
+    - rob_tracking_data
+  messageTypes:
+    - bunker_analyzed
+    - ports_found
+    - bunker_error
 
 consumes:
   required:
-    - route_data      # From route_agent
-    - weather_data    # From weather_agent
-    - vessel_profile  # From state
+    - route_data
   optional:
+    - weather_consumption
+    - compliance_data
+    - port_weather_status
+    - fuel_quantity
+    - fuel_types
     - current_rob
-    - user_specified_quantity
+    - vessel_profile
 
 validation:
-  pre_execution:
+  preExecution:
     - route_data_exists
-    - weather_data_exists
-    - vessel_profile_exists
-  post_execution:
+  postExecution:
     - bunker_ports_found
     - quantities_fit_capacity
     - rob_never_negative
     - safety_margin_adequate
 
-human_approval:
+humanApproval:
   required: true
   threshold:
     field: total_bunker_cost
     operator: ">"
-    value: 500000  # USD
+    value: 500000
+
+enabled: true
 
 metadata:
   version: "1.0.0"
-  last_updated: "2025-01-15"
-  maintainer: "FuelSense Team"
-  documentation: "docs/agents/bunker-agent.md"
+  lastUpdated: "2025-01-24"
+  maintainer: FuelSense Team
+  documentation: docs/agents/bunker-agent.md

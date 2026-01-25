@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bunker Planning Report</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      border-bottom: 3px solid #2563eb;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    h1 {
+      color: #1e40af;
+      margin: 0 0 10px 0;
+    }
+    .status {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .status.success {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .status.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .alert {
+      background: #fee2e2;
+      border-left: 4px solid #dc2626;
+      padding: 16px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .section {
+      margin: 30px 0;
+    }
+    .section-title {
+      color: #1f2937;
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 20px;
+      margin: 16px 0;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .metric:last-child {
+      border-bottom: none;
+    }
+    .highlight {
+      background: #dbeafe;
+      border-left: 4px solid #2563eb;
+      padding: 16px;
+      border-radius: 4px;
+      margin: 16px 0;
+    }
+    .recommendation {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 16px;
+      margin: 12px 0;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 Bunker Planning Report</h1>
+      <span class="status {{#if success}}success{{else}}warning{{/if}}">
+        {{#if success}}✅ Analysis Complete{{else}}⚠️  Completed with Warnings{{/if}}
+      </span>
+    </div>
+
+    {{#if hasCriticalIssues}}
+    <div class="alert">
+      <div style="font-weight: 700; margin-bottom: 8px;">🚨 CRITICAL ALERTS</div>
+      {{#each alerts}}
+        {{#if (eq level "critical")}}
+          <div style="margin: 12px 0;">
+            <strong>{{title}}</strong><br>
+            {{message}}<br>
+            <em>Action Required: {{action_required}}</em>
+          </div>
+        {{/if}}
+      {{/each}}
+    </div>
+    {{/if}}
+
+    <div class="section">
+      <div class="section-title">Route Summary</div>
+      <div class="card">
+        <div class="metric">
+          <span>Origin:</span>
+          <span><strong>{{data.route.origin}}</strong></span>
+        </div>
+        <div class="metric">
+          <span>Destination:</span>
+          <span><strong>{{data.route.destination}}</strong></span>
+        </div>
+        <div class="metric">
+          <span>Distance:</span>
+          <span><strong>{{number data.route.distance_nm 0}} nm</strong></span>
+        </div>
+        <div class="metric">
+          <span>Estimated Duration:</span>
+          <span><strong>{{duration data.route.estimated_hours h}}</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Recommended Bunker Plan</div>
+      <div class="highlight">
+        <div style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">
+          🏆 {{data.bunker.best_option.port_name}} ({{data.bunker.best_option.port_code}})
+        </div>
+        
+        <div class="metric">
+          <span>Fuel Cost:</span>
+          <span>{{currency data.bunker.best_option.fuel_cost_usd}}</span>
+        </div>
+        <div class="metric">
+          <span>Deviation Cost:</span>
+          <span>{{currency data.bunker.best_option.deviation_cost_usd}}</span>
+        </div>
+        <div class="metric" style="border-top: 2px solid #2563eb; padding-top: 12px; margin-top: 12px;">
+          <span><strong>TOTAL COST:</strong></span>
+          <span style="color: #2563eb; font-size: 18px;">
+            {{currency data.bunker.best_option.total_cost_usd}}
+          </span>
+        </div>
+        
+        {{#if (gt data.bunker.max_savings_usd 0)}}
+        <div style="background: #d1fae5; padding: 12px; margin-top: 16px; border-radius: 4px;">
+          💰 <strong>Potential Savings:</strong> {{currency data.bunker.max_savings_usd}} vs worst option
+        </div>
+        {{/if}}
+      </div>
+    </div>
+
+    {{#if insights}}
+    <div class="section">
+      <div class="section-title">Key Insights</div>
+      {{#each insights}}
+      <div class="card">
+        <div style="font-weight: 600; margin-bottom: 8px;">
+          {{#if (eq priority "critical")}}🔴{{/if}}
+          {{#if (eq priority "high")}}🟠{{/if}}
+          {{#if (eq priority "medium")}}🟡{{/if}}
+          {{#if (eq priority "low")}}🟢{{/if}}
+          {{title}}
+        </div>
+        <div>{{description}}</div>
+        {{#if impact.financial}}
+        <div style="margin-top: 8px; color: #059669; font-weight: 600;">
+          Impact: {{currency impact.financial}}
+        </div>
+        {{/if}}
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    {{#if recommendations}}
+    <div class="section">
+      <div class="section-title">Recommended Actions</div>
+      {{#each recommendations}}
+      <div class="recommendation">
+        <div style="font-weight: 600; margin-bottom: 8px;">
+          {{priority}}. {{action}}
+        </div>
+        <div style="color: #4b5563; margin-top: 8px;">
+          {{rationale}}
+        </div>
+        <div style="margin-top: 12px; font-size: 14px; color: #6b7280;">
+          Owner: {{uppercase owner}} • Urgency: {{uppercase urgency}}
+        </div>
+      </div>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    <div class="footer">
+      <div>Generated: {{date synthesizedAt long}}</div>
+      <div style="margin-top: 4px; font-family: monospace; font-size: 12px;">
+        Correlation ID: {{correlationId}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
