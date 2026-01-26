@@ -5,6 +5,21 @@
  * This tool is used to generate a timeline of vessel positions for weather
  * forecasting and route analysis purposes.
  * 
+ * RELATIONSHIP TO ROUTESERVICE:
+ * =============================
+ * This tool complements RouteService.calculateRoute() which provides waypoint ETAs.
+ * While RouteService calculates when the vessel reaches each waypoint, this tool
+ * generates interpolated positions at regular intervals (e.g., every 12 hours)
+ * which are needed for weather forecasting.
+ * 
+ * WORKFLOW:
+ * 1. Route agent calls calculate_route → gets waypoints
+ * 2. Route agent calls calculate_weather_timeline → gets interpolated positions
+ * 3. Weather agent uses positions to fetch weather forecasts
+ * 
+ * This is a pure calculation tool - no data access or services needed.
+ * It takes waypoints and calculates positions using mathematical interpolation.
+ * 
  * The tool:
  * - Takes a series of waypoints defining a route
  * - Calculates positions at regular time intervals

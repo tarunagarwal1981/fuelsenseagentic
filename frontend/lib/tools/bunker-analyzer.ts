@@ -4,6 +4,12 @@
  * Thin wrapper around BunkerService and PriceRepository that performs comprehensive
  * cost-benefit analysis of bunker port options.
  * 
+ * Refactored to use BunkerService which handles:
+ * - Price fetching via PriceRepository (with caching)
+ * - Deviation cost calculation
+ * - Option ranking by total cost
+ * - Savings analysis
+ * 
  * This tool helps optimize bunkering decisions by considering:
  * - Direct fuel cost (quantity × price per MT)
  * - Deviation cost (extra distance traveled to reach port)
@@ -721,5 +727,133 @@ export async function executeBunkerAnalyzerTool(
   args: unknown
 ): Promise<BunkerAnalysisResult> {
   return analyzeBunkerOptions(args as BunkerAnalyzerInput);
+}
+
+/**
+ * Simplified bunker options analysis function using BunkerService
+ * 
+ * Analyzes and ranks bunker port options by total cost using BunkerService.
+ * The service handles price fetching, deviation cost calculation, and ranking.
+ * 
+ * @param params - Bunker options analysis parameters
+ * @returns Ranked bunker options with cost breakdown
+ */
+export async function analyze_bunker_options(params: {
+  ports: Array<{
+    code: string;
+    name: string;
+    deviation: number;
+    fuelsAvailable: string[];
+  }>;
+  required_fuel: number;
+  current_rob: number;
+  fuel_type: string;
+}): Promise<{
+  success: boolean;
+  options?: Array<{
+    port: any;
+    fuelType: string;
+    pricePerMT: number;
+    quantity: number;
+    bunkerCost: number;
+    deviationCost: number;
+    totalCost: number;
+  }>;
+  recommended?: any;
+  savings?: number;
+  error?: string;
+}> {
+  try {
+    // Validate input
+    const AnalyzeBunkerOptionsSchema = z.object({
+      ports: z
+        .array(
+          z.object({
+            code: z.string().min(1).describe('Port code'),
+            name: z.string().min(1).describe('Port name'),
+            deviation: z.number().min(0).describe('Deviation from route in nautical miles'),
+            fuelsAvailable: z.array(z.string()).min(1).describe('Available fuel types'),
+          })
+        )
+        .min(1)
+        .describe('Bunker port options to analyze'),
+      required_fuel: z.number().min(1).describe('Required fuel quantity in MT'),
+      current_rob: z.number().min(0).describe('Current remaining on board in MT'),
+      fuel_type: z.string().min(1).describe('Fuel type (VLSFO, MGO, etc.)'),
+    });
+
+    const validated = AnalyzeBunkerOptionsSchema.parse(params);
+
+    // Get services from ServiceContainer
+    const container = ServiceContainer.getInstance();
+    const bunkerService = container.getBunkerService();
+    const portRepo = container.getPortRepository();
+
+    // Convert input ports to BunkerPort format expected by service
+    // Fetch full port details from repository to ensure we have all required fields
+    const bunkerPorts = await Promise.all(
+      validated.ports.map(async (p) => {
+        // Try to get full port details from repository
+        const port = await portRepo.findByCode(p.code);
+        
+        if (port) {
+          // Use full port data from repository
+          return {
+            ...port,
+            deviation: p.deviation, // Use provided deviation
+          };
+        } else {
+          // Fallback: create minimal port structure if not found in repository
+          // This shouldn't happen in production, but provides graceful degradation
+          console.warn(`Port ${p.code} not found in repository, using minimal structure`);
+          return {
+            id: p.code,
+            code: p.code,
+            name: p.name,
+            country: 'UNKNOWN',
+            coordinates: [0, 0] as [number, number], // Placeholder
+            bunkerCapable: true,
+            fuelsAvailable: p.fuelsAvailable,
+            timezone: 'UTC',
+            deviation: p.deviation,
+          };
+        }
+      })
+    );
+
+    // Analyze options using BunkerService
+    // BunkerService.analyzeBunkerOptions() handles:
+    // - Price fetching via PriceRepository (with caching)
+    // - Deviation cost calculation
+    // - Ranking by total cost
+    const analysis = await bunkerService.analyzeBunkerOptions({
+      ports: bunkerPorts,
+      requiredFuel: validated.required_fuel,
+      currentROB: validated.current_rob,
+      fuelType: validated.fuel_type,
+    });
+
+    // Format output
+    return {
+      success: true,
+      options: analysis.options.map((opt) => ({
+        port: opt.port,
+        fuelType: opt.fuelType,
+        pricePerMT: opt.pricePerMT,
+        quantity: opt.quantity,
+        bunkerCost: opt.bunkerCost,
+        deviationCost: opt.deviationCost,
+        totalCost: opt.totalCost,
+      })),
+      recommended: analysis.recommended,
+      savings: analysis.savings,
+    };
+  } catch (error) {
+    console.error('[analyze_bunker_options] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error analyzing bunker options',
+    };
+  }
 }
 

@@ -3,7 +3,8 @@
 
 import { executePortWeatherTool } from '@/lib/tools/port-weather';
 
-export const runtime = 'edge';
+// Node.js runtime required for repository access (fs, path modules)
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   try {

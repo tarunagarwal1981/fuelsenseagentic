@@ -2,10 +2,15 @@
  * Marine Weather Tool
  * 
  * Thin wrapper around WeatherService that fetches marine weather forecasts for vessel positions.
- * Uses the service layer for weather fetching and data formatting.
+ * Uses the service layer for weather fetching and data formatting with caching.
+ * 
+ * Refactored to use WeatherService which handles:
+ * - Weather data caching (15 minute TTL via Redis)
+ * - Open-Meteo API calls
+ * - Error handling and retries
  * 
  * The tool:
- * - Validates input parameters
+ * - Validates input parameters using Zod
  * - Delegates to WeatherService for weather fetching
  * - Formats output for agent consumption
  */
@@ -271,5 +276,82 @@ export async function executeMarineWeatherTool(
   args: unknown
 ): Promise<MarineWeatherOutput[]> {
   return fetchMarineWeather(args as MarineWeatherInput);
+}
+
+/**
+ * Simplified single-position marine weather fetch function
+ * 
+ * Fetches marine weather data for a single location and date.
+ * Uses WeatherService which handles caching and API calls automatically.
+ * 
+ * @param params - Single position weather fetch parameters
+ * @returns Weather data for the location
+ */
+export async function fetch_marine_weather(params: {
+  latitude: number;
+  longitude: number;
+  date: string;
+}): Promise<{
+  success: boolean;
+  weather?: {
+    waveHeight: number;
+    windSpeed: number;
+    windDirection: number;
+    seaState?: string;
+    // Note: temperature, swellHeight, currentSpeed not available in MarineWeather type
+    // These would need to be added to Open-Meteo API client if needed
+  };
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  date?: string;
+  error?: string;
+}> {
+  try {
+    // Validate input
+    const FetchMarineWeatherSchema = z.object({
+      latitude: z.number().min(-90).max(90).describe('Latitude coordinate'),
+      longitude: z.number().min(-180).max(180).describe('Longitude coordinate'),
+      date: z.string().datetime().describe('Date for weather forecast'),
+    });
+
+    const validated = FetchMarineWeatherSchema.parse(params);
+
+    // Get WeatherService from ServiceContainer
+    const container = ServiceContainer.getInstance();
+    const weatherService = container.getWeatherService();
+
+    // Fetch weather (automatically cached by WeatherService)
+    const weather = await weatherService.fetchMarineWeather({
+      latitude: validated.latitude,
+      longitude: validated.longitude,
+      date: new Date(validated.date),
+    });
+
+    // Format output
+    return {
+      success: true,
+      weather: {
+        waveHeight: weather.waveHeight,
+        windSpeed: weather.windSpeed,
+        windDirection: weather.windDirection,
+        seaState: weather.seaState,
+        // Note: temperature, swellHeight, currentSpeed are not in MarineWeather type
+        // These fields would need to be added to the Open-Meteo API client and types
+      },
+      location: {
+        latitude: validated.latitude,
+        longitude: validated.longitude,
+      },
+      date: validated.date,
+    };
+  } catch (error) {
+    console.error('[fetch_marine_weather] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error fetching weather',
+    };
+  }
 }
 

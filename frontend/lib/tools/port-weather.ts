@@ -2,10 +2,15 @@
  * Port Weather Tool
  * 
  * Thin wrapper around WeatherService that checks if bunker ports have safe weather conditions.
- * Uses the service layer for weather fetching and safety evaluation.
+ * Uses the service layer for weather fetching and safety evaluation with caching.
+ * 
+ * Refactored to use WeatherService which handles:
+ * - Weather data fetching (with caching via Redis)
+ * - Safety assessment based on wave height and wind speed
+ * - Port coordinate lookup via PortRepository
  * 
  * The tool:
- * - Validates input parameters
+ * - Validates input parameters using Zod
  * - Delegates to WeatherService for weather fetching and safety checks
  * - Formats output for agent consumption
  */
@@ -340,5 +345,74 @@ export async function executePortWeatherTool(
   args: unknown
 ): Promise<PortWeatherOutput[]> {
   return checkPortWeather(args as PortWeatherInput);
+}
+
+/**
+ * Simplified single-port weather check function
+ * 
+ * Matches the simpler interface for checking weather at a single port.
+ * This is a convenience wrapper around the multi-port checkPortWeather function.
+ * 
+ * @param params - Single port weather check parameters
+ * @returns Weather safety assessment for the port
+ */
+export async function check_bunker_port_weather(params: {
+  port_code: string;
+  date: string;
+  eta?: string;
+}): Promise<{
+  success: boolean;
+  port_code?: string;
+  weather?: {
+    waveHeight: number;
+    windSpeed: number;
+    temperature?: number; // Note: Not available in MarineWeather, omitted
+  };
+  isSafe?: boolean;
+  restrictions?: string[];
+  recommendation?: string;
+  error?: string;
+}> {
+  try {
+    // Validate input
+    const CheckBunkerPortWeatherSchema = z.object({
+      port_code: z.string().min(5).max(5).describe('UN/LOCODE port code'),
+      date: z.string().datetime().describe('Date to check weather'),
+      eta: z.string().datetime().optional().describe('Estimated time of arrival'),
+    });
+
+    const validated = CheckBunkerPortWeatherSchema.parse(params);
+
+    // Get WeatherService from ServiceContainer
+    const container = ServiceContainer.getInstance();
+    const weatherService = container.getWeatherService();
+
+    // Check port weather safety
+    const safetyCheck = await weatherService.checkPortWeatherSafety({
+      portCode: validated.port_code,
+      date: new Date(validated.date),
+    });
+
+    // Format output
+    return {
+      success: true,
+      port_code: validated.port_code,
+      weather: {
+        waveHeight: safetyCheck.weather.waveHeight,
+        windSpeed: safetyCheck.weather.windSpeed,
+        // Note: temperature is not available in MarineWeather type
+        // If needed, it would need to be added to the Open-Meteo API client
+      },
+      isSafe: safetyCheck.isSafe,
+      restrictions: safetyCheck.restrictions,
+      recommendation: safetyCheck.recommendation,
+    };
+  } catch (error) {
+    console.error('[check_bunker_port_weather] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error checking weather',
+    };
+  }
 }
 
