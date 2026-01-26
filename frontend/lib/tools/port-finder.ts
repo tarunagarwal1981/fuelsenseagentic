@@ -4,6 +4,9 @@
  * Finds bunker ports near a shipping route by calculating distances
  * from route waypoints to available ports using the haversine formula.
  * 
+ * Refactored to use PortRepository with 3-tier caching:
+ * Cache → Database → JSON Fallback
+ * 
  * This tool is useful for:
  * - Finding refueling options along a route
  * - Identifying alternative ports for bunkering
@@ -12,6 +15,8 @@
 
 import { z } from 'zod';
 import { Coordinates, Port } from '@/lib/types';
+import { ServiceContainer } from '@/lib/repositories/service-container';
+import type { Port as RepositoryPort } from '@/lib/repositories/types';
 
 /**
  * Input parameters for port finder
@@ -124,37 +129,34 @@ export function haversineDistance(
 }
 
 /**
- * Port data cache - loaded once at module initialization
- */
-let portsCache: Port[] | null = null;
-
-/**
- * Loads port data from the ports.json file
- * Caches the data for subsequent lookups
- * Works in both Node.js and Edge runtime
+ * Loads bunker-capable port data from PortRepository
+ * Uses ServiceContainer to access PortRepository with 3-tier caching:
+ * Cache → Database → JSON Fallback
+ * 
+ * Refactored to use PortRepository instead of direct JSON import.
  */
 async function loadPortsData(): Promise<Port[]> {
-  if (portsCache) {
-    return portsCache;
-  }
-
   try {
-    // Use dynamic import for JSON file (works with resolveJsonModule in tsconfig)
-    const portsModule = await import('@/lib/data/ports.json');
-    // JSON imports return the data directly, not as default export
-    const ports = Array.isArray(portsModule)
-      ? portsModule
-      : (portsModule as any).default || portsModule;
-
-    // Filter ports that have fuel capabilities
-    portsCache = ports.filter(
-      (p: any) =>
-        p.fuel_capabilities &&
-        Array.isArray(p.fuel_capabilities) &&
-        p.fuel_capabilities.length > 0
-    ) as Port[];
-
-    return portsCache;
+    // Get PortRepository from ServiceContainer
+    const container = ServiceContainer.getInstance();
+    const portRepo = container.getPortRepository();
+    
+    // Get all bunker-capable ports (repository handles caching automatically)
+    const repositoryPorts = await portRepo.findBunkerPorts();
+    
+    // Convert RepositoryPort format to tool Port format for backward compatibility
+    const ports: Port[] = repositoryPorts.map((repoPort: RepositoryPort) => ({
+      port_code: repoPort.code,
+      name: repoPort.name,
+      country: repoPort.country,
+      coordinates: {
+        lat: repoPort.coordinates[0],
+        lon: repoPort.coordinates[1],
+      },
+      fuel_capabilities: repoPort.fuelsAvailable,
+    }));
+    
+    return ports;
   } catch (error) {
     throw new PortFinderError(
       `Failed to load ports data: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -203,7 +205,7 @@ function findNearestWaypoint(
  * 
  * This function:
  * 1. Validates input parameters using Zod
- * 2. Loads port data from the database
+ * 2. Loads port data from PortRepository (with 3-tier caching)
  * 3. For each waypoint, finds ports within max_deviation_nm
  * 4. Removes duplicate ports (same port found near multiple waypoints)
  * 5. Sorts results by distance from route
