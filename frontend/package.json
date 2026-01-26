@@ -31,6 +31,7 @@
     "test:benchmark": "tsx -e \"import('./tests/integration/plan-execute.test.js').then(m => m.runPerformanceBenchmark())\"",
     "test:e2e:essential": "tsx tests/e2e/essential-queries.test.ts",
     "test:integration:services": "tsx tests/integration/service-integration.test.ts",
+    "test:integration:tools": "tsx tests/integration/tools-integration.test.ts",
     "test:performance": "tsx tests/integration/performance-benchmark.test.ts",
     "test:all": "npm run type-check && npm run test:synthesis && npm run test:template-formatter && npm run test:components",
     "type-check": "tsc --noEmit"

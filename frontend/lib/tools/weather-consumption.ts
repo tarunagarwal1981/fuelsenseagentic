@@ -4,8 +4,13 @@
  * Thin wrapper around WeatherService that calculates fuel consumption adjusted for weather conditions.
  * Uses the service layer for weather impact calculation.
  * 
+ * Refactored to use WeatherService which handles:
+ * - Weather impact calculation logic
+ * - Safety rating determination
+ * - Consumption multiplier calculation
+ * 
  * The tool:
- * - Validates input parameters
+ * - Validates input parameters using Zod
  * - Delegates to WeatherService for weather impact calculation
  * - Formats output for agent consumption
  */
@@ -468,5 +473,79 @@ export async function executeWeatherConsumptionTool(
   args: unknown
 ): Promise<WeatherConsumptionOutput> {
   return calculateWeatherConsumption(args as WeatherConsumptionInput);
+}
+
+/**
+ * Simplified single-weather-point impact calculation function
+ * 
+ * Calculates weather impact on fuel consumption for a single weather condition.
+ * Uses WeatherService.calculateWeatherImpact() which handles all calculation logic.
+ * 
+ * @param params - Single weather impact calculation parameters
+ * @returns Weather impact with multiplier and safety rating
+ */
+export async function calculate_weather_factor(params: {
+  weather: {
+    waveHeight: number;
+    windSpeed: number;
+    currentSpeed?: number;
+  };
+  vessel_type: string;
+  speed: number;
+}): Promise<{
+  success: boolean;
+  multiplier?: number;
+  safetyRating?: 'safe' | 'caution' | 'unsafe';
+  recommendation?: string;
+  error?: string;
+}> {
+  try {
+    // Validate input
+    const CalculateWeatherFactorSchema = z.object({
+      weather: z
+        .object({
+          waveHeight: z.number().min(0).describe('Wave height in meters'),
+          windSpeed: z.number().min(0).describe('Wind speed in knots'),
+          currentSpeed: z.number().min(0).optional().describe('Current speed in knots'),
+        })
+        .describe('Weather conditions'),
+      vessel_type: z.string().min(1).describe('Type of vessel'),
+      speed: z.number().min(5).max(25).describe('Vessel speed in knots'),
+    });
+
+    const validated = CalculateWeatherFactorSchema.parse(params);
+
+    // Get WeatherService from ServiceContainer
+    const container = ServiceContainer.getInstance();
+    const weatherService = container.getWeatherService();
+
+    // Calculate weather impact using WeatherService
+    // Note: WeatherService expects MarineWeather format, so we need to convert
+    const impact = await weatherService.calculateWeatherImpact({
+      weather: {
+        waveHeight: validated.weather.waveHeight,
+        windSpeed: validated.weather.windSpeed,
+        windDirection: 0, // Not provided in simplified input, default to 0
+        seaState: 'Moderate', // Default sea state
+        datetime: new Date(), // Current date
+      },
+      vesselType: validated.vessel_type,
+      speed: validated.speed,
+    });
+
+    // Format output
+    return {
+      success: true,
+      multiplier: impact.multiplier,
+      safetyRating: impact.safetyRating,
+      recommendation: impact.recommendation,
+    };
+  } catch (error) {
+    console.error('[calculate_weather_factor] Error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error calculating weather factor',
+    };
+  }
 }
 
