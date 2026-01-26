@@ -5,8 +5,8 @@ import { portFinderToolSchema, executePortFinderTool } from '@/lib/tools/port-fi
 import { priceFetcherToolSchema, executePriceFetcherTool } from '@/lib/tools/price-fetcher';
 import { bunkerAnalyzerToolSchema, executeBunkerAnalyzerTool } from '@/lib/tools/bunker-analyzer';
 
-// Edge runtime for fast responses
-export const runtime = 'edge';
+// Node.js runtime required for repository access (fs, path modules)
+export const runtime = 'nodejs';
 
 // Initialize Anthropic client lazily (only validate at runtime, not during build)
 let anthropic: Anthropic | null = null;

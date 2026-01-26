@@ -60,7 +60,18 @@ OPENAI_API_KEY=your_openai_api_key          # Optional - for cost savings
 LANGCHAIN_API_KEY=your_langsmith_api_key    # Optional - for monitoring
 LANGCHAIN_TRACING_V2=true                    # Optional
 LANGCHAIN_PROJECT=fuelsense-360              # Optional
+
+# Repository Pattern - Required for data access
+UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+**Note:** If Redis or Supabase credentials are not provided, the system will:
+- Use a mock cache (no caching) if Redis is unavailable
+- Fall back to JSON files for data access if database is unavailable
+- Still function but with reduced performance and no persistence
 
 ### Development
 
@@ -79,6 +90,45 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 | `/chat-langgraph` | LangGraph-based chat |
 | `/analytics` | Performance analytics dashboard |
 | `/compare` | Implementation comparison view |
+
+## Repository Pattern & Service Container
+
+The application uses a repository pattern with dependency injection via `ServiceContainer`.
+
+### Usage
+
+```typescript
+import { ServiceContainer } from '@/lib/repositories/service-container';
+
+// Get singleton instance
+const container = ServiceContainer.getInstance();
+
+// Access repositories
+const portRepo = container.getPortRepository();
+const priceRepo = container.getPriceRepository();
+const vesselRepo = container.getVesselRepository();
+
+// Use repositories
+const ports = await portRepo.findBunkerPorts();
+const prices = await priceRepo.getLatestPrices({
+  portCode: 'SGSIN',
+  fuelTypes: ['VLSFO', 'MGO']
+});
+const vessel = await vesselRepo.findByName('MV Pacific Star');
+```
+
+### Features
+
+- **3-Tier Fallback**: Cache → Database → JSON files
+- **Graceful Degradation**: Works without Redis or database (uses JSON fallback)
+- **Singleton Pattern**: Single instance shared across application
+- **Type-Safe**: Full TypeScript support
+
+### Repositories
+
+- **PortRepository**: Port data access (`findByCode`, `findBunkerPorts`, `findNearby`, `searchByName`)
+- **PriceRepository**: Fuel price data (`getLatestPrices`, `getPriceHistory`, `getAveragePrices`, `addPrice`)
+- **VesselRepository**: Vessel profiles (`findByName`, `findByIMO`, `getConsumptionAtSpeed`, `validateCapacity`)
 
 ## Testing
 

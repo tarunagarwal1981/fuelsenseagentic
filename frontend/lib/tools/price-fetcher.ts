@@ -1,9 +1,8 @@
 /**
  * Price Fetcher Tool
  * 
- * Fetches current fuel prices for maritime bunker ports.
- * Loads price data from the prices database and provides filtering
- * and validation capabilities.
+ * Thin wrapper around PriceRepository that fetches current fuel prices for maritime bunker ports.
+ * Uses the service layer for price data access.
  * 
  * Features:
  * - Fetch prices for multiple ports at once
@@ -14,7 +13,8 @@
  */
 
 import { z } from 'zod';
-import { FuelPrice, FuelType } from '@/lib/types';
+import { FuelType } from '@/lib/types';
+import { ServiceContainer } from '@/lib/repositories/service-container';
 
 /**
  * Input parameters for price fetcher
@@ -31,7 +31,11 @@ export interface PriceFetcherInput {
  */
 export interface PriceData {
   /** Fuel price information */
-  price: FuelPrice;
+  price: {
+    fuel_type: string;
+    price_per_mt: number;
+    currency: string;
+  };
   /** Whether the price is considered fresh (< 24 hours old) */
   is_fresh: boolean;
   /** Hours since last update */
@@ -89,38 +93,6 @@ export class PriceFetcherError extends Error {
   }
 }
 
-/**
- * Price data cache - loaded once at module initialization
- */
-let pricesCache: FuelPrice[] | null = null;
-
-/**
- * Loads price data from the prices.json file
- * Caches the data for subsequent lookups
- * Works in both Node.js and Edge runtime
- */
-async function loadPricesData(): Promise<FuelPrice[]> {
-  if (pricesCache) {
-    return pricesCache;
-  }
-
-  try {
-    // Use dynamic import for JSON file (works with resolveJsonModule in tsconfig)
-    const pricesModule = await import('@/lib/data/prices.json');
-    // JSON imports return the data directly, not as default export
-    const prices = Array.isArray(pricesModule)
-      ? pricesModule
-      : (pricesModule as any).default || pricesModule;
-
-    pricesCache = prices as FuelPrice[];
-    return pricesCache;
-  } catch (error) {
-    throw new PriceFetcherError(
-      `Failed to load prices data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      'PRICE_DATA_LOAD_ERROR'
-    );
-  }
-}
 
 /**
  * Formats a price with currency symbol
@@ -179,8 +151,8 @@ function isPriceFresh(timestamp: string): boolean {
  * 
  * This function:
  * 1. Validates input parameters using Zod
- * 2. Loads price data from the database
- * 3. Filters prices by port codes and optional fuel types
+ * 2. Gets PriceRepository from ServiceContainer
+ * 3. Fetches latest prices for each port using PriceRepository
  * 4. Checks price freshness and generates warnings
  * 5. Formats prices with currency
  * 6. Returns organized price data
@@ -192,30 +164,20 @@ function isPriceFresh(timestamp: string): boolean {
 export async function fetchPrices(
   input: PriceFetcherInput
 ): Promise<PriceFetcherOutput> {
-  // Validate input using Zod schema
-  const validatedInput = priceFetcherInputSchema.parse(input);
-
-  const { port_codes, fuel_types } = validatedInput;
-
-  console.log(`\n💰 Fetching prices for ${port_codes.length} port(s)...`);
-  if (fuel_types && fuel_types.length > 0) {
-    console.log(`   Filter: ${fuel_types.join(', ')}`);
-  }
-
   try {
-    // Load price data
-    const allPrices = await loadPricesData();
-    console.log(`   Available price entries: ${allPrices.length}`);
+    // Validate input using Zod schema
+    const validatedInput = priceFetcherInputSchema.parse(input);
 
-    // Filter prices by port codes
-    const filteredPrices = allPrices.filter((price) =>
-      port_codes.includes(price.port_code)
-    );
+    const { port_codes, fuel_types } = validatedInput;
 
-    // Further filter by fuel types if specified
-    const finalPrices = fuel_types
-      ? filteredPrices.filter((price) => fuel_types.includes(price.fuel_type))
-      : filteredPrices;
+    console.log(`\n💰 Fetching prices for ${port_codes.length} port(s)...`);
+    if (fuel_types && fuel_types.length > 0) {
+      console.log(`   Filter: ${fuel_types.join(', ')}`);
+    }
+
+    // Get repository from container
+    const container = ServiceContainer.getInstance();
+    const priceRepo = container.getPriceRepository();
 
     // Organize prices by port code
     const pricesByPort: Record<string, PriceData[]> = {};
@@ -226,47 +188,81 @@ export async function fetchPrices(
       hours_old: number;
     }> = [];
 
-    for (const price of finalPrices) {
-      // Mark port as found
-      portsNotFound.delete(price.port_code);
-
-      // Check price freshness
-      const hoursOld = hoursSinceUpdate(price.last_updated);
-      const isFresh = isPriceFresh(price.last_updated);
-
-      if (!isFresh) {
-        stalePriceWarnings.push({
-          port_code: price.port_code,
-          fuel_type: price.fuel_type,
-          hours_old: Math.round(hoursOld * 10) / 10,
+    // Fetch prices for each port
+    for (const portCode of port_codes) {
+      try {
+        // Get latest prices for this port
+        const fuelTypesToFetch = fuel_types || ['VLSFO', 'LSGO', 'MGO'];
+        const prices = await priceRepo.getLatestPrices({
+          portCode,
+          fuelTypes: fuelTypesToFetch,
         });
+
+        if (Object.keys(prices).length === 0) {
+          portsNotFound.add(portCode);
+          continue;
+        }
+
+        // Mark port as found
+        portsNotFound.delete(portCode);
+
+        // Convert prices to PriceData format
+        // Get price history (1 day) to check freshness
+        const priceDataArray: PriceData[] = [];
+        for (const fuelType of fuelTypesToFetch) {
+          if (!prices[fuelType]) {
+            continue;
+          }
+
+          // Get latest price record with timestamp for freshness check
+          const priceHistory = await priceRepo.getPriceHistory(portCode, fuelType, 1);
+          const latestPrice = priceHistory[0];
+          
+          const now = new Date();
+          const hoursOld = latestPrice
+            ? hoursSinceUpdate(latestPrice.updatedAt.toISOString())
+            : 0;
+          const isFresh = isPriceFresh(latestPrice?.updatedAt.toISOString() || now.toISOString());
+
+          if (!isFresh && latestPrice) {
+            stalePriceWarnings.push({
+              port_code: portCode,
+              fuel_type: fuelType as FuelType,
+              hours_old: Math.round(hoursOld * 10) / 10,
+            });
+          }
+
+          // Format price
+          const formattedPrice = formatCurrency(prices[fuelType], 'USD');
+
+          priceDataArray.push({
+            price: {
+              fuel_type: fuelType as FuelType,
+              price_per_mt: prices[fuelType],
+              currency: 'USD',
+            },
+            is_fresh: isFresh,
+            hours_since_update: Math.round(hoursOld * 10) / 10,
+            formatted_price: formattedPrice,
+          });
+        }
+
+        // Sort prices by fuel type for consistency
+        priceDataArray.sort((a, b) =>
+          a.price.fuel_type.localeCompare(b.price.fuel_type)
+        );
+
+        pricesByPort[portCode] = priceDataArray;
+      } catch (error) {
+        console.error(`Error fetching prices for ${portCode}:`, error);
+        portsNotFound.add(portCode);
       }
-
-      // Format price
-      const formattedPrice = formatCurrency(price.price_per_mt, price.currency);
-
-      // Initialize array if needed
-      if (!pricesByPort[price.port_code]) {
-        pricesByPort[price.port_code] = [];
-      }
-
-      // Add price data
-      pricesByPort[price.port_code].push({
-        price,
-        is_fresh: isFresh,
-        hours_since_update: Math.round(hoursOld * 10) / 10,
-        formatted_price: formattedPrice,
-      });
     }
 
-    // Sort prices by fuel type for consistency
-    for (const portCode in pricesByPort) {
-      pricesByPort[portCode].sort((a, b) =>
-        a.price.fuel_type.localeCompare(b.price.fuel_type)
-      );
-    }
-
-    const totalPrices = finalPrices.length;
+    const totalPrices = Object.values(pricesByPort).reduce(
+      (sum, prices) => sum + prices.length,
+      0
+    );
     const portsWithPrices = Object.keys(pricesByPort).length;
     const portsNotFoundArray = Array.from(portsNotFound);
 

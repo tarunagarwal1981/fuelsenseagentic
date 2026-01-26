@@ -1,0 +1,381 @@
+/**
+ * Route Service
+ * 
+ * Provides route calculation with ECA zone detection and timeline calculation.
+ * Uses PortRepository for port data and SeaRoute API for route calculation.
+ */
+
+import { PortRepository } from '@/lib/repositories/port-repository';
+import { RedisCache } from '@/lib/repositories/cache-client';
+import { SeaRouteAPIClient } from './sea-route-api-client';
+import {
+  RouteData,
+  Waypoint,
+  Timeline,
+  TimelineEntry,
+  ECASegment,
+  ECAZone,
+} from './types';
+import { ECA_ZONES } from '@/lib/tools/eca-config';
+import * as turf from '@turf/turf';
+
+export type { RouteData } from './types';
+
+export class RouteService {
+  constructor(
+    private portRepo: PortRepository,
+    private cache: RedisCache,
+    private seaRouteAPI: SeaRouteAPIClient
+  ) {}
+
+  /**
+   * Calculate route between two ports
+   */
+  async calculateRoute(params: {
+    origin: string; // Port code
+    destination: string; // Port code
+    speed: number; // Knots
+    departureDate: Date;
+  }): Promise<RouteData> {
+    // Generate cache key
+    const cacheKey = `fuelsense:route:${params.origin}-${params.destination}-${params.speed}`;
+
+    // Try cache
+    try {
+      const cached = await this.cache.get<RouteData>(cacheKey);
+      if (cached) {
+        // Adjust timeline dates based on new departure date
+        const timeDiff = params.departureDate.getTime() - cached.timeline[0]?.eta.getTime();
+        if (timeDiff !== 0) {
+          cached.timeline = cached.timeline.map((entry) => ({
+            ...entry,
+            eta: new Date(entry.eta.getTime() + timeDiff),
+          }));
+          cached.ecaSegments = cached.ecaSegments.map((segment) => ({
+            ...segment,
+            startTime: new Date(segment.startTime.getTime() + timeDiff),
+            endTime: new Date(segment.endTime.getTime() + timeDiff),
+          }));
+        }
+        console.log(`[CACHE HIT] route:${params.origin}-${params.destination}`);
+        return cached;
+      }
+    } catch (error) {
+      console.error('[RouteService] Cache read error:', error);
+    }
+
+    // Get port coordinates from PortRepository
+    const originPort = await this.portRepo.findByCode(params.origin);
+    const destPort = await this.portRepo.findByCode(params.destination);
+
+    if (!originPort) {
+      throw new Error(`Origin port not found: ${params.origin}`);
+    }
+    if (!destPort) {
+      throw new Error(`Destination port not found: ${params.destination}`);
+    }
+
+    // Call SeaRoute API
+    const apiResponse = await this.seaRouteAPI.calculateRoute({
+      from: originPort.coordinates,
+      to: destPort.coordinates,
+      speed: params.speed,
+    });
+
+    // Convert API geometry ([lon, lat]) to waypoints ([lat, lon])
+    const waypoints = this.convertGeometryToWaypoints(
+      apiResponse.geometry,
+      apiResponse.distance
+    );
+
+    // Enhance with ECA zones
+    const enhancedWaypoints = await this.detectECAZones(waypoints);
+
+    // Calculate timeline
+    const timeline = this.calculateTimeline(
+      enhancedWaypoints,
+      params.speed,
+      params.departureDate
+    );
+
+    // Build ECA segments
+    const ecaSegments = this.buildECASegments(enhancedWaypoints, timeline);
+
+    // Determine route type
+    const routeType = this.determineRouteType(enhancedWaypoints);
+
+    const routeData: RouteData = {
+      origin: {
+        port_code: originPort.code,
+        name: originPort.name,
+        country: originPort.country,
+        coordinates: {
+          lat: originPort.coordinates[0],
+          lon: originPort.coordinates[1],
+        },
+        fuel_capabilities: originPort.fuelsAvailable as any[],
+      },
+      destination: {
+        port_code: destPort.code,
+        name: destPort.name,
+        country: destPort.country,
+        coordinates: {
+          lat: destPort.coordinates[0],
+          lon: destPort.coordinates[1],
+        },
+        fuel_capabilities: destPort.fuelsAvailable as any[],
+      },
+      waypoints: enhancedWaypoints,
+      totalDistanceNm: apiResponse.distance,
+      timeline,
+      ecaSegments,
+      estimatedHours: apiResponse.duration || apiResponse.distance / params.speed,
+      routeType,
+    };
+
+    // Cache result (1 hour TTL)
+    try {
+      await this.cache.set(cacheKey, routeData, 3600);
+    } catch (error) {
+      console.error('[RouteService] Cache write error:', error);
+    }
+
+    return routeData;
+  }
+
+  /**
+   * Convert API geometry to waypoints with distance calculations
+   */
+  private convertGeometryToWaypoints(
+    geometry: [number, number][], // [lon, lat] from API
+    totalDistance: number
+  ): Waypoint[] {
+    // Convert [lon, lat] to [lat, lon] and calculate distances
+    const waypoints: Waypoint[] = [];
+    let cumulativeDistance = 0;
+
+    for (let i = 0; i < geometry.length; i++) {
+      const [lon, lat] = geometry[i];
+      const coords: [number, number] = [lat, lon];
+
+      let distanceFromPrevious = 0;
+      if (i > 0) {
+        const prevCoords = waypoints[i - 1].coordinates;
+        distanceFromPrevious = this.haversineDistance(prevCoords, coords);
+        cumulativeDistance += distanceFromPrevious;
+      }
+
+      waypoints.push({
+        coordinates: coords,
+        distanceFromPreviousNm: distanceFromPrevious,
+        distanceFromStartNm: cumulativeDistance,
+        inECA: false,
+      });
+    }
+
+    return waypoints;
+  }
+
+  /**
+   * Detect ECA zones for waypoints
+   */
+  private async detectECAZones(waypoints: Waypoint[]): Promise<Waypoint[]> {
+    // Get active ECA zones
+    const activeZones: ECAZone[] = Object.values(ECA_ZONES)
+      .filter((zone) => zone.status === 'ACTIVE')
+      .map((zone) => ({
+        name: zone.name,
+        code: zone.code,
+        boundaries: zone.boundaries,
+      }));
+
+    // Create route line for intersection checks
+    const routeLine = turf.lineString(
+      waypoints.map((wp) => [wp.coordinates[1], wp.coordinates[0]]) // [lon, lat] for Turf
+    );
+
+    return waypoints.map((waypoint) => {
+      const point = turf.point([waypoint.coordinates[1], waypoint.coordinates[0]]); // [lon, lat]
+
+      // Check each ECA zone
+      for (const zone of activeZones) {
+        for (const boundary of zone.boundaries) {
+          // Convert boundary to Turf polygon format
+          const polygon = turf.polygon([boundary]);
+
+          // Check if point is in polygon
+          if (turf.booleanPointInPolygon(point, polygon)) {
+            return {
+              ...waypoint,
+              inECA: true,
+              ecaZoneName: zone.name,
+            };
+          }
+        }
+      }
+
+      return waypoint;
+    });
+  }
+
+  /**
+   * Calculate timeline for waypoints
+   */
+  private calculateTimeline(
+    waypoints: Waypoint[],
+    speed: number,
+    startDate: Date
+  ): Timeline {
+    const timeline: Timeline = [];
+    let currentTime = new Date(startDate);
+
+    for (const waypoint of waypoints) {
+      if (waypoint.distanceFromPreviousNm > 0) {
+        // Calculate time to reach this waypoint
+        const hours = waypoint.distanceFromPreviousNm / speed;
+        currentTime = new Date(currentTime.getTime() + hours * 60 * 60 * 1000);
+      }
+
+      timeline.push({
+        waypoint,
+        eta: new Date(currentTime),
+        distanceFromStartNm: waypoint.distanceFromStartNm,
+      });
+    }
+
+    return timeline;
+  }
+
+  /**
+   * Build ECA segments from waypoints
+   */
+  private buildECASegments(waypoints: Waypoint[], timeline: Timeline): ECASegment[] {
+    const segments: ECASegment[] = [];
+    let currentSegment: {
+      startIndex: number;
+      zoneName: string;
+    } | null = null;
+
+    for (let i = 0; i < waypoints.length; i++) {
+      const waypoint = waypoints[i];
+      const timelineEntry = timeline[i];
+
+      if (waypoint.inECA && waypoint.ecaZoneName) {
+        if (!currentSegment || currentSegment.zoneName !== waypoint.ecaZoneName) {
+          // End previous segment if exists
+          if (currentSegment) {
+            segments.push({
+              startWaypointIndex: currentSegment.startIndex,
+              endWaypointIndex: i - 1,
+              zoneName: currentSegment.zoneName,
+              distanceNm:
+                waypoints[i - 1].distanceFromStartNm -
+                waypoints[currentSegment.startIndex].distanceFromStartNm,
+              startTime: timeline[currentSegment.startIndex].eta,
+              endTime: timeline[i - 1].eta,
+            });
+          }
+
+          // Start new segment
+          currentSegment = {
+            startIndex: i,
+            zoneName: waypoint.ecaZoneName,
+          };
+        }
+      } else {
+        // End current segment if exists
+        if (currentSegment) {
+          segments.push({
+            startWaypointIndex: currentSegment.startIndex,
+            endWaypointIndex: i - 1,
+            zoneName: currentSegment.zoneName,
+            distanceNm:
+              waypoints[i - 1].distanceFromStartNm -
+              waypoints[currentSegment.startIndex].distanceFromStartNm,
+            startTime: timeline[currentSegment.startIndex].eta,
+            endTime: timeline[i - 1].eta,
+          });
+          currentSegment = null;
+        }
+      }
+    }
+
+    // Close final segment if exists
+    if (currentSegment) {
+      const lastIndex = waypoints.length - 1;
+      segments.push({
+        startWaypointIndex: currentSegment.startIndex,
+        endWaypointIndex: lastIndex,
+        zoneName: currentSegment.zoneName,
+        distanceNm:
+          waypoints[lastIndex].distanceFromStartNm -
+          waypoints[currentSegment.startIndex].distanceFromStartNm,
+        startTime: timeline[currentSegment.startIndex].eta,
+        endTime: timeline[lastIndex].eta,
+      });
+    }
+
+    return segments;
+  }
+
+  /**
+   * Determine route type based on waypoints
+   */
+  private determineRouteType(waypoints: Waypoint[]): string {
+    // Check for major canal passages
+    const suezCanal = { lat: 30.5852, lon: 32.2656 };
+    const panamaCanal = { lat: 9.0, lon: -79.5 };
+
+    const nearSuez = waypoints.some(
+      (wp) =>
+        Math.abs(wp.coordinates[0] - suezCanal.lat) < 2 &&
+        Math.abs(wp.coordinates[1] - suezCanal.lon) < 2
+    );
+
+    const nearPanama = waypoints.some(
+      (wp) =>
+        Math.abs(wp.coordinates[0] - panamaCanal.lat) < 2 &&
+        Math.abs(wp.coordinates[1] - panamaCanal.lon) < 2
+    );
+
+    if (nearSuez) return 'via Suez Canal';
+    if (nearPanama) return 'via Panama Canal';
+
+    // Check if route crosses major ocean basins
+    const lats = waypoints.map((wp) => wp.coordinates[0]);
+    const lons = waypoints.map((wp) => wp.coordinates[1]);
+    const latRange = Math.max(...lats) - Math.min(...lats);
+    const lonRange = Math.max(...lons) - Math.min(...lons);
+
+    if (latRange > 30 || lonRange > 60) {
+      return 'transoceanic route';
+    }
+
+    return 'direct route';
+  }
+
+  /**
+   * Calculate Haversine distance between two coordinates
+   */
+  private haversineDistance(
+    from: [number, number],
+    to: [number, number]
+  ): number {
+    const R = 3440.065; // Earth's radius in nautical miles
+
+    const lat1Rad = (from[0] * Math.PI) / 180;
+    const lat2Rad = (to[0] * Math.PI) / 180;
+    const deltaLatRad = ((to[0] - from[0]) * Math.PI) / 180;
+    const deltaLonRad = ((to[1] - from[1]) * Math.PI) / 180;
+
+    const a =
+      Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
+      Math.cos(lat1Rad) *
+        Math.cos(lat2Rad) *
+        Math.sin(deltaLonRad / 2) *
+        Math.sin(deltaLonRad / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+}

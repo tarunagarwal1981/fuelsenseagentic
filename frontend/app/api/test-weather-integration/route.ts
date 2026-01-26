@@ -6,7 +6,8 @@ import { executeMarineWeatherTool } from '@/lib/tools/marine-weather';
 import { executeWeatherConsumptionTool } from '@/lib/tools/weather-consumption';
 import { executePortWeatherTool } from '@/lib/tools/port-weather';
 
-export const runtime = 'edge';
+// Node.js runtime required for repository access
+export const runtime = 'nodejs';
 
 // Test configuration
 const TEST_CONFIG = {

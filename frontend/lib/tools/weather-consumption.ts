@@ -1,19 +1,18 @@
 /**
  * Weather Consumption Tool
  * 
- * Calculates fuel consumption adjusted for weather conditions along a voyage.
- * This tool accounts for the impact of wave height and wind direction on fuel
- * consumption, providing accurate fuel planning for maritime operations.
+ * Thin wrapper around WeatherService that calculates fuel consumption adjusted for weather conditions.
+ * Uses the service layer for weather impact calculation.
  * 
  * The tool:
- * - Calculates weather impact multipliers based on wave height and wind direction
- * - Applies time-weighted adjustments across the voyage
- * - Generates weather alerts for severe conditions
- * - Provides detailed consumption breakdowns
+ * - Validates input parameters
+ * - Delegates to WeatherService for weather impact calculation
+ * - Formats output for agent consumption
  */
 
 import { z } from 'zod';
 import { Coordinates, FuelType } from '@/lib/types';
+import { ServiceContainer } from '@/lib/repositories/service-container';
 
 /**
  * Weather data point from marine weather tool
@@ -175,78 +174,6 @@ export class WeatherConsumptionError extends Error {
   }
 }
 
-/**
- * Calculates wave height impact multiplier
- * 
- * @param waveHeightM - Wave height in meters
- * @returns Multiplier factor
- */
-function getWaveHeightMultiplier(waveHeightM: number): number {
-  if (waveHeightM < 0.5) {
-    return 1.0; // Calm
-  } else if (waveHeightM < 1.25) {
-    return 1.05; // Slight
-  } else if (waveHeightM < 2.5) {
-    return 1.10; // Moderate
-  } else if (waveHeightM < 4.0) {
-    return 1.20; // Rough
-  } else if (waveHeightM < 6.0) {
-    return 1.35; // Very Rough
-  } else {
-    return 1.50; // High/Storm
-  }
-}
-
-/**
- * Calculates wind direction impact multiplier relative to vessel heading
- * 
- * @param windDirectionDeg - Wind direction in degrees (0-360)
- * @param vesselHeadingDeg - Vessel heading in degrees (0-360)
- * @returns Multiplier factor
- */
-function getWindDirectionMultiplier(
-  windDirectionDeg: number,
-  vesselHeadingDeg: number
-): number {
-  // Calculate relative wind angle (0° = head wind, 180° = tail wind)
-  let relativeAngle = Math.abs(windDirectionDeg - vesselHeadingDeg);
-  
-  // Normalize to 0-180 range
-  if (relativeAngle > 180) {
-    relativeAngle = 360 - relativeAngle;
-  }
-  
-  // Following wind: within 45° aft (135-180° relative)
-  if (relativeAngle >= 135) {
-    return 0.95;
-  }
-  
-  // Head wind: within 45° forward (0-45° relative)
-  if (relativeAngle <= 45) {
-    return 1.15;
-  }
-  
-  // Beam wind: 45-135° relative
-  return 1.0;
-}
-
-/**
- * Calculates combined weather multiplier
- * 
- * @param waveHeightM - Wave height in meters
- * @param windDirectionDeg - Wind direction in degrees
- * @param vesselHeadingDeg - Vessel heading in degrees
- * @returns Combined multiplier
- */
-function calculateWeatherMultiplier(
-  waveHeightM: number,
-  windDirectionDeg: number,
-  vesselHeadingDeg: number
-): number {
-  const waveMultiplier = getWaveHeightMultiplier(waveHeightM);
-  const windMultiplier = getWindDirectionMultiplier(windDirectionDeg, vesselHeadingDeg);
-  return waveMultiplier * windMultiplier;
-}
 
 /**
  * Generates weather alerts for severe conditions
@@ -301,46 +228,19 @@ function generateWeatherAlerts(
   return alerts;
 }
 
-/**
- * Calculates time-weighted average multiplier across voyage
- * Assumes equal time weighting for each data point
- * 
- * @param weatherData - Array of weather data points
- * @param vesselHeadingDeg - Vessel heading in degrees
- * @returns Average multiplier
- */
-function calculateAverageMultiplier(
-  weatherData: WeatherDataPoint[],
-  vesselHeadingDeg: number
-): number {
-  if (weatherData.length === 0) {
-    return 1.0;
-  }
-
-  let totalMultiplier = 0;
-  for (const data of weatherData) {
-    const multiplier = calculateWeatherMultiplier(
-      data.weather.wave_height_m,
-      data.weather.wind_direction_deg,
-      vesselHeadingDeg
-    );
-    totalMultiplier += multiplier;
-  }
-
-  return totalMultiplier / weatherData.length;
-}
 
 /**
  * Main execute function for weather consumption calculation
  * 
  * This function:
  * 1. Validates input parameters using Zod
- * 2. Calculates weather multipliers for each data point
- * 3. Computes average multiplier across voyage
- * 4. Applies multiplier to base consumption
- * 5. Generates weather alerts
- * 6. Calculates fuel type breakdowns if provided
- * 7. Returns comprehensive consumption analysis
+ * 2. Gets WeatherService from ServiceContainer
+ * 3. Calculates weather impact for each data point using WeatherService
+ * 4. Computes average multiplier across voyage
+ * 5. Applies multiplier to base consumption
+ * 6. Generates weather alerts
+ * 7. Calculates fuel type breakdowns if provided
+ * 8. Returns comprehensive consumption analysis
  * 
  * @param input - Weather consumption calculation parameters
  * @returns Weather-adjusted consumption analysis
@@ -349,104 +249,137 @@ function calculateAverageMultiplier(
 export async function calculateWeatherConsumption(
   input: WeatherConsumptionInput
 ): Promise<WeatherConsumptionOutput> {
-  // Validate input using Zod schema
-  const validatedInput = weatherConsumptionInputSchema.parse(input);
+  try {
+    // Validate input using Zod schema
+    const validatedInput = weatherConsumptionInputSchema.parse(input);
 
-  const {
-    weather_data,
-    base_consumption_mt,
-    vessel_heading_deg,
-    fuel_type_breakdown,
-  } = validatedInput;
+    const {
+      weather_data,
+      base_consumption_mt,
+      vessel_heading_deg,
+      fuel_type_breakdown,
+    } = validatedInput;
 
-  // Handle edge case: empty weather data (shouldn't happen due to validation)
-  if (weather_data.length === 0) {
-    throw new WeatherConsumptionError(
-      'Weather data array is empty',
-      'EMPTY_WEATHER_DATA'
-    );
-  }
-
-  // Calculate average multiplier
-  const avgMultiplier = calculateAverageMultiplier(weather_data, vessel_heading_deg);
-
-  // Calculate adjusted consumption
-  const weatherAdjustedConsumption = base_consumption_mt * avgMultiplier;
-  const additionalFuelNeeded = weatherAdjustedConsumption - base_consumption_mt;
-  const consumptionIncreasePercent =
-    (additionalFuelNeeded / base_consumption_mt) * 100;
-
-  // Generate weather alerts
-  const weatherAlerts = generateWeatherAlerts(weather_data);
-
-  // Calculate voyage weather summary
-  const waveHeights = weather_data.map((d) => d.weather.wave_height_m);
-  const avgWaveHeight =
-    waveHeights.reduce((sum, h) => sum + h, 0) / waveHeights.length;
-  const maxWaveHeight = Math.max(...waveHeights);
-
-  // Find worst conditions (highest multiplier)
-  let worstConditionsDate = weather_data[0].datetime;
-  let worstMultiplier = calculateWeatherMultiplier(
-    weather_data[0].weather.wave_height_m,
-    weather_data[0].weather.wind_direction_deg,
-    vessel_heading_deg
-  );
-
-  for (const data of weather_data) {
-    const multiplier = calculateWeatherMultiplier(
-      data.weather.wave_height_m,
-      data.weather.wind_direction_deg,
-      vessel_heading_deg
-    );
-    if (multiplier > worstMultiplier) {
-      worstMultiplier = multiplier;
-      worstConditionsDate = data.datetime;
+    // Handle edge case: empty weather data (shouldn't happen due to validation)
+    if (weather_data.length === 0) {
+      throw new WeatherConsumptionError(
+        'Weather data array is empty',
+        'EMPTY_WEATHER_DATA'
+      );
     }
-  }
 
-  const voyageWeatherSummary: VoyageWeatherSummary = {
-    avg_wave_height_m: avgWaveHeight,
-    max_wave_height_m: maxWaveHeight,
-    avg_multiplier: avgMultiplier,
-    worst_conditions_date: worstConditionsDate,
-  };
+    // Get service from container
+    const container = ServiceContainer.getInstance();
+    const weatherService = container.getWeatherService();
 
-  // Calculate fuel type breakdown if provided
-  let breakdownByFuelType:
-    | {
-        VLSFO?: FuelTypeBreakdown;
-        LSGO?: FuelTypeBreakdown;
+    // Calculate weather impact multipliers for each data point
+    const multipliers: number[] = [];
+    for (const dataPoint of weather_data) {
+      const impact = await weatherService.calculateWeatherImpact({
+        weather: {
+          waveHeight: dataPoint.weather.wave_height_m,
+          windSpeed: dataPoint.weather.wind_speed_knots,
+          windDirection: dataPoint.weather.wind_direction_deg,
+          seaState: dataPoint.weather.sea_state || 'Moderate',
+          datetime: new Date(dataPoint.datetime),
+        },
+        vesselType: 'container', // Default vessel type
+        speed: 14, // Default speed
+      });
+      multipliers.push(impact.multiplier);
+    }
+
+    // Calculate average multiplier
+    const avgMultiplier =
+      multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
+
+    // Calculate adjusted consumption
+    const weatherAdjustedConsumption = base_consumption_mt * avgMultiplier;
+    const additionalFuelNeeded = weatherAdjustedConsumption - base_consumption_mt;
+    const consumptionIncreasePercent =
+      (additionalFuelNeeded / base_consumption_mt) * 100;
+
+    // Generate weather alerts
+    const weatherAlerts = generateWeatherAlerts(weather_data);
+
+    // Calculate voyage weather summary
+    const waveHeights = weather_data.map((d) => d.weather.wave_height_m);
+    const avgWaveHeight =
+      waveHeights.reduce((sum, h) => sum + h, 0) / waveHeights.length;
+    const maxWaveHeight = Math.max(...waveHeights);
+
+    // Find worst conditions (highest multiplier)
+    let worstConditionsDate = weather_data[0]!.datetime;
+    let worstMultiplier = multipliers[0] || 1.0;
+    for (let i = 0; i < multipliers.length; i++) {
+      if (multipliers[i]! > worstMultiplier) {
+        worstMultiplier = multipliers[i]!;
+        worstConditionsDate = weather_data[i]!.datetime;
       }
-    | undefined;
-
-  if (fuel_type_breakdown) {
-    breakdownByFuelType = {};
-
-    if (fuel_type_breakdown.VLSFO !== undefined) {
-      breakdownByFuelType.VLSFO = {
-        base: fuel_type_breakdown.VLSFO,
-        adjusted: fuel_type_breakdown.VLSFO * avgMultiplier,
-      };
     }
 
-    if (fuel_type_breakdown.LSGO !== undefined) {
-      breakdownByFuelType.LSGO = {
-        base: fuel_type_breakdown.LSGO,
-        adjusted: fuel_type_breakdown.LSGO * avgMultiplier,
-      };
+    const voyageWeatherSummary: VoyageWeatherSummary = {
+      avg_wave_height_m: avgWaveHeight,
+      max_wave_height_m: maxWaveHeight,
+      avg_multiplier: avgMultiplier,
+      worst_conditions_date: worstConditionsDate,
+    };
+
+    // Calculate fuel type breakdown if provided
+    let breakdownByFuelType:
+      | {
+          VLSFO?: FuelTypeBreakdown;
+          LSGO?: FuelTypeBreakdown;
+        }
+      | undefined;
+
+    if (fuel_type_breakdown) {
+      breakdownByFuelType = {};
+
+      if (fuel_type_breakdown.VLSFO !== undefined) {
+        breakdownByFuelType.VLSFO = {
+          base: fuel_type_breakdown.VLSFO,
+          adjusted: fuel_type_breakdown.VLSFO * avgMultiplier,
+        };
+      }
+
+      if (fuel_type_breakdown.LSGO !== undefined) {
+        breakdownByFuelType.LSGO = {
+          base: fuel_type_breakdown.LSGO,
+          adjusted: fuel_type_breakdown.LSGO * avgMultiplier,
+        };
+      }
     }
+
+    return {
+      base_consumption_mt,
+      weather_adjusted_consumption_mt: weatherAdjustedConsumption,
+      additional_fuel_needed_mt: additionalFuelNeeded,
+      consumption_increase_percent: consumptionIncreasePercent,
+      breakdown_by_fuel_type: breakdownByFuelType,
+      weather_alerts: weatherAlerts,
+      voyage_weather_summary: voyageWeatherSummary,
+    };
+  } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof z.ZodError) {
+      throw new WeatherConsumptionError(
+        `Input validation failed: ${error.issues.map((e) => e.message).join(', ')}`,
+        'VALIDATION_ERROR'
+      );
+    }
+
+    // Re-throw WeatherConsumptionError as-is
+    if (error instanceof WeatherConsumptionError) {
+      throw error;
+    }
+
+    // Handle unexpected errors
+    throw new WeatherConsumptionError(
+      `Unexpected error during weather consumption calculation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'UNEXPECTED_ERROR'
+    );
   }
-
-  return {
-    base_consumption_mt,
-    weather_adjusted_consumption_mt: weatherAdjustedConsumption,
-    additional_fuel_needed_mt: additionalFuelNeeded,
-    consumption_increase_percent: consumptionIncreasePercent,
-    breakdown_by_fuel_type: breakdownByFuelType,
-    weather_alerts: weatherAlerts,
-    voyage_weather_summary: voyageWeatherSummary,
-  };
 }
 
 /**
