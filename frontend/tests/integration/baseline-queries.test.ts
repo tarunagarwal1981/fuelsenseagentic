@@ -349,37 +349,6 @@ export async function testPerformanceBenchmarks(): Promise<{ passed: number; fai
 }
 
 // ============================================================================
-// Main Runner
-// ============================================================================
-
-export async function runBaselineTests(): Promise<void> {
-  console.log('\n' + '='.repeat(80));
-  console.log('BASELINE QUERY TESTS – capture current system behavior before engine integration');
-  console.log('='.repeat(80));
-
-  testSystemHealth();
-
-  const q = await runBaselineQueries();
-  const rq = await testResponseQuality();
-  const perf = await testPerformanceBenchmarks();
-
-  const totalPassed = q.passed + rq.passed + perf.passed;
-  const totalFailed = q.failed + rq.failed + perf.failed;
-
-  console.log('\n' + '='.repeat(80));
-  console.log('BASELINE SUMMARY');
-  console.log('  Baseline queries:  passed=%d failed=%d', q.passed, q.failed);
-  console.log('  Response quality:  passed=%d failed=%d', rq.passed, rq.failed);
-  console.log('  Performance:       passed=%d failed=%d', perf.passed, perf.failed);
-  console.log('  TOTAL:             passed=%d failed=%d', totalPassed, totalFailed);
-  console.log('='.repeat(80));
-
-  if (totalFailed > 0) {
-    process.exit(1);
-  }
-}
-
-// ============================================================================
 // Port Extraction Tests - Fixed Logic
 // ============================================================================
 

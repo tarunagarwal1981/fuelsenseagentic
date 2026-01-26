@@ -1,20 +1,22 @@
 /**
  * Bunker Cost-Benefit Analyzer Tool
  * 
- * Performs comprehensive cost-benefit analysis of bunker port options.
- * Calculates true total cost including fuel cost and deviation costs.
+ * Thin wrapper around BunkerService and PriceRepository that performs comprehensive
+ * cost-benefit analysis of bunker port options.
  * 
  * This tool helps optimize bunkering decisions by considering:
  * - Direct fuel cost (quantity × price per MT)
  * - Deviation cost (extra distance traveled to reach port)
  * - Time impact (additional voyage time)
  * - Fuel consumption during deviation
+ * - Price staleness penalties
  */
 
 import { z } from 'zod';
 import { FoundPort } from '@/lib/tools/port-finder';
 import { PriceFetcherOutput, PriceData } from '@/lib/tools/price-fetcher';
 import { FuelType } from '@/lib/types';
+import { ServiceContainer } from '@/lib/repositories/service-container';
 
 /**
  * Price staleness thresholds and penalties
@@ -250,14 +252,15 @@ export class BunkerAnalyzerError extends Error {
  * 
  * This function:
  * 1. Validates input parameters using Zod
- * 2. For each port, calculates:
- *    - Direct fuel cost
+ * 2. Gets BunkerService and PriceRepository from ServiceContainer
+ * 3. For each port, calculates:
+ *    - Direct fuel cost (using PriceRepository)
  *    - Deviation distance and time
  *    - Deviation fuel consumption and cost
  *    - Total cost
- * 3. Ranks ports by total cost
- * 4. Calculates savings vs most expensive option
- * 5. Returns comprehensive analysis
+ * 4. Ranks ports by total cost (with staleness penalties)
+ * 5. Calculates savings vs most expensive option
+ * 6. Returns comprehensive analysis
  * 
  * @param input - Bunker analyzer parameters
  * @returns Complete analysis with ranked recommendations
@@ -266,52 +269,84 @@ export class BunkerAnalyzerError extends Error {
 export async function analyzeBunkerOptions(
   input: BunkerAnalyzerInput
 ): Promise<BunkerAnalysisResult> {
-  // Validate input using Zod schema
-  const validated = bunkerAnalyzerInputSchema.parse(input);
+  try {
+    // Validate input using Zod schema
+    const validated = bunkerAnalyzerInputSchema.parse(input);
 
-  const {
-    bunker_ports,
-    port_prices,
-    fuel_quantity_mt,
-    fuel_type = 'VLSFO',
-    vessel_speed_knots = 14,
-    vessel_consumption_mt_per_day = 35,
-  } = validated;
+    const {
+      bunker_ports,
+      port_prices,
+      fuel_quantity_mt,
+      fuel_type = 'VLSFO',
+      vessel_speed_knots = 14,
+      vessel_consumption_mt_per_day = 35,
+    } = validated;
 
-  // Get MGO quantity from input (not in Zod schema for backwards compatibility)
-  const mgo_quantity_mt = (input as any).mgo_quantity_mt || 0;
+    // Get MGO quantity from input (not in Zod schema for backwards compatibility)
+    const mgo_quantity_mt = (input as any).mgo_quantity_mt || 0;
 
-  console.log(`\n📊 Analyzing bunker options...`);
-  console.log(`   VLSFO needed: ${fuel_quantity_mt} MT`);
-  if (mgo_quantity_mt > 0) {
-    console.log(`   LSMGO needed: ${mgo_quantity_mt} MT`);
-  }
-  console.log(`   Vessel consumption: ${vessel_consumption_mt_per_day} MT/day`);
-  console.log(`   Vessel speed: ${vessel_speed_knots} knots`);
-  console.log(`   Ports to analyze: ${bunker_ports.length}`);
+    // Get services from container
+    const container = ServiceContainer.getInstance();
+    const priceRepo = container.getPriceRepository();
+
+    console.log(`\n📊 Analyzing bunker options...`);
+    console.log(`   VLSFO needed: ${fuel_quantity_mt} MT`);
+    if (mgo_quantity_mt > 0) {
+      console.log(`   LSMGO needed: ${mgo_quantity_mt} MT`);
+    }
+    console.log(`   Vessel consumption: ${vessel_consumption_mt_per_day} MT/day`);
+    console.log(`   Vessel speed: ${vessel_speed_knots} knots`);
+    console.log(`   Ports to analyze: ${bunker_ports.length}`);
   
-  // Validate port_prices structure
-  if (!port_prices) {
-    throw new BunkerAnalyzerError(
-      'Port prices data is missing',
-      'MISSING_PRICE_DATA'
-    );
-  }
-  
-  if (!port_prices.prices_by_port || typeof port_prices.prices_by_port !== 'object') {
-    console.error('❌ Invalid port_prices structure:', {
-      hasPortPrices: !!port_prices,
-      hasPricesByPort: !!port_prices.prices_by_port,
-      portPricesType: typeof port_prices,
-      portPricesKeys: port_prices ? Object.keys(port_prices) : 'N/A',
-    });
-    throw new BunkerAnalyzerError(
-      `Invalid port prices structure. Expected prices_by_port object, got: ${typeof port_prices.prices_by_port}`,
-      'INVALID_PRICE_STRUCTURE'
-    );
-  }
-  
-  console.log(`   Price data available for ${Object.keys(port_prices.prices_by_port).length} port(s)`);
+    // Validate port_prices structure (backwards compatibility)
+    // If port_prices is provided, use it; otherwise fetch from repository
+    let pricesByPort: Record<string, PriceData[]> = {};
+    
+    if (port_prices && port_prices.prices_by_port) {
+      pricesByPort = port_prices.prices_by_port;
+      console.log(`   Using provided price data for ${Object.keys(pricesByPort).length} port(s)`);
+    } else {
+      // Fetch prices from repository for all ports
+      console.log(`   Fetching price data from repository...`);
+      for (const portWithDistance of bunker_ports as any[]) {
+        const port = portWithDistance.port || portWithDistance;
+        if (!port || !port.port_code) continue;
+        
+        try {
+          const latestPrices = await priceRepo.getLatestPrices({
+            portCode: port.port_code,
+            fuelTypes: [fuel_type, 'LSGO', 'MGO'],
+          });
+          
+          const priceHistory = await priceRepo.getPriceHistory(
+            port.port_code,
+            fuel_type,
+            30 // days
+          );
+          
+          if (priceHistory.length > 0) {
+            const record = priceHistory[0]!;
+            const hoursSinceUpdate = record.updatedAt
+              ? (Date.now() - new Date(record.updatedAt).getTime()) / (1000 * 60 * 60)
+              : 999;
+            
+            pricesByPort[port.port_code] = [{
+              price: {
+                fuel_type: fuel_type,
+                price_per_mt: latestPrices[fuel_type] || 0,
+                currency: 'USD',
+              },
+              hours_since_update: hoursSinceUpdate,
+              is_fresh: hoursSinceUpdate < 24,
+              formatted_price: `$${(latestPrices[fuel_type] || 0).toFixed(0)}/MT`,
+            }];
+          }
+        } catch (error) {
+          console.warn(`   ⚠️  Failed to fetch prices for ${port.port_code}:`, error);
+        }
+      }
+      console.log(`   Fetched price data for ${Object.keys(pricesByPort).length} port(s)`);
+    }
 
   const recommendations: BunkerRecommendation[] = [];
 
@@ -343,18 +378,7 @@ export async function analyzeBunkerOptions(
     }
 
     // Find price data for this port
-    // Ensure prices_by_port exists and is an object
-    if (!port_prices.prices_by_port) {
-      console.error(`   ❌ port_prices.prices_by_port is undefined for port ${port.port_code}`);
-      console.error(`   ❌ port_prices structure:`, {
-        hasPricesByPort: !!port_prices.prices_by_port,
-        portPricesType: typeof port_prices,
-        portPricesKeys: port_prices ? Object.keys(port_prices) : 'N/A',
-      });
-      continue;
-    }
-    
-    const portPriceData = port_prices.prices_by_port[port.port_code];
+    const portPriceData = pricesByPort[port.port_code];
 
     if (!portPriceData || portPriceData.length === 0) {
       console.log(`   ⚠️  No price data for ${port.port_code}, skipping`);
@@ -614,6 +638,23 @@ Time Impact: ${bestOption.deviation_hours.toFixed(
     stale_price_count: staleCount,
     all_prices_stale: allStale,
   };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new BunkerAnalyzerError(
+        `Invalid input: ${error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
+        'VALIDATION_ERROR'
+      );
+    }
+    
+    if (error instanceof BunkerAnalyzerError) {
+      throw error;
+    }
+    
+    throw new BunkerAnalyzerError(
+      `Failed to analyze bunker options: ${error instanceof Error ? error.message : String(error)}`,
+      'ANALYSIS_ERROR'
+    );
+  }
 }
 
 /**

@@ -9,7 +9,7 @@ import { parse as parseYAML } from 'yaml';
 import { z } from 'zod';
 
 // Conditional import for chokidar (only needed in development)
-let chokidar: typeof import('chokidar') | null = null;
+let chokidar: any = null;
 try {
   chokidar = require('chokidar');
 } catch (e) {

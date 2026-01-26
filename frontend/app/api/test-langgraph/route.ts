@@ -1,5 +1,6 @@
 // app/api/test-langgraph/route.ts
-export const runtime = "edge";
+// Node.js runtime required for repository access
+export const runtime = "nodejs";
 
 import { app } from "@/lib/langgraph/graph";
 import { HumanMessage } from "@langchain/core/messages";

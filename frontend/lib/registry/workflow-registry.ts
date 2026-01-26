@@ -6,6 +6,7 @@
  */
 
 import { AgentRegistry } from './agent-registry';
+import { ConfigLoader } from './config-loader';
 import { readdirSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { parse as parseYAML } from 'yaml';

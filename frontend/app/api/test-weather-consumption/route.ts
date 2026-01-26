@@ -3,7 +3,8 @@
 
 import { executeWeatherConsumptionTool } from '@/lib/tools/weather-consumption';
 
-export const runtime = 'edge';
+// Node.js runtime required for repository access
+export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
   try {

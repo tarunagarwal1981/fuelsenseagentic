@@ -1,19 +1,17 @@
 /**
  * Port Weather Tool
  * 
- * Checks if bunker ports have safe weather conditions for bunkering operations.
- * This tool fetches weather forecasts for port locations and evaluates whether
- * conditions are suitable for safe bunkering operations.
+ * Thin wrapper around WeatherService that checks if bunker ports have safe weather conditions.
+ * Uses the service layer for weather fetching and safety evaluation.
  * 
  * The tool:
- * - Fetches weather forecasts from Open-Meteo API
- * - Evaluates conditions during the bunkering window
- * - Classifies weather risk and conditions
- * - Optionally finds next safe window if current is unsafe
+ * - Validates input parameters
+ * - Delegates to WeatherService for weather fetching and safety checks
+ * - Formats output for agent consumption
  */
 
 import { z } from 'zod';
-import { Coordinates } from '@/lib/types';
+import { ServiceContainer } from '@/lib/repositories/service-container';
 
 /**
  * Input bunker port information
@@ -123,31 +121,6 @@ export const portWeatherInputSchema = z.object({
 });
 
 /**
- * Open-Meteo API response structure
- */
-interface OpenMeteoResponse {
-  latitude: number;
-  longitude: number;
-  generationtime_ms: number;
-  utc_offset_seconds: number;
-  timezone: string;
-  timezone_abbreviation: string;
-  elevation: number;
-  hourly_units: {
-    time: string;
-    wave_height: string;
-    wind_speed_10m: string;
-    wind_direction_10m: string;
-  };
-  hourly: {
-    time: string[];
-    wave_height: number[];
-    wind_speed_10m: number[];
-    wind_direction_10m: number[];
-  };
-}
-
-/**
  * Error class for port weather check failures
  */
 export class PortWeatherError extends Error {
@@ -162,490 +135,149 @@ export class PortWeatherError extends Error {
 }
 
 /**
- * Sleeps for a specified number of milliseconds
- * 
- * @param ms - Milliseconds to sleep
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Calls Open-Meteo Marine API with retry logic
- * 
- * @param lat - Latitude
- * @param lon - Longitude
- * @param retries - Number of retry attempts (default: 2)
- * @returns Weather data from API
- */
-async function callOpenMeteoApi(
-  lat: number,
-  lon: number,
-  retries: number = 2,
-  stats?: { apiCalls: number; retries: number; failures: number }
-): Promise<OpenMeteoResponse> {
-  const baseUrl = 'https://marine-api.open-meteo.com/v1/marine';
-  const params = new URLSearchParams({
-    latitude: lat.toString(),
-    longitude: lon.toString(),
-    hourly: 'wave_height,wind_speed_10m,wind_direction_10m',
-    forecast_days: '16',
-    timezone: 'UTC',
-  });
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      // Track API call
-      if (stats && attempt === 0) {
-        stats.apiCalls++;
-      }
-      
-      const response = await fetch(`${baseUrl}?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new PortWeatherError(
-          `Open-Meteo API error: ${response.status} ${response.statusText} - ${errorText}`,
-          'API_ERROR',
-          response.status
-        );
-      }
-
-      const data = await response.json() as OpenMeteoResponse;
-
-      // Validate response structure
-      if (!data || !data.hourly) {
-        throw new PortWeatherError(
-          'Invalid response format: missing hourly data',
-          'INVALID_RESPONSE'
-        );
-      }
-
-      if (
-        !Array.isArray(data.hourly.time) ||
-        !Array.isArray(data.hourly.wave_height) ||
-        !Array.isArray(data.hourly.wind_speed_10m) ||
-        !Array.isArray(data.hourly.wind_direction_10m)
-      ) {
-        throw new PortWeatherError(
-          'Invalid response format: missing required hourly arrays',
-          'INVALID_RESPONSE'
-        );
-      }
-
-      return data;
-    } catch (error) {
-      lastError = error as Error;
-
-      // Don't retry on validation errors
-      if (error instanceof PortWeatherError && error.code === 'INVALID_RESPONSE') {
-        if (stats) {
-          stats.failures++;
-        }
-        throw error;
-      }
-
-      // Exponential backoff: wait 500ms, 1000ms, etc.
-      if (attempt < retries - 1) {
-        if (stats) {
-          stats.retries++;
-        }
-        const backoffMs = Math.pow(2, attempt) * 500;
-        console.log(`⏳ [PORT-WEATHER] Retry attempt ${attempt + 1} of ${retries}, waiting ${backoffMs}ms before retry...`);
-        await sleep(backoffMs);
-      }
-    }
-  }
-
-  // All retries failed
-  if (stats) {
-    stats.failures++;
-  }
-  
-  if (lastError instanceof PortWeatherError) {
-    throw lastError;
-  }
-
-  throw new PortWeatherError(
-    `Failed to fetch weather data after ${retries} attempts: ${lastError?.message || 'Unknown error'}`,
-    'RETRY_EXHAUSTED'
-  );
-}
-
-/**
- * Converts wind speed from m/s to knots
- * 
- * @param windSpeedMs - Wind speed in meters per second
- * @returns Wind speed in knots
- */
-function convertToKnots(windSpeedMs: number): number {
-  return windSpeedMs * 1.944;
-}
-
-/**
- * Gets weather data for a time range from API response
- * 
- * @param apiResponse - API response data
- * @param startTime - Start datetime (ISO 8601)
- * @param endTime - End datetime (ISO 8601)
- * @returns Array of weather data points in the time range
- */
-function getWeatherForTimeRange(
-  apiResponse: OpenMeteoResponse,
-  startTime: string,
-  endTime: string
-): Array<{ time: string; wave_height: number; wind_speed: number }> {
-  const start = new Date(startTime);
-  const end = new Date(endTime);
-  const times = apiResponse.hourly.time;
-  const weatherData: Array<{ time: string; wave_height: number; wind_speed: number }> = [];
-
-  for (let i = 0; i < times.length; i++) {
-    const timeDate = new Date(times[i]);
-    if (timeDate >= start && timeDate <= end) {
-      weatherData.push({
-        time: times[i],
-        wave_height: apiResponse.hourly.wave_height[i] ?? 0,
-        wind_speed: convertToKnots(apiResponse.hourly.wind_speed_10m[i] ?? 0),
-      });
-    }
-  }
-
-  return weatherData;
-}
-
-/**
- * Classifies weather conditions
- * 
- * @param avgWaveHeight - Average wave height in meters
- * @param maxWaveHeight - Maximum wave height in meters
- * @param avgWindSpeed - Average wind speed in knots
- * @param maxWindSpeed - Maximum wind speed in knots
- * @returns Conditions classification
- */
-function classifyConditions(
-  avgWaveHeight: number,
-  maxWaveHeight: number,
-  avgWindSpeed: number,
-  maxWindSpeed: number
-): string {
-  // Check if unsafe (exceeds limits)
-  if (maxWaveHeight > 1.5 || maxWindSpeed > 25) {
-    return 'Unsafe';
-  }
-
-  // Check for excellent conditions
-  if (avgWaveHeight < 0.8 && avgWindSpeed < 15) {
-    return 'Excellent';
-  }
-
-  // Check for good conditions
-  if (avgWaveHeight < 1.2 && avgWindSpeed < 20) {
-    return 'Good';
-  }
-
-  // Check for marginal conditions
-  if (avgWaveHeight <= 1.5 && avgWindSpeed <= 25) {
-    return 'Marginal';
-  }
-
-  // Should not reach here, but return unsafe as fallback
-  return 'Unsafe';
-}
-
-/**
- * Classifies weather risk level
- * 
- * @param maxWaveHeight - Maximum wave height in meters
- * @param maxWindSpeed - Maximum wind speed in knots
- * @returns Risk level
- */
-function classifyRisk(
-  maxWaveHeight: number,
-  maxWindSpeed: number
-): 'Low' | 'Medium' | 'High' {
-  // High risk: exceeds limits
-  if (maxWaveHeight > 1.5 || maxWindSpeed > 25) {
-    return 'High';
-  }
-
-  // Medium risk: approaching limits
-  if (maxWaveHeight >= 1.2 || maxWindSpeed >= 20) {
-    return 'Medium';
-  }
-
-  // Low risk: well within limits
-  return 'Low';
-}
-
-/**
- * Finds next good window for bunkering
- * 
- * @param apiResponse - API response data
- * @param startSearchTime - Time to start searching from (ISO 8601)
- * @param durationHours - Required window duration in hours
- * @param maxSearchHours - Maximum hours to search ahead (default: 48)
- * @returns Next good window or undefined if not found
- */
-function findNextGoodWindow(
-  apiResponse: OpenMeteoResponse,
-  startSearchTime: string,
-  durationHours: number,
-  maxSearchHours: number = 48
-): NextGoodWindow | undefined {
-  const start = new Date(startSearchTime);
-  const endSearch = new Date(start);
-  endSearch.setHours(endSearch.getHours() + maxSearchHours);
-
-  const times = apiResponse.hourly.time;
-  const maxWaveHeight = 1.5;
-  const maxWindSpeed = 25;
-
-  // Search for a window where all conditions are safe
-  for (let i = 0; i < times.length; i++) {
-    const windowStart = new Date(times[i]);
-    if (windowStart < start) continue;
-    if (windowStart > endSearch) break;
-
-    // Check if we have enough data points for the required duration
-    const requiredPoints = Math.ceil(durationHours);
-    if (i + requiredPoints >= times.length) break;
-
-    // Check all hours in this window
-    let allSafe = true;
-    for (let j = 0; j < requiredPoints; j++) {
-      const idx = i + j;
-      if (idx >= times.length) {
-        allSafe = false;
-        break;
-      }
-
-      const waveHeight = apiResponse.hourly.wave_height[idx] ?? 0;
-      const windSpeed = convertToKnots(apiResponse.hourly.wind_speed_10m[idx] ?? 0);
-
-      if (waveHeight > maxWaveHeight || windSpeed > maxWindSpeed) {
-        allSafe = false;
-        break;
-      }
-    }
-
-    if (allSafe) {
-      return {
-        starts_at: times[i],
-        duration_hours: durationHours,
-      };
-    }
-  }
-
-  return undefined;
-}
-
-/**
  * Main execute function for port weather check
  * 
  * This function:
  * 1. Validates input parameters using Zod
- * 2. Fetches weather forecasts from Open-Meteo API
- * 3. Evaluates conditions during bunkering window
- * 4. Classifies risk and conditions
- * 5. Optionally finds next good window if current is unsafe
- * 6. Returns comprehensive port weather analysis
+ * 2. Gets WeatherService from ServiceContainer
+ * 3. Checks port weather safety using WeatherService
+ * 4. Formats output for agent consumption
  * 
  * @param input - Port weather check parameters
  * @returns Array of port weather analyses
- * @throws PortWeatherError - If validation fails or API calls fail
+ * @throws PortWeatherError - If validation fails or service calls fail
  */
 export async function checkPortWeather(
   input: PortWeatherInput
 ): Promise<PortWeatherOutput[]> {
-  // Validate input using Zod schema
-  const validatedInput = portWeatherInputSchema.parse(input);
+  try {
+    // Validate input using Zod schema
+    const validatedInput = portWeatherInputSchema.parse(input);
 
-  const { bunker_ports } = validatedInput;
+    const { bunker_ports } = validatedInput;
 
-  // Handle edge case: empty ports (shouldn't happen due to validation)
-  if (bunker_ports.length === 0) {
-    return [];
-  }
-
-  // API call statistics
-  const apiStats = {
-    apiCalls: 0,
-    retries: 0,
-    failures: 0,
-  };
-
-  const batchStartTime = Date.now();
-  console.log(`🌊 [PORT-WEATHER] Processing ${bunker_ports.length} ports`);
-
-  const results: PortWeatherOutput[] = [];
-
-  // Process each port
-  let portNum = 0;
-  for (const port of bunker_ports) {
-    portNum++;
-    const portStart = Date.now();
-    const {
-      port_code,
-      port_name,
-      lat,
-      lon,
-      estimated_arrival,
-      bunkering_duration_hours = 8,
-    } = port;
-
-    try {
-      // Fetch weather forecast
-      const apiResponse = await callOpenMeteoApi(lat, lon, 2, apiStats);
-
-      // Calculate bunkering window
-      const arrivalTime = new Date(estimated_arrival);
-      const endTime = new Date(arrivalTime);
-      endTime.setHours(endTime.getHours() + bunkering_duration_hours);
-
-      // Get weather data for bunkering window
-      const windowWeather = getWeatherForTimeRange(
-        apiResponse,
-        arrivalTime.toISOString(),
-        endTime.toISOString()
-      );
-
-      // If no data in window, use closest available data
-      let weatherData = windowWeather;
-      if (weatherData.length === 0) {
-        // Find closest time point
-        const arrivalTimestamp = arrivalTime.getTime();
-        let closestIdx = 0;
-        let minDiff = Infinity;
-
-        for (let i = 0; i < apiResponse.hourly.time.length; i++) {
-          const timeDate = new Date(apiResponse.hourly.time[i]);
-          const diff = Math.abs(timeDate.getTime() - arrivalTimestamp);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestIdx = i;
-          }
-        }
-
-        weatherData = [
-          {
-            time: apiResponse.hourly.time[closestIdx],
-            wave_height: apiResponse.hourly.wave_height[closestIdx] ?? 0,
-            wind_speed: convertToKnots(apiResponse.hourly.wind_speed_10m[closestIdx] ?? 0),
-          },
-        ];
-      }
-
-      // Calculate statistics
-      const waveHeights = weatherData.map((d) => d.wave_height);
-      const windSpeeds = weatherData.map((d) => d.wind_speed);
-
-      const avgWaveHeight =
-        waveHeights.reduce((sum, h) => sum + h, 0) / waveHeights.length;
-      const maxWaveHeight = Math.max(...waveHeights);
-      const avgWindSpeed =
-        windSpeeds.reduce((sum, s) => sum + s, 0) / windSpeeds.length;
-      const maxWindSpeed = Math.max(...windSpeeds);
-
-      // Classify conditions and risk
-      const conditions = classifyConditions(
-        avgWaveHeight,
-        maxWaveHeight,
-        avgWindSpeed,
-        maxWindSpeed
-      );
-      const risk = classifyRisk(maxWaveHeight, maxWindSpeed);
-
-      // Determine feasibility (both limits must be satisfied)
-      const bunkeringFeasible = maxWaveHeight <= 1.5 && maxWindSpeed <= 25;
-
-      // Generate recommendation
-      let recommendation = '';
-      if (bunkeringFeasible) {
-        if (conditions === 'Excellent') {
-          recommendation = `Excellent conditions for bunkering. Safe to proceed.`;
-        } else if (conditions === 'Good') {
-          recommendation = `Good conditions for bunkering. Safe to proceed.`;
-        } else {
-          recommendation = `Marginal conditions. Bunkering is feasible but monitor conditions closely.`;
-        }
-      } else {
-        recommendation = `Unsafe conditions detected. Bunkering not recommended. Max wave height: ${maxWaveHeight.toFixed(2)}m (limit: 1.5m), Max wind speed: ${maxWindSpeed.toFixed(1)}kt (limit: 25kt).`;
-      }
-
-      // Find next good window if current is unsafe
-      let nextGoodWindow: NextGoodWindow | undefined;
-      if (!bunkeringFeasible) {
-        nextGoodWindow = findNextGoodWindow(
-          apiResponse,
-          estimated_arrival,
-          bunkering_duration_hours
-        );
-        if (nextGoodWindow) {
-          recommendation += ` Next safe window available starting ${new Date(nextGoodWindow.starts_at).toLocaleString()}.`;
-        } else {
-          recommendation += ` No safe window found in next 48 hours.`;
-        }
-      }
-
-      results.push({
-        port_code,
-        port_name,
-        bunkering_feasible: bunkeringFeasible,
-        weather_risk: risk,
-        weather_during_bunkering: {
-          arrival_time: estimated_arrival,
-          bunkering_window_hours: bunkering_duration_hours,
-          avg_wave_height_m: avgWaveHeight,
-          max_wave_height_m: maxWaveHeight,
-          avg_wind_speed_kt: avgWindSpeed,
-          max_wind_speed_kt: maxWindSpeed,
-          conditions,
-        },
-        recommendation,
-        next_good_window: nextGoodWindow,
-      });
-    } catch (error) {
-      // If API call fails, return error result
-      if (error instanceof PortWeatherError) {
-        throw error;
-      }
-
-      // For other errors, return a result indicating failure
-      results.push({
-        port_code,
-        port_name,
-        bunkering_feasible: false,
-        weather_risk: 'High',
-        weather_during_bunkering: {
-          arrival_time: estimated_arrival,
-          bunkering_window_hours: bunkering_duration_hours,
-          avg_wave_height_m: 0,
-          max_wave_height_m: 0,
-          avg_wind_speed_kt: 0,
-          max_wind_speed_kt: 0,
-          conditions: 'Unknown',
-        },
-        recommendation: `Unable to fetch weather data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      });
+    // Handle edge case: empty ports (shouldn't happen due to validation)
+    if (bunker_ports.length === 0) {
+      return [];
     }
-    
-    const portDuration = Date.now() - portStart;
-    console.log(`⏱️ [PORT-WEATHER] Port ${portNum} (${port_code}) completed in ${portDuration}ms`);
+
+    // Get service from container
+    const container = ServiceContainer.getInstance();
+    const weatherService = container.getWeatherService();
+
+    const batchStartTime = Date.now();
+    console.log(`🌊 [PORT-WEATHER] Processing ${bunker_ports.length} ports`);
+
+    const results: PortWeatherOutput[] = [];
+
+    // Process each port
+    for (const port of bunker_ports) {
+      const {
+        port_code,
+        port_name,
+        estimated_arrival,
+        bunkering_duration_hours = 8,
+      } = port;
+
+      try {
+        // Check port weather safety using service
+        const safety = await weatherService.checkPortWeatherSafety({
+          portCode: port_code,
+          date: new Date(estimated_arrival),
+        });
+
+        // Map service output to tool output format
+        const weather = safety.weather;
+        const maxWaveHeight = weather.waveHeight;
+        const maxWindSpeed = weather.windSpeed;
+        const avgWaveHeight = weather.waveHeight; // Service provides single point, use as avg
+        const avgWindSpeed = weather.windSpeed;
+
+        // Classify risk based on service safety rating
+        let risk: 'Low' | 'Medium' | 'High' = 'Low';
+        if (safety.isSafe) {
+          if (maxWaveHeight < 1.2 && maxWindSpeed < 20) {
+            risk = 'Low';
+          } else {
+            risk = 'Medium';
+          }
+        } else {
+          risk = 'High';
+        }
+
+        // Classify conditions
+        let conditions = 'Good';
+        if (!safety.isSafe) {
+          conditions = 'Unsafe';
+        } else if (maxWaveHeight < 0.8 && maxWindSpeed < 15) {
+          conditions = 'Excellent';
+        } else if (maxWaveHeight < 1.2 && maxWindSpeed < 20) {
+          conditions = 'Good';
+        } else {
+          conditions = 'Marginal';
+        }
+
+        results.push({
+          port_code,
+          port_name,
+          bunkering_feasible: safety.isSafe,
+          weather_risk: risk,
+          weather_during_bunkering: {
+            arrival_time: estimated_arrival,
+            bunkering_window_hours: bunkering_duration_hours,
+            avg_wave_height_m: avgWaveHeight,
+            max_wave_height_m: maxWaveHeight,
+            avg_wind_speed_kt: avgWindSpeed,
+            max_wind_speed_kt: maxWindSpeed,
+            conditions,
+          },
+          recommendation: safety.recommendation,
+        });
+      } catch (error) {
+        // For errors, return a result indicating failure
+        results.push({
+          port_code,
+          port_name,
+          bunkering_feasible: false,
+          weather_risk: 'High',
+          weather_during_bunkering: {
+            arrival_time: estimated_arrival,
+            bunkering_window_hours: bunkering_duration_hours,
+            avg_wave_height_m: 0,
+            max_wave_height_m: 0,
+            avg_wind_speed_kt: 0,
+            max_wind_speed_kt: 0,
+            conditions: 'Unknown',
+          },
+          recommendation: `Unable to fetch weather data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        });
+      }
+    }
+
+    const totalTime = Date.now() - batchStartTime;
+    console.log(`⏱️ [PORT-WEATHER] Total port weather fetch time: ${totalTime}ms`);
+
+    return results;
+  } catch (error) {
+    // Handle Zod validation errors
+    if (error instanceof z.ZodError) {
+      throw new PortWeatherError(
+        `Input validation failed: ${error.issues.map((e) => e.message).join(', ')}`,
+        'VALIDATION_ERROR'
+      );
+    }
+
+    // Re-throw PortWeatherError as-is
+    if (error instanceof PortWeatherError) {
+      throw error;
+    }
+
+    // Handle unexpected errors
+    throw new PortWeatherError(
+      `Unexpected error during port weather check: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'UNEXPECTED_ERROR'
+    );
   }
-
-  const totalTime = Date.now() - batchStartTime;
-  console.log(`⏱️ [PORT-WEATHER] Total port weather fetch time: ${totalTime}ms`);
-  console.log(`📊 [PORT-WEATHER] API call statistics: Made ${apiStats.apiCalls} API calls (${apiStats.retries} retried, ${apiStats.failures} failed)`);
-
-  return results;
 }
 
 /**
