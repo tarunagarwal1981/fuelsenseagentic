@@ -27,6 +27,40 @@ requiresAuth: false
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    weather_data:
+      type: array
+      description: "Weather forecast data"
+    vessel_profile:
+      type: object
+      description: "Vessel specifications"
+    base_consumption:
+      type: number
+      description: "Base fuel consumption rate"
+  required:
+    - weather_data
+    - vessel_profile
+    - base_consumption
+
+outputSchema:
+  type: object
+  properties:
+    adjusted_consumption:
+      type: number
+      description: "Weather-adjusted consumption in MT/day"
+    consumption_increase_pct:
+      type: number
+      description: "Percentage increase due to weather"
+    total_voyage_consumption:
+      type: number
+      description: "Total estimated consumption in MT"
+    weather_impact_summary:
+      type: string
+      description: "Summary of weather impact"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

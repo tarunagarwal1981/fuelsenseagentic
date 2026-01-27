@@ -31,6 +31,46 @@ rateLimit:
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    latitude:
+      type: number
+      description: "Latitude coordinate"
+    longitude:
+      type: number
+      description: "Longitude coordinate"
+    start_date:
+      type: string
+      description: "Start date in ISO format"
+    end_date:
+      type: string
+      description: "End date in ISO format (optional)"
+  required:
+    - latitude
+    - longitude
+    - start_date
+
+outputSchema:
+  type: object
+  properties:
+    location:
+      type: object
+      description: "Location coordinates"
+    forecast:
+      type: array
+      description: "Array of weather forecast data points"
+    wave_height_m:
+      type: number
+      description: "Significant wave height in meters"
+    wind_speed_kts:
+      type: number
+      description: "Wind speed in knots"
+    sea_conditions:
+      type: string
+      description: "Overall sea conditions assessment"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

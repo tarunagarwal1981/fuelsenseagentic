@@ -26,6 +26,35 @@ requiresAuth: false
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    route_waypoints:
+      type: array
+      description: "Array of route waypoints"
+    max_deviation_nm:
+      type: number
+      description: "Maximum deviation from route in nautical miles"
+    fuel_types:
+      type: array
+      description: "Required fuel types (VLSFO, LSMGO, etc)"
+  required:
+    - route_waypoints
+
+outputSchema:
+  type: object
+  properties:
+    bunker_ports:
+      type: array
+      description: "Array of bunker port options"
+    ports_count:
+      type: integer
+      description: "Number of ports found"
+    max_deviation_used:
+      type: number
+      description: "Maximum deviation used in search"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

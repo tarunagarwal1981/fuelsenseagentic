@@ -27,6 +27,36 @@ requiresAuth: false
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    port_codes:
+      type: array
+      description: "Array of port LOCODEs to check"
+    check_date:
+      type: string
+      description: "Date to check weather (ISO format)"
+    safety_threshold:
+      type: object
+      description: "Weather safety thresholds"
+  required:
+    - port_codes
+    - check_date
+
+outputSchema:
+  type: object
+  properties:
+    port_weather_status:
+      type: array
+      description: "Weather status for each port"
+    safe_ports:
+      type: array
+      description: "List of ports with safe conditions"
+    unsafe_ports:
+      type: array
+      description: "List of ports with unsafe conditions"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

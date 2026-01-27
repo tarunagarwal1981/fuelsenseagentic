@@ -26,6 +26,37 @@ requiresAuth: false
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    waypoints:
+      type: array
+      description: "Array of route waypoints"
+    vessel_speed:
+      type: number
+      description: "Vessel speed in knots"
+    departure_date:
+      type: string
+      description: "Departure date in ISO format"
+  required:
+    - waypoints
+    - vessel_speed
+    - departure_date
+
+outputSchema:
+  type: object
+  properties:
+    timeline:
+      type: array
+      description: "Array of waypoint timestamps"
+    weather_data:
+      type: array
+      description: "Weather data for each waypoint"
+    total_duration_hours:
+      type: number
+      description: "Total voyage duration"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

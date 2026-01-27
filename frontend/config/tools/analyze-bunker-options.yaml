@@ -27,6 +27,43 @@ requiresAuth: false
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    bunker_ports:
+      type: array
+      description: "Array of candidate bunker ports"
+    fuel_prices:
+      type: array
+      description: "Fuel price data"
+    fuel_quantity:
+      type: number
+      description: "Required fuel quantity in MT"
+    vessel_profile:
+      type: object
+      description: "Vessel specifications"
+  required:
+    - bunker_ports
+    - fuel_prices
+    - fuel_quantity
+
+outputSchema:
+  type: object
+  properties:
+    recommendations:
+      type: array
+      description: "Ranked bunker recommendations"
+    best_option:
+      type: object
+      description: "Top recommended bunker port"
+    cost_comparison:
+      type: object
+      description: "Cost comparison between options"
+    savings_vs_worst:
+      type: number
+      description: "Savings compared to most expensive option"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

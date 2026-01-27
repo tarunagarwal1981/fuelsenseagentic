@@ -32,6 +32,54 @@ rateLimit:
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    origin_port_code:
+      type: string
+      description: "Origin port LOCODE (e.g., SGSIN)"
+    destination_port_code:
+      type: string
+      description: "Destination port LOCODE (e.g., NLRTM)"
+    vessel_speed:
+      type: number
+      description: "Vessel speed in knots (optional)"
+    departure_date:
+      type: string
+      description: "Departure date in ISO format (optional)"
+  required:
+    - origin_port_code
+    - destination_port_code
+
+outputSchema:
+  type: object
+  properties:
+    route_id:
+      type: string
+      description: "Unique route identifier"
+    origin:
+      type: object
+      description: "Origin port details"
+    destination:
+      type: object
+      description: "Destination port details"
+    distance_nm:
+      type: number
+      description: "Total route distance in nautical miles"
+    estimated_hours:
+      type: number
+      description: "Estimated voyage duration in hours"
+    waypoints:
+      type: array
+      description: "Array of waypoint coordinates"
+    eca_zones:
+      type: array
+      description: "ECA zones crossed on route"
+    route_type:
+      type: string
+      description: "Route type (direct, optimized, etc)"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"

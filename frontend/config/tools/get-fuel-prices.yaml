@@ -30,6 +30,36 @@ rateLimit:
 
 enabled: true
 
+inputSchema:
+  type: object
+  properties:
+    port_codes:
+      type: array
+      description: "Array of port LOCODEs"
+    fuel_types:
+      type: array
+      description: "Fuel types to get prices for"
+    date:
+      type: string
+      description: "Date for price query (ISO format)"
+  required:
+    - port_codes
+    - fuel_types
+
+outputSchema:
+  type: object
+  properties:
+    prices:
+      type: array
+      description: "Array of price data by port and fuel type"
+    currency:
+      type: string
+      description: "Currency code (USD)"
+    price_date:
+      type: string
+      description: "Date of prices"
+  required: []
+
 metadata:
   version: "1.0.0"
   lastUpdated: "2025-01-24"
