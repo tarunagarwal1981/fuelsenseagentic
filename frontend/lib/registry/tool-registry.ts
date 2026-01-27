@@ -442,13 +442,18 @@ export class ToolRegistry {
       errors.push(`${context}.properties must be an object`);
     }
 
-    if (!Array.isArray(schema.required)) {
+    // Allow required to be optional (undefined), but if present must be array
+    if (schema.required !== undefined && !Array.isArray(schema.required)) {
       errors.push(`${context}.required must be an array`);
-    } else {
-      // Check that all required fields exist in properties
+    }
+
+    // When iterating, safely handle undefined required
+    if (schema.required && Array.isArray(schema.required)) {
       const propertyKeys = schema.properties ? Object.keys(schema.properties) : [];
       for (const requiredField of schema.required) {
-        if (!propertyKeys.includes(requiredField)) {
+        if (typeof requiredField !== 'string') {
+          errors.push(`${context}.required must contain only strings`);
+        } else if (!propertyKeys.includes(requiredField)) {
           errors.push(`${context}.required field '${requiredField}' not found in properties`);
         }
       }

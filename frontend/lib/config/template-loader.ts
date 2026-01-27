@@ -68,80 +68,103 @@ export class TemplateLoader {
   }
   
   /**
-   * Resolve templates directory with multiple fallback paths
-   * Handles different deployment environments (local dev, Netlify, Vercel)
+   * Resolve templates directory with the following priority:
+   * 1. TEMPLATES_DIR environment variable (if set and exists)
+   * 2. Project root config/response-templates
+   * 3. Frontend config/response-templates
+   * 4. Relative paths from __dirname
+   * 5. Deployed paths (/var/task/...)
    */
   private resolveTemplatesDir(): string {
+    if (process.env.TEMPLATES_DIR) {
+      const envPath = path.resolve(process.env.TEMPLATES_DIR);
+      if (fs.existsSync(envPath)) {
+        console.log(`📁 [TEMPLATE-LOADER] Using env TEMPLATES_DIR: ${envPath}`);
+        return envPath;
+      }
+      console.warn(
+        `⚠️ [TEMPLATE-LOADER] TEMPLATES_DIR set but path doesn't exist: ${envPath}. Falling back to default resolution.`
+      );
+    }
+
     const possiblePaths = [
-      // Local development - running from frontend/
       path.join(process.cwd(), 'config', 'response-templates'),
-      // Local development - running from project root
       path.join(process.cwd(), 'frontend', 'config', 'response-templates'),
-      // Relative to this file (works in bundled environments)
       path.join(__dirname, '..', '..', '..', 'config', 'response-templates'),
       path.join(__dirname, '..', '..', 'config', 'response-templates'),
-      // Netlify serverless functions
+      path.join(__dirname, '..', 'config', 'response-templates'),
       '/var/task/config/response-templates',
       '/var/task/frontend/config/response-templates',
-      // Vercel serverless
       path.join(process.cwd(), '.next', 'server', 'config', 'response-templates'),
     ];
-    
+
     for (const p of possiblePaths) {
       try {
         if (fs.existsSync(p)) {
-          console.log(`✅ [TEMPLATE-LOADER] Found templates at: ${p}`);
+          console.log(`✅ [TEMPLATE-LOADER] Resolved templates directory: ${p}`);
+          console.log(`📁 [TEMPLATE-LOADER] Working directory: ${process.cwd()}`);
           return p;
         }
       } catch {
         // Path check failed, try next
       }
     }
-    
-    // Log all attempted paths for debugging
-    console.warn(`⚠️ [TEMPLATE-LOADER] Templates not found in any expected location:`);
-    possiblePaths.forEach(p => console.warn(`   - ${p}`));
-    
-    // Fallback to default (will fail gracefully if not found)
-    return path.join(process.cwd(), 'config', 'response-templates');
+
+    console.error('[TEMPLATE-LOADER] No templates directory found!');
+    console.error('[TEMPLATE-LOADER] Attempted paths:');
+    possiblePaths.forEach((p, i) => console.error(`  ${i + 1}. ${p}`));
+    console.error('[TEMPLATE-LOADER] Set TEMPLATES_DIR env var to override.');
+    throw new Error(
+      'Templates directory not found. Set TEMPLATES_DIR environment variable or ensure config/response-templates exists in project root.'
+    );
   }
   
   /**
-   * Load a template by query type
+   * Load a template by query type.
+   * Falls back to default.yaml when the requested template is not found.
    */
   public loadTemplate(queryType: string): ResponseTemplate | null {
-    // Check cache
     if (this.cache.has(queryType)) {
       console.log(`✅ [TEMPLATE-LOADER] Cache hit: ${queryType}`);
       return this.cache.get(queryType)!;
     }
-    
-    // Load from file
+
     const templatePath = path.join(this.templatesDir, `${queryType}.yaml`);
-    
+
     if (!fs.existsSync(templatePath)) {
-      console.warn(`⚠️ [TEMPLATE-LOADER] Template not found: ${queryType}`);
+      console.warn(`⚠️ [TEMPLATE-LOADER] Template not found: ${queryType}.yaml`);
+      const defaultPath = path.join(this.templatesDir, 'default.yaml');
+      if (fs.existsSync(defaultPath)) {
+        console.log('[TEMPLATE-LOADER] Using default template as fallback');
+        return this.loadTemplate('default');
+      }
+      console.warn('[TEMPLATE-LOADER] No default template found');
       return null;
     }
-    
+
     try {
       const fileContents = fs.readFileSync(templatePath, 'utf8');
       const template = yaml.load(fileContents) as ResponseTemplate;
-      
-      // Validate
+
+      if (!template?.template) {
+        throw new Error(`Invalid template format in ${queryType}.yaml: missing 'template' key`);
+      }
+
       this.validateTemplate(template, queryType);
-      
-      // Cache
       this.cache.set(queryType, template);
-      
+
       console.log(`✅ [TEMPLATE-LOADER] Loaded: ${template.template.name} v${template.template.version}`);
       console.log(`   Sections: ${template.template.sections.length}`);
       console.log(`   Rules: ${template.template.business_rules?.length || 0}`);
-      
+
       return template;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`❌ [TEMPLATE-LOADER] Error loading ${queryType}:`, message);
+      console.error(`❌ [TEMPLATE-LOADER] Error loading '${queryType}':`, message);
+      if (queryType !== 'default') {
+        console.log('[TEMPLATE-LOADER] Attempting default template as ultimate fallback');
+        return this.loadTemplate('default');
+      }
       return null;
     }
   }

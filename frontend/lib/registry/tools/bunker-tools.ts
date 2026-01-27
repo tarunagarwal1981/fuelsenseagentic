@@ -99,6 +99,7 @@ export const findBunkerPortsTool: ToolDefinition = {
       max_deviation_nm: { type: 'number' },
       total_ports_found: { type: 'number' },
     },
+    required: [],
   },
   
   // Operational Metadata
@@ -198,6 +199,7 @@ export const getFuelPricesTool: ToolDefinition = {
         description: 'Object mapping port codes to price arrays',
       },
     },
+    required: [],
   },
   
   // Operational Metadata
@@ -308,6 +310,7 @@ export const analyzeBunkerOptionsTool: ToolDefinition = {
       max_savings_usd: { type: 'number' },
       analysis_summary: { type: 'string' },
     },
+    required: [],
   },
   
   // Operational Metadata

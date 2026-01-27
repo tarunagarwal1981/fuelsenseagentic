@@ -27,29 +27,75 @@ import { SeaRouteAPIClient } from '@/lib/services/sea-route-api-client';
 import { OpenMeteoAPIClient } from '@/lib/services/open-meteo-api-client';
 
 /**
- * Mock Supabase client for testing when Supabase is not configured
- * Throws errors when used, causing repositories to fall back to JSON
+ * Creates a mock Supabase query builder that supports all common filter methods.
+ * This mock does NOT filter data – it always returns { data: null, error }.
+ * Repositories using this mock should catch the error and fall back to JSON data.
+ */
+function createMockQuery(): Record<string, unknown> & { then: (resolve: (v: { data: null; error: { message: string; code?: string } }) => unknown) => Promise<unknown> } {
+  const mockError = {
+    message: 'Mock Supabase client - database not configured. Use JSON fallback.',
+    code: 'MOCK_CLIENT',
+    hint: 'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to use database',
+  };
+
+  const mockQuery = {
+    eq: (_: string, __: unknown) => mockQuery,
+    neq: (_: string, __: unknown) => mockQuery,
+    gt: (_: string, __: unknown) => mockQuery,
+    gte: (_: string, __: unknown) => mockQuery,
+    lt: (_: string, __: unknown) => mockQuery,
+    lte: (_: string, __: unknown) => mockQuery,
+    like: (_: string, __: string) => mockQuery,
+    ilike: (_: string, __: string) => mockQuery,
+    in: (_: string, __: unknown[]) => mockQuery,
+    is: (_: string, __: null) => mockQuery,
+    not: (_: string, __op: string, __: unknown) => mockQuery,
+    or: (_: string) => mockQuery,
+    filter: (_: string, __op: string, __: unknown) => mockQuery,
+    match: (_: Record<string, unknown>) => mockQuery,
+    order: (_: string, __?: { ascending?: boolean }) => mockQuery,
+    limit: (_: number) => mockQuery,
+    range: (_: number, __: number) => mockQuery,
+    select: (_?: string) => mockQuery,
+    single: () => Promise.resolve({ data: null, error: mockError }),
+    maybeSingle: () => Promise.resolve({ data: null, error: mockError }),
+    then: (resolve: (value: { data: null; error: typeof mockError }) => unknown) =>
+      Promise.resolve({ data: null, error: mockError }).then(resolve),
+  };
+
+  return mockQuery as Record<string, unknown> & { then: (resolve: (v: { data: null; error: { message: string; code?: string } }) => unknown) => Promise<unknown> };
+}
+
+/**
+ * Mock Supabase client for when Supabase is not configured.
+ * Repositories will fall back to JSON data. Logs a warning when instantiated.
  */
 class MockSupabaseClient {
-  from(_table: string) {
-    const createMockQuery = () => ({
-      eq: (_column: string, _value: any) => createMockQuery(),
-      in: (_column: string, _values: any[]) => createMockQuery(),
-      order: (_column: string, _options?: any) => createMockQuery(),
-      limit: (_limit: number) => Promise.resolve({ data: null, error: { message: 'Mock client - use JSON fallback' } }),
-      single: () => Promise.resolve({ data: null, error: { message: 'Mock client - use JSON fallback' } }),
-    });
+  private mockError = {
+    message: 'Mock Supabase client - database not configured',
+    code: 'MOCK_CLIENT',
+  };
 
+  constructor() {
+    console.warn(
+      '[SERVICE-CONTAINER] Supabase not configured - using MockSupabaseClient. ' +
+        'Repositories will fall back to JSON data. ' +
+        'Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to use database.'
+    );
+  }
+
+  from(_table: string) {
     return {
       select: (_columns?: string) => createMockQuery(),
-      insert: (_data: any) => ({
-        select: (_columns?: string) => ({
-          single: () => Promise.resolve({ data: null, error: { message: 'Mock client - use JSON fallback' } }),
-        }),
-      }),
-      update: (_data: any) => createMockQuery(),
+      insert: (_data: unknown) => Promise.resolve({ data: null, error: this.mockError }),
+      update: (_data: unknown) => createMockQuery(),
       delete: () => createMockQuery(),
+      upsert: (_data: unknown) => Promise.resolve({ data: null, error: this.mockError }),
     };
+  }
+
+  rpc(_fn: string, _params?: unknown) {
+    return Promise.resolve({ data: null, error: this.mockError });
   }
 }
 

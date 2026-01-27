@@ -1,0 +1,17 @@
+# Fallback template when a query-specific template is not found.
+template:
+  query_type: "default"
+  name: "Default Response Template"
+  version: "1.0.0"
+  description: "Fallback template for all query types"
+
+  sections:
+    - id: "response_summary"
+      title: "Summary"
+      tier: 1
+      priority: 1
+      visibility: "always"
+      max_words: 200
+
+      content_source:
+        state_path: "final_recommendation"

@@ -86,6 +86,7 @@ export const fetchMarineWeatherTool: ToolDefinition = {
         description: 'Array of weather forecasts',
       },
     },
+    required: [],
   },
   
   // Operational Metadata
@@ -210,6 +211,7 @@ export const calculateWeatherConsumptionTool: ToolDefinition = {
       },
       voyage_weather_summary: { type: 'object' },
     },
+    required: [],
   },
   
   // Operational Metadata
@@ -338,6 +340,7 @@ export const checkBunkerPortWeatherTool: ToolDefinition = {
         description: 'Array of port weather assessments',
       },
     },
+    required: [],
   },
   
   // Operational Metadata

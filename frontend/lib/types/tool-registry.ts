@@ -111,6 +111,7 @@ export interface ToolDefinition {
   outputSchema: {
     type: 'object';
     properties: Record<string, JSONSchema>;
+    required?: string[];
   };
   
   // Operational Metadata

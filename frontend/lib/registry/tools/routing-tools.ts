@@ -79,6 +79,7 @@ export const calculateRouteTool: ToolDefinition = {
         description: 'Destination port code',
       },
     },
+    required: [],
   },
   
   // Operational Metadata
@@ -182,6 +183,7 @@ export const calculateWeatherTimelineTool: ToolDefinition = {
         description: 'Array of positions with coordinates, datetime, cumulative distance, and segment index',
       },
     },
+    required: [],
   },
   
   // Operational Metadata

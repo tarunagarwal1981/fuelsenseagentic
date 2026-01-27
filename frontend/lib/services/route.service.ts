@@ -21,6 +21,69 @@ import * as turf from '@turf/turf';
 
 export type { RouteData } from './types';
 
+/**
+ * Cached route data contract.
+ * After Redis/JSON deserialization, dates are ISO 8601 strings.
+ */
+type CachedRouteData = Omit<RouteData, 'timeline' | 'ecaSegments'> & {
+  timeline: Array<Omit<TimelineEntry, 'eta'> & { eta: string | Date }>;
+  ecaSegments: Array<
+    Omit<ECASegment, 'startTime' | 'endTime'> & {
+      startTime: string | Date;
+      endTime: string | Date;
+    }
+  >;
+};
+
+/**
+ * Type guard for values that may be Date or ISO string.
+ */
+export function isDateLike(value: unknown): value is Date | string {
+  return value instanceof Date || typeof value === 'string';
+}
+
+/**
+ * Normalizes a value that might be a Date or ISO string into a Date object.
+ * Redis/JSON serialization converts Date objects to strings; this restores them.
+ *
+ * Edge cases: null/undefined/empty → new Date(0) with warn; invalid string → new Date(0) with warn.
+ */
+export function normalizeDate(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (value == null || value === '') {
+    console.warn('[RouteService] Encountered null/empty date in cache, using epoch');
+    return new Date(0);
+  }
+  if (!isDateLike(value)) {
+    console.warn('[RouteService] Invalid date type in cache:', typeof value);
+    return new Date(0);
+  }
+  const d = new Date(value);
+  if (isNaN(d.getTime())) {
+    console.warn('[RouteService] Invalid date string in cache:', value);
+    return new Date(0);
+  }
+  return d;
+}
+
+/**
+ * Normalizes all date fields in cached route data to Date instances.
+ */
+export function normalizeCachedRoute(cached: CachedRouteData): RouteData {
+  return {
+    ...cached,
+    timeline: (cached.timeline ?? []).map((entry) => ({
+      ...entry,
+      eta: normalizeDate(entry.eta),
+    })),
+    ecaSegments: (cached.ecaSegments ?? []).map((seg) => ({
+      ...seg,
+      startTime: normalizeDate(seg.startTime),
+      endTime: normalizeDate(seg.endTime),
+    })),
+  };
+}
+
 export class RouteService {
   constructor(
     private portRepo: PortRepository,
@@ -42,8 +105,9 @@ export class RouteService {
 
     // Try cache
     try {
-      const cached = await this.cache.get<RouteData>(cacheKey);
-      if (cached) {
+      const cachedRaw = await this.cache.get<CachedRouteData>(cacheKey);
+      if (cachedRaw) {
+        const cached = normalizeCachedRoute(cachedRaw);
         // Adjust timeline dates based on new departure date
         const timeDiff = params.departureDate.getTime() - cached.timeline[0]?.eta.getTime();
         if (timeDiff !== 0) {
