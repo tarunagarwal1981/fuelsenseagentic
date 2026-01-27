@@ -14,7 +14,7 @@
  */
 
 import { z } from 'zod';
-import { Coordinates, Port } from '@/lib/types';
+import { Coordinates, Port, FuelType } from '@/lib/types';
 import { ServiceContainer } from '@/lib/repositories/service-container';
 import type { Port as RepositoryPort } from '@/lib/repositories/types';
 
@@ -153,7 +153,7 @@ async function loadPortsData(): Promise<Port[]> {
         lat: repoPort.coordinates[0],
         lon: repoPort.coordinates[1],
       },
-      fuel_capabilities: repoPort.fuelsAvailable,
+      fuel_capabilities: repoPort.fuelsAvailable as FuelType[],
     }));
     
     return ports;

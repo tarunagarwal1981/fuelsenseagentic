@@ -1,5 +1,6 @@
 // app/api/chat-langgraph/route.ts
-export const runtime = "edge";
+// Node.js runtime required: LangGraph tools use ServiceContainer/repositories (fs, path, process.cwd)
+export const runtime = "nodejs";
 
 import { app } from "@/lib/langgraph/graph";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
