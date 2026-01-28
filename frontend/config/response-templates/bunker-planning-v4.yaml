@@ -10,6 +10,7 @@ template:
     # =========================================================
     
     - id: "route_map"
+      title: "Route Map"
       tier: 0
       visibility: "always"
       priority: 0

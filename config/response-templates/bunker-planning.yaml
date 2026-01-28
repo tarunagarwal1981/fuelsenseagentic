@@ -46,7 +46,7 @@ template:
     # Query type specific responses
     - id: "informational_response"
       tier: 1
-      title: ""
+      title: "Bunker Planning Summary"
       visibility: "conditional"
       priority: 1
       condition: "synthesized_insights.query_type === 'informational'"
@@ -58,7 +58,7 @@ template:
     
     - id: "executive_decision"
       tier: 1
-      title: ""
+      title: "Executive Decision"
       visibility: "conditional"
       priority: 1
       condition: "synthesized_insights.query_type === 'decision-required'"
@@ -70,7 +70,7 @@ template:
     
     - id: "validation_result"
       tier: 1
-      title: ""
+      title: "Validation Result"
       visibility: "conditional"
       priority: 1
       condition: "synthesized_insights.query_type === 'validation'"
@@ -82,7 +82,7 @@ template:
     
     - id: "comparison_result"
       tier: 1
-      title: ""
+      title: "Comparison Result"
       visibility: "conditional"
       priority: 1
       condition: "synthesized_insights.query_type === 'comparison'"
@@ -95,7 +95,7 @@ template:
     # Fallback for when synthesis didn't run
     - id: "basic_recommendation_fallback"
       tier: 1
-      title: ""
+      title: "Bunker Recommendation"
       visibility: "conditional"
       priority: 99
       condition: "!synthesized_insights && bunker_analysis"
