@@ -45,9 +45,9 @@ export class SeaRouteAPIClient {
       speed: (params.speed || 14).toString(),
     };
 
-    // Handle origin
+    // Handle origin (API expects 'from' for port code, 'origin_lat/origin_lon' for coordinates)
     if (typeof params.from === 'string') {
-      queryParams.origin = params.from;
+      queryParams.from = params.from;
       console.log('🌐 [SEAROUTE-API] Origin: Port code:', params.from);
     } else {
       const [fromLat, fromLon] = params.from;
@@ -69,9 +69,9 @@ export class SeaRouteAPIClient {
       console.log('🌐 [SEAROUTE-API] Origin: Coordinates [lat,lon]:', params.from);
     }
 
-    // Handle destination
+    // Handle destination (API expects 'to' for port code, 'dest_lat/dest_lon' for coordinates)
     if (typeof params.to === 'string') {
-      queryParams.destination = params.to;
+      queryParams.to = params.to;
       console.log('🌐 [SEAROUTE-API] Destination: Port code:', params.to);
     } else {
       const [toLat, toLon] = params.to;
