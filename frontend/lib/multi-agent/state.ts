@@ -930,6 +930,13 @@ export const MultiAgentStateAnnotation = Annotation.Root({
         why_surfaced: string[];
         why_hidden: string[];
       };
+      /** Query classifier result for template selection (set by synthesis engine) */
+      classification_result?: {
+        queryType: string;
+        confidence: number;
+        method: string;
+        reasoning: string;
+      };
     };
   } | null>({
     reducer: (_, value) => value ?? null,

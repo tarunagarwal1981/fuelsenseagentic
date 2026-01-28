@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { Coordinates } from '@/lib/types';
 import { ServiceContainer } from '@/lib/repositories/service-container';
 import { PortLogger } from '@/lib/utils/debug-logger';
+import { haversineDistance } from '@/lib/utils/coordinate-validator';
 
 /**
  * Input parameters for route calculation
@@ -139,7 +140,57 @@ export async function calculateRoute(
       speed: vessel_speed_knots,
       departureDate: departure_date ? new Date(departure_date) : new Date()
     });
-    
+
+    // ===== POST-CALCULATION VALIDATION =====
+    console.log('🔍 [ROUTE-WORKFLOW] Validating calculated route...');
+
+    const warnings: string[] = [];
+
+    const originCoords = {
+      lat: routeData.origin.coordinates.lat,
+      lon: routeData.origin.coordinates.lon,
+    };
+    const destCoords = {
+      lat: routeData.destination.coordinates.lat,
+      lon: routeData.destination.coordinates.lon,
+    };
+
+    const straightLineDistance = haversineDistance(originCoords, destCoords);
+    const routeDistance = routeData.totalDistanceNm;
+    const distanceRatio = straightLineDistance > 0 ? routeDistance / straightLineDistance : 0;
+
+    console.log('   Straight-line distance:', straightLineDistance.toFixed(0), 'nm');
+    console.log('   Route distance:', routeDistance.toFixed(0), 'nm');
+    console.log('   Distance ratio:', distanceRatio.toFixed(2), 'x');
+
+    if (distanceRatio < 1.0 && straightLineDistance > 0) {
+      warnings.push('Route distance is less than straight-line distance - impossible!');
+    } else if (distanceRatio > 3.5) {
+      warnings.push(
+        `Route distance is ${distanceRatio.toFixed(2)}x straight-line distance - unusually long. ` +
+          'This may indicate wrong port identification.'
+      );
+    }
+
+    const waypointCount = routeData.waypoints?.length ?? 0;
+    console.log('   Waypoints:', waypointCount);
+
+    if (waypointCount === 0) {
+      warnings.push('Route has no waypoints - route calculation may have failed');
+    } else if (waypointCount < 5) {
+      warnings.push('Route has very few waypoints - may be incomplete');
+    }
+
+    if (routeData.totalDistanceNm === 0) {
+      warnings.push('Route distance is zero - calculation failed');
+    }
+
+    if (warnings.length > 0) {
+      console.warn('⚠️ [ROUTE-WORKFLOW] Post-calculation validation warnings:', warnings);
+    } else {
+      console.log('✅ [ROUTE-WORKFLOW] Route validation passed - no issues detected');
+    }
+
     // Convert RouteData waypoints ([lat, lon]) to Coordinates format ({lat, lon})
     const waypoints: Coordinates[] = routeData.waypoints.map((wp) => ({
       lat: wp.coordinates[0],

@@ -21,7 +21,7 @@ import * as turf from '@turf/turf';
 import {
   validateCoordinates,
   arrayToObject,
-  logCoordConversion,
+  haversineDistance,
 } from '@/lib/utils/coordinate-validator';
 
 export type { RouteData } from './types';
@@ -182,6 +182,48 @@ export class RouteService {
       apiResponse.distance
     );
 
+    // Validate waypoints are near origin and destination
+    if (waypoints.length > 0) {
+      const firstWp = waypoints[0];
+      const lastWp = waypoints[waypoints.length - 1];
+
+      const firstWpCoords = arrayToObject(firstWp.coordinates);
+      const distFromOrigin = haversineDistance(firstWpCoords, originCoords);
+
+      console.log('🔍 [ROUTE-SERVICE] Waypoint validation:');
+      console.log('   Origin port:', originPort.code, originCoords);
+      console.log('   First waypoint:', firstWpCoords);
+      console.log('   Distance from origin:', distFromOrigin.toFixed(2), 'nm');
+
+      if (distFromOrigin > 100) {
+        console.error('❌ [ROUTE-SERVICE] First waypoint too far from origin!');
+        console.error('   Distance:', distFromOrigin.toFixed(2), 'nm');
+        console.error('   Expected: < 100 nm');
+        throw new Error(
+          `Route validation failed: First waypoint is ${distFromOrigin.toFixed(0)}nm ` +
+            `from origin port ${originPort.code}. Expected < 100nm. ` +
+            `This indicates routing error or wrong port coordinates.`
+        );
+      }
+
+      const lastWpCoords = arrayToObject(lastWp.coordinates);
+      const distFromDest = haversineDistance(lastWpCoords, destCoords);
+
+      console.log('   Destination port:', destPort.code, destCoords);
+      console.log('   Last waypoint:', lastWpCoords);
+      console.log('   Distance from destination:', distFromDest.toFixed(2), 'nm');
+
+      if (distFromDest > 100) {
+        console.error('❌ [ROUTE-SERVICE] Last waypoint too far from destination!');
+        throw new Error(
+          `Route validation failed: Last waypoint is ${distFromDest.toFixed(0)}nm ` +
+            `from destination port ${destPort.code}.`
+        );
+      }
+
+      console.log('✅ [ROUTE-SERVICE] Waypoint validation passed');
+    }
+
     // Enhance with ECA zones
     const enhancedWaypoints = await this.detectECAZones(waypoints);
 
@@ -250,14 +292,33 @@ export class RouteService {
 
     for (let i = 0; i < geometry.length; i++) {
       const [lon, lat] = geometry[i];
+
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+        console.error('❌ [ROUTE-SERVICE] Invalid coordinates in geometry!');
+        console.error('   Index:', i);
+        console.error('   Raw geometry [lon, lat]:', geometry[i]);
+        console.error('   Extracted lat:', lat, 'lon:', lon);
+        throw new Error(
+          `Invalid coordinates in API geometry at waypoint ${i}: ` +
+            `lat=${lat}, lon=${lon}. Valid ranges: lat [-90,90], lon [-180,180]`
+        );
+      }
+
+      if (i === 0 && Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001) {
+        console.error('❌ [ROUTE-SERVICE] First waypoint is at (0, 0)!');
+        console.error('   Raw API geometry:', geometry[0]);
+        console.error('   This indicates wrong coordinates were sent to API');
+        throw new Error(
+          'Route calculation failed: First waypoint is at (0, 0). ' +
+            'This indicates port coordinates are missing or incorrect.'
+        );
+      }
+
       const coords: [number, number] = [lat, lon];
 
-      // Log conversion at boundaries for debugging
       if (i === 0 || i === geometry.length - 1) {
-        logCoordConversion(
-          `Waypoint ${i}`,
-          { api: geometry[i], note: '[lon, lat]' },
-          coords
+        console.log(
+          `   🔄 Waypoint ${i}: [lon,lat] ${JSON.stringify(geometry[i])} → [lat,lon] ${JSON.stringify(coords)}`
         );
       }
 

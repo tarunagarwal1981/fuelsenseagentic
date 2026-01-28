@@ -18,6 +18,7 @@
     "diagnose:axiom": "tsx scripts/diagnose-axiom.ts",
     "test:services": "tsx scripts/test-services.ts",
     "test:synthesis": "tsx lib/multi-agent/synthesis/__tests__/synthesis-v3.test.ts",
+    "test:query-classifier": "tsx lib/multi-agent/synthesis/__tests__/query-classifier.test.ts",
     "test:template-formatter": "tsx lib/formatters/__tests__/template-formatter-v4.test.ts",
     "test:components": "tsx components/cards/__tests__/cards.test.ts",
     "test:synthesis-queries": "tsx tests/synthesis-test-queries.ts",

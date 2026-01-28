@@ -1,14 +1,19 @@
 /**
- * Coordinate Validation and Conversion Utilities
+ * Coordinate Validation and Conversion Utilities for Maritime Routing
  *
- * Purpose: Ensure consistent coordinate handling across the application
- * Standard: Use [lat, lon] format everywhere except GeoJSON which uses [lon, lat]
+ * Ensures consistent coordinate handling and catches common errors (e.g. route
+ * waypoints at (0, 0) instead of correct port location). Use at multiple
+ * layers to validate coordinates.
  *
- * Critical Rules:
- * 1. Internal format: [lat, lon] array or {lat, lon} object
- * 2. GeoJSON format: [lon, lat] array (external APIs like SeaRoute)
- * 3. Always validate before using coordinates
- * 4. Auto-detect and warn about wrong order
+ * Maritime coordinates: latitude -90 to 90, longitude -180 to 180.
+ *
+ * Conventions:
+ * - Internal format: [lat, lon] array or { lat, lon } object
+ * - GeoJSON format: [lon, lat] array (e.g. SeaRoute API, GeoJSON specs)
+ *
+ * Error handling: throws descriptive errors for invalid inputs; logs warnings
+ * for suspicious values (e.g. near 0,0). Never returns undefined for
+ * conversion functions—returns a valid result or throws.
  */
 
 export interface CoordinateObject {
@@ -16,140 +21,189 @@ export interface CoordinateObject {
   lon: number;
 }
 
-export type CoordinateArray = [number, number]; // [lat, lon]
-export type GeoJSONCoordinate = [number, number]; // [lon, lat]
+/** [lat, lon] — internal and Leaflet convention */
+export type CoordinateArray = [number, number];
+
+/** [lon, lat] — GeoJSON and many external APIs */
+export type GeoJSONCoordinate = [number, number];
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+export const COORDINATE_FORMATS = {
+  INTERNAL: '[lat, lon] array or {lat, lon} object',
+  GEOJSON: '[lon, lat] array',
+  DISPLAY: 'latitude°N/S, longitude°E/W (e.g. 25.2532°N, 55.2769°E)',
+} as const;
+
+export const COORDINATE_RANGES = {
+  LATITUDE: { min: -90, max: 90, unit: 'degrees' },
+  LONGITUDE: { min: -180, max: 180, unit: 'degrees' },
+} as const;
+
+const EARTH_RADIUS_NM = 3440.065;
+const NEAR_ZERO_THRESHOLD = 0.01;
+
+// -----------------------------------------------------------------------------
+// Core validation
+// -----------------------------------------------------------------------------
 
 /**
- * Validate coordinates are in valid range
- * Latitude: -90 to 90
- * Longitude: -180 to 180
+ * Validates maritime coordinates (lat -90..90, lon -180..180).
+ * Logs specific issues and warns when coordinates are suspicious (e.g. near 0,0).
+ *
+ * @param coords - { lat, lon } object
+ * @returns true if valid; false if invalid (and logs errors)
  */
 export function validateCoordinates(coords: CoordinateObject): boolean {
   const { lat, lon } = coords;
 
   if (typeof lat !== 'number' || typeof lon !== 'number') {
-    console.error('[COORD-VALIDATE] Invalid coordinate types:', { lat: typeof lat, lon: typeof lon });
+    console.error('[COORD-VALIDATE] ❌ Invalid coordinate types:', {
+      lat: typeof lat,
+      lon: typeof lon,
+      lat_value: lat,
+      lon_value: lon,
+    });
     return false;
   }
 
   if (isNaN(lat) || isNaN(lon)) {
-    console.error('[COORD-VALIDATE] NaN detected in coordinates:', { lat, lon });
+    console.error('[COORD-VALIDATE] ❌ NaN in coordinates:', { lat, lon });
     return false;
   }
 
-  const valid = lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  const latInRange = lat >= -90 && lat <= 90;
+  const lonInRange = lon >= -180 && lon <= 180;
 
-  if (!valid) {
-    console.error('[COORD-VALIDATE] Coordinates out of range:', {
+  if (!latInRange || !lonInRange) {
+    console.error('[COORD-VALIDATE] ❌ Coordinates out of range:', {
       lat,
       lon,
-      lat_valid: lat >= -90 && lat <= 90,
-      lon_valid: lon >= -180 && lon <= 180,
+      lat_valid: latInRange,
+      lon_valid: lonInRange,
+      expected_lat: '[-90, 90]',
+      expected_lon: '[-180, 180]',
+    });
+    return false;
+  }
+
+  if (Math.abs(lat) < NEAR_ZERO_THRESHOLD && Math.abs(lon) < NEAR_ZERO_THRESHOLD) {
+    console.warn('[COORD-VALIDATE] ⚠️ Suspicious: coordinates very close to (0,0). May indicate missing or default data:', {
+      lat,
+      lon,
     });
   }
 
-  return valid;
+  return true;
 }
 
 /**
- * Convert [lat, lon] array to {lat, lon} object
- */
-export function arrayToObject(coords: CoordinateArray): CoordinateObject {
-  if (!Array.isArray(coords) || coords.length !== 2) {
-    throw new Error(`Invalid coordinate array: ${JSON.stringify(coords)}`);
-  }
-  return {
-    lat: coords[0],
-    lon: coords[1],
-  };
-}
-
-/**
- * Convert {lat, lon} object to [lat, lon] array
- */
-export function objectToArray(coords: CoordinateObject): CoordinateArray {
-  if (typeof coords !== 'object' || !('lat' in coords) || !('lon' in coords)) {
-    throw new Error(`Invalid coordinate object: ${JSON.stringify(coords)}`);
-  }
-  return [coords.lat, coords.lon];
-}
-
-/**
- * Flip [lon, lat] GeoJSON format to [lat, lon] standard format
- * Use this when receiving data from GeoJSON APIs
- */
-export function flipGeoJSON(coords: GeoJSONCoordinate): CoordinateArray {
-  return [coords[1], coords[0]];
-}
-
-/**
- * Flip [lat, lon] standard format to [lon, lat] GeoJSON format
- * Use this when sending data to GeoJSON APIs
- */
-export function toGeoJSON(coords: CoordinateArray): GeoJSONCoordinate {
-  return [coords[1], coords[0]];
-}
-
-/**
- * Detect if coordinates are likely in wrong order
- * Returns true if coordinates appear to be [lon, lat] instead of [lat, lon]
+ * Detects if the array is likely [lon, lat] instead of [lat, lon].
+ * Latitude must be in [-90, 90]; if the first element is outside that range,
+ * it is likely longitude.
  *
- * Logic: Latitude must be between -90 and 90. If the first value is outside
- * this range, it's likely longitude (which can be -180 to 180)
+ * @param coords - [number, number] assumed to be [lat, lon]
+ * @returns true if first element looks like longitude (e.g. |x| > 90)
  */
 export function detectWrongOrder(coords: CoordinateArray): boolean {
   return Math.abs(coords[0]) > 90;
 }
 
 /**
- * Auto-correct coordinates if detected in wrong order
- * Logs warning when correction is made
+ * Auto-corrects coordinate order: if the array looks like [lon, lat],
+ * returns [lat, lon]. Otherwise returns the input unchanged.
+ * Logs a warning when a correction is made.
+ *
+ * @param coords - [number, number] possibly [lon, lat]
+ * @returns [lat, lon] — never undefined
  */
 export function autoCorrect(coords: CoordinateArray): CoordinateArray {
   if (detectWrongOrder(coords)) {
-    console.warn('⚠️ [COORD-AUTO-CORRECT] Detected wrong order, flipping:', coords, '→', [coords[1], coords[0]]);
-    return flipGeoJSON(coords);
+    const corrected: CoordinateArray = [coords[1], coords[0]];
+    console.warn('[COORD-VALIDATE] ⚠️ Auto-corrected wrong order:', {
+      original: coords,
+      corrected,
+    });
+    return corrected;
   }
   return coords;
 }
 
+// -----------------------------------------------------------------------------
+// Conversion
+// -----------------------------------------------------------------------------
+
 /**
- * Validate and log coordinate conversion for debugging
+ * Converts [lat, lon] array to { lat, lon } object.
+ * @throws Error if input is not a length-2 array of numbers
  */
-export function logCoordConversion(
-  source: string,
-  original: unknown,
-  converted: unknown,
-  options: { verbose?: boolean } = {}
-): void {
-  const convertedObj =
-    typeof converted === 'object' && converted !== null && 'lat' in converted && 'lon' in converted
-      ? (converted as CoordinateObject)
-      : Array.isArray(converted) && converted.length >= 2
-        ? arrayToObject(converted as CoordinateArray)
-        : null;
-
-  if (convertedObj === null) {
-    console.log(`🔄 [COORD-CONVERT] ${source}: invalid converted value`, { original, converted });
-    return;
+export function arrayToObject(coords: CoordinateArray): CoordinateObject {
+  if (!Array.isArray(coords) || coords.length !== 2) {
+    throw new Error(
+      `[COORD-VALIDATE] Invalid coordinate array: expected [lat, lon] with length 2, got ${JSON.stringify(coords)}`
+    );
   }
-
-  const valid = validateCoordinates(convertedObj);
-
-  if (options.verbose || !valid) {
-    console.log(`🔄 [COORD-CONVERT] ${source}:`, {
-      original,
-      converted,
-      valid,
-      lat_range: `${convertedObj.lat >= -90 && convertedObj.lat <= 90 ? '✅' : '❌'} ${convertedObj.lat}`,
-      lon_range: `${convertedObj.lon >= -180 && convertedObj.lon <= 180 ? '✅' : '❌'} ${convertedObj.lon}`,
-    });
+  const [lat, lon] = coords;
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    throw new Error(
+      `[COORD-VALIDATE] Invalid coordinate array: elements must be numbers, got [${typeof lat}, ${typeof lon}] values ${JSON.stringify(coords)}`
+    );
   }
+  return { lat, lon };
 }
 
 /**
- * Batch validate array of coordinates
- * Returns indices of invalid coordinates
+ * Converts { lat, lon } object to [lat, lon] array.
+ * @throws Error if input is not an object with lat and lon numbers
+ */
+export function objectToArray(coords: CoordinateObject): CoordinateArray {
+  if (typeof coords !== 'object' || coords == null) {
+    throw new Error(
+      `[COORD-VALIDATE] Invalid coordinate object: expected { lat, lon }, got ${JSON.stringify(coords)}`
+    );
+  }
+  if (!('lat' in coords) || !('lon' in coords)) {
+    throw new Error(
+      `[COORD-VALIDATE] Invalid coordinate object: missing lat or lon, got ${JSON.stringify(coords)}`
+    );
+  }
+  const { lat, lon } = coords;
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    throw new Error(
+      `[COORD-VALIDATE] Invalid coordinate object: lat and lon must be numbers, got ${JSON.stringify(coords)}`
+    );
+  }
+  return [lat, lon];
+}
+
+/**
+ * Converts GeoJSON [lon, lat] to internal [lat, lon].
+ * Use when receiving data from GeoJSON or APIs that return [lon, lat].
+ */
+export function flipGeoJSON(coords: GeoJSONCoordinate): CoordinateArray {
+  return [coords[1], coords[0]];
+}
+
+/**
+ * Converts internal [lat, lon] to GeoJSON [lon, lat].
+ * Use when sending data to GeoJSON APIs.
+ */
+export function toGeoJSON(coords: CoordinateArray): GeoJSONCoordinate {
+  return [coords[1], coords[0]];
+}
+
+// -----------------------------------------------------------------------------
+// Batch validation
+// -----------------------------------------------------------------------------
+
+/**
+ * Validates an array of coordinates and returns indices of invalid entries.
+ *
+ * @param coordinates - Array of [lat, lon] or { lat, lon }
+ * @param logErrors - If true, log each invalid coordinate (default: true)
+ * @returns Indices of invalid coordinates (empty if all valid)
  */
 export function validateBatch(
   coordinates: Array<CoordinateArray | CoordinateObject>,
@@ -158,11 +212,20 @@ export function validateBatch(
   const invalidIndices: number[] = [];
 
   coordinates.forEach((coord, index) => {
-    const coordObj = Array.isArray(coord) ? arrayToObject(coord) : coord;
-    if (!validateCoordinates(coordObj)) {
+    let obj: CoordinateObject;
+    try {
+      obj = Array.isArray(coord) ? arrayToObject(coord) : coord;
+    } catch (e) {
       invalidIndices.push(index);
       if (logErrors) {
-        console.error(`❌ [COORD-BATCH] Invalid coordinate at index ${index}:`, coord);
+        console.error('[COORD-VALIDATE] ❌ Invalid coordinate at index', index, ':', coord, (e as Error).message);
+      }
+      return;
+    }
+    if (!validateCoordinates(obj)) {
+      invalidIndices.push(index);
+      if (logErrors) {
+        console.error('[COORD-VALIDATE] ❌ Invalid coordinate at index', index, ':', coord);
       }
     }
   });
@@ -170,8 +233,13 @@ export function validateBatch(
   return invalidIndices;
 }
 
+// -----------------------------------------------------------------------------
+// Utilities
+// -----------------------------------------------------------------------------
+
 /**
- * Format coordinates for display
+ * Formats coordinates for display (e.g. "25.2532°N, 55.2769°E").
+ * Uses N/S for latitude and E/W for longitude based on sign.
  */
 export function formatForDisplay(coords: CoordinateObject): string {
   const latDir = coords.lat >= 0 ? 'N' : 'S';
@@ -180,157 +248,95 @@ export function formatForDisplay(coords: CoordinateObject): string {
 }
 
 /**
- * Calculate distance between two coordinates using Haversine formula
- * Returns distance in nautical miles
+ * Haversine distance between two points in nautical miles.
+ * Uses Earth radius 3440.065 nm.
+ *
+ * @param from - Start { lat, lon }
+ * @param to - End { lat, lon }
+ * @returns Distance in nautical miles (always >= 0)
  */
 export function haversineDistance(from: CoordinateObject, to: CoordinateObject): number {
-  const R = 3440.065; // Earth's radius in nautical miles
-
   const lat1Rad = (from.lat * Math.PI) / 180;
   const lat2Rad = (to.lat * Math.PI) / 180;
   const deltaLatRad = ((to.lat - from.lat) * Math.PI) / 180;
   const deltaLonRad = ((to.lon - from.lon) * Math.PI) / 180;
 
   const a =
-    Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
-    Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(deltaLonRad / 2) * Math.sin(deltaLonRad / 2);
-
+    Math.sin(deltaLatRad / 2) ** 2 +
+    Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(deltaLonRad / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
 
-  return distance;
+  return EARTH_RADIUS_NM * c;
 }
 
-/**
- * Check if coordinate appears to be on land (rough check)
- * This is a very rough heuristic - not 100% accurate
- */
-export function appearsOnLand(coords: CoordinateObject): boolean {
-  const { lat, lon } = coords;
-
-  if (lat > 0 && lat < 70 && lon > -80 && lon < -10) {
-    return false; // Likely Atlantic
-  }
-
-  if (lat > -60 && lat < 60 && ((lon > 100 && lon < 180) || (lon > -180 && lon < -100))) {
-    return false; // Likely Pacific
-  }
-
-  if (lat > -60 && lat < 30 && lon > 30 && lon < 120) {
-    return false; // Likely Indian Ocean
-  }
-
-  return true; // Assume land
-}
+// -----------------------------------------------------------------------------
+// Logging
+// -----------------------------------------------------------------------------
 
 /**
- * Validate port coordinates make sense for maritime routing
- * Ports should be on coastlines (near water)
+ * Logs a coordinate conversion for debugging (before/after and validation).
+ *
+ * @param source - Label for the conversion (e.g. "Waypoint 0")
+ * @param original - Original value (any shape)
+ * @param converted - Converted value (object with lat/lon or [lat, lon])
+ * @param options - { verbose: true } to always log; otherwise logs only when invalid
  */
-export function validatePortLocation(
-  coords: CoordinateObject,
-  portName: string
-): { valid: boolean; warnings: string[] } {
-  const warnings: string[] = [];
+export function logCoordConversion(
+  source: string,
+  original: unknown,
+  converted: unknown,
+  options: { verbose?: boolean } = {}
+): void {
+  let convertedObj: CoordinateObject | null = null;
 
-  if (!validateCoordinates(coords)) {
-    return { valid: false, warnings: ['Coordinates out of valid range'] };
-  }
-
-  if (appearsOnLand(coords)) {
-    warnings.push(`${portName} coordinates may be inland - verify this is a coastal port`);
-  }
-
-  if (coords.lat === coords.lon) {
-    warnings.push('Latitude and longitude are identical - possible data entry error');
-  }
-
-  if (Math.abs(coords.lat) < 0.01 && Math.abs(coords.lon) < 0.01) {
-    warnings.push('Coordinates very close to 0,0 (Gulf of Guinea) - verify this is correct');
-  }
-
-  return {
-    valid: true,
-    warnings,
-  };
-}
-
-/**
- * Create a test suite for coordinate validation
- * Useful for debugging coordinate issues
- */
-export function runCoordinateTests() {
-  console.log('🧪 [COORD-TEST] Running coordinate validation tests...\n');
-
-  const tests = [
-    {
-      name: 'Valid Singapore Port',
-      coords: { lat: 1.2897, lon: 103.8501 },
-      expected: true,
-    },
-    {
-      name: 'Valid Dubai Port',
-      coords: { lat: 25.2532, lon: 55.2769 },
-      expected: true,
-    },
-    {
-      name: 'Invalid - Latitude > 90',
-      coords: { lat: 100, lon: 50 },
-      expected: false,
-    },
-    {
-      name: 'Invalid - Longitude > 180',
-      coords: { lat: 50, lon: 200 },
-      expected: false,
-    },
-    {
-      name: 'Wrong order - [lon, lat] format',
-      array: [103.8501, 1.2897] as CoordinateArray,
-      shouldDetectWrongOrder: true,
-    },
-    {
-      name: 'Correct order - [lat, lon] format',
-      array: [1.2897, 103.8501] as CoordinateArray,
-      shouldDetectWrongOrder: false,
-    },
-  ];
-
-  let passed = 0;
-  let failed = 0;
-
-  tests.forEach((test) => {
-    if ('coords' in test && test.coords != null) {
-      const result = validateCoordinates(test.coords);
-      if (result === test.expected) {
-        console.log(`✅ ${test.name}`);
-        passed++;
-      } else {
-        console.error(`❌ ${test.name} - Expected ${test.expected}, got ${result}`);
-        failed++;
-      }
-    } else if ('array' in test) {
-      const result = detectWrongOrder(test.array);
-      if (result === test.shouldDetectWrongOrder) {
-        console.log(`✅ ${test.name}`);
-        passed++;
-      } else {
-        console.error(`❌ ${test.name} - Expected ${test.shouldDetectWrongOrder}, got ${result}`);
-        failed++;
-      }
+  if (
+    typeof converted === 'object' &&
+    converted !== null &&
+    'lat' in converted &&
+    'lon' in converted &&
+    typeof (converted as CoordinateObject).lat === 'number' &&
+    typeof (converted as CoordinateObject).lon === 'number'
+  ) {
+    convertedObj = converted as CoordinateObject;
+  } else if (Array.isArray(converted) && converted.length >= 2) {
+    try {
+      convertedObj = arrayToObject(converted as CoordinateArray);
+    } catch {
+      convertedObj = null;
     }
-  });
+  }
 
-  console.log(`\n📊 [COORD-TEST] Results: ${passed} passed, ${failed} failed`);
-  return { passed, failed };
+  if (convertedObj === null) {
+    console.error('[COORD-VALIDATE] ❌ Conversion produced invalid value:', { source, original, converted });
+    return;
+  }
+
+  const valid = validateCoordinates(convertedObj);
+  const status = valid ? '✅ valid' : '❌ invalid';
+
+  if (options.verbose || !valid) {
+    console.log('[COORD-VALIDATE] 🔄 Conversion', source, status, {
+      original,
+      converted: convertedObj,
+      lat_in_range: convertedObj.lat >= -90 && convertedObj.lat <= 90,
+      lon_in_range: convertedObj.lon >= -180 && convertedObj.lon <= 180,
+    });
+  }
 }
 
+// -----------------------------------------------------------------------------
+// Optional helpers (kept for map-viewer and port validation)
+// -----------------------------------------------------------------------------
+
 /**
- * Normalize waypoint-like value to { lat, lon } for map/validation.
+ * Normalizes waypoint-like values to { lat, lon } for map/validation.
  * Handles: Waypoint ({ coordinates: [lat, lon] }), [lat, lon], { lat, lon }.
+ * Returns null if the value cannot be parsed (does not throw).
  */
 export function waypointToCoords(wp: unknown): CoordinateObject | null {
   if (!wp || typeof wp !== 'object') return null;
   const o = wp as Record<string, unknown>;
+
   if (o.coordinates && Array.isArray(o.coordinates) && o.coordinates.length >= 2) {
     const c = o.coordinates as number[];
     if (typeof c[0] === 'number' && typeof c[1] === 'number') {
@@ -345,14 +351,3 @@ export function waypointToCoords(wp: unknown): CoordinateObject | null {
   }
   return null;
 }
-
-export const COORDINATE_FORMATS = {
-  INTERNAL: '[lat, lon] array or {lat, lon} object',
-  GEOJSON: '[lon, lat] array',
-  DISPLAY: 'latitude°N/S, longitude°E/W',
-} as const;
-
-export const COORDINATE_RANGES = {
-  LATITUDE: { min: -90, max: 90, unit: 'degrees' },
-  LONGITUDE: { min: -180, max: 180, unit: 'degrees' },
-} as const;

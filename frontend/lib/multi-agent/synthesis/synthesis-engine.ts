@@ -12,6 +12,7 @@ import { getSynthesisConfig, type SynthesisConfig } from '../../config/synthesis
 import { buildSynthesisPrompt } from './synthesis-prompts';
 import { isFeatureEnabled } from '../../config/feature-flags';
 import { getSynthesisMetrics } from './synthesis-metrics';
+import { classifyQuery } from './query-classifier';
 
 // ============================================================================
 // Types
@@ -68,7 +69,21 @@ export async function generateSynthesis(
     }
     
     console.log(`✅ [SYNTHESIS] Will synthesize ${shouldRun.agentList!.length} agents: ${shouldRun.agentList!.join(', ')}`);
-    
+
+    // Classify query for template selection (replaces hardcoded bunker_planning)
+    const rawFirstMessage = state.messages?.[0]?.content;
+    const userMessage = typeof rawFirstMessage === 'string'
+      ? rawFirstMessage
+      : (rawFirstMessage != null ? String(rawFirstMessage) : '');
+    const classification = classifyQuery(userMessage, state);
+    console.log('🔍 [QUERY-CLASSIFIER] Classification result:', {
+      queryType: classification.queryType,
+      confidence: classification.confidence,
+      method: classification.method,
+      reasoning: classification.reasoning,
+    });
+    const queryType = classification.queryType;
+
     // Step 2: Build prompt (async - loads v3 prompt with agent outputs embedded)
     const fullPrompt = await buildSynthesisPrompt(state, shouldRun.agentList!);
     
@@ -107,7 +122,7 @@ export async function generateSynthesis(
     // Note: parsedInsights excludes synthesis_metadata (from Omit), so we construct it fresh
     // The LLM response may include partial metadata which we'll use if present
     const rawParsed = JSON.parse(llmResult.response!.trim().replace(/```json\n?/g, '').replace(/```\n?/g, ''));
-    const finalInsights: MultiAgentState['synthesized_insights'] = {
+    const finalInsights: NonNullable<MultiAgentState['synthesized_insights']> = {
       ...parsedInsights,
       synthesis_metadata: {
         agents_analyzed: shouldRun.agentList!,
@@ -118,23 +133,29 @@ export async function generateSynthesis(
           why_surfaced: [],
           why_hidden: [],
         },
+        classification_result: {
+          queryType,
+          confidence: classification.confidence,
+          method: classification.method,
+          reasoning: classification.reasoning,
+        },
       },
     };
-    
+
     const duration = Date.now() - startTime;
     const cost = llmResult.cost_usd || 0;
-    
+
     // Record success metrics
     metrics.recordSuccess(cost, duration);
-    
+
     console.log(`✅ [SYNTHESIS] Completed in ${duration}ms`);
     console.log(`   Query Type: ${finalInsights.query_type}`);
     console.log(`   Strategic Priorities: ${finalInsights.strategic_priorities?.length || 0}`);
     console.log(`   Critical Risks: ${finalInsights.critical_risks?.length || 0}`);
-    
+
     return {
       success: true,
-      synthesized_insights: finalInsights,
+      synthesized_insights: finalInsights as MultiAgentState['synthesized_insights'],
       cost_usd: cost,
       duration_ms: duration,
     };

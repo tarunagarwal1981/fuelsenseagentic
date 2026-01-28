@@ -3922,10 +3922,11 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       console.log('   - Using template-only formatting (no LLM calls)');
       
       // Create minimal synthesis response from existing state data
+      // Plan execution mode: no LLM synthesis, so use execution_plan queryType or fallback
       synthesizedResponse = {
         synthesizedAt: new Date(),
         correlationId: extractCorrelationId(state),
-        queryType: state.execution_plan?.queryType || 'bunker_planning',
+        queryType: state.execution_plan?.queryType ?? 'bunker_planning',
         success: true,
         data: {},
         insights: [],
@@ -4049,8 +4050,11 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         const requestContext = state.request_context || {};
         const stakeholder = templateSelector.detectStakeholder(requestContext);
         const format = templateSelector.detectFormat(requestContext);
-        const queryType = state.execution_plan?.queryType || 'bunker_planning';
-        
+        // Use query classifier result from synthesis when available, else execution_plan, else fallback
+        const queryType = updatedState.synthesized_insights?.synthesis_metadata?.classification_result?.queryType
+          ?? state.execution_plan?.queryType
+          ?? 'bunker_planning';
+
         // Select template
         const templateId = templateSelector.selectTemplate(queryType, stakeholder, format);
         
