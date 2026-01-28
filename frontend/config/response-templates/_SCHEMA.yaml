@@ -1,0 +1,30 @@
+# Response Template Schema Documentation
+# This file is for reference only - not loaded by code
+
+template_schema:
+  query_type: string              # Unique identifier
+  name: string                    # Human-readable name
+  version: string                 # Semantic version
+  description: string             # Optional description
+  
+  sections:
+    - id: string                  # Unique section identifier
+      title: string               # Display title with emoji
+      tier: "1 | 2 | 3"           # 1=always visible, 2/3=expandable
+      priority: number            # Lower = higher priority (1 = first)
+      visibility: "always | expandable | conditional"
+      collapsed: boolean          # Default collapsed state
+      max_words: number           # Optional word limit
+      condition: string           # Optional: when to show section
+      
+      content_source:
+        # Where to get content for this section
+        state_path: string        # Path to MultiAgentState data
+        fallback: string          # What to show if data missing
+  
+  business_rules:
+    - name: string
+      description: string
+      condition: string           # JavaScript-like expression
+      action: "show | hide | move_to_tier_1 | collapse | expand"
+      target: string              # Section ID to act on

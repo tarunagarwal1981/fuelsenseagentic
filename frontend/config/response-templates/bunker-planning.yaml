@@ -1,0 +1,212 @@
+template:
+  query_type: "bunker-planning"
+  name: "F-Pattern Progressive Disclosure"
+  version: "5.0.0"
+  description: "5-second scannable → 30-second actionable → deep-dive optional"
+  
+  # ============================================================================
+  # UX Design Principles Applied:
+  # - F-Pattern Reading (Nielsen Norman Group): Top-left → horizontal → vertical
+  # - Miller's Law: Max 7±2 items per section
+  # - Progressive Disclosure: Essential first, details on demand
+  # - Inverted Pyramid: Most important information first
+  # ============================================================================
+  
+  sections:
+    # ========================================================================
+    # TIER 0: VISUAL CONTEXT (0-2 seconds)
+    # The map provides immediate geographic understanding without reading
+    # ========================================================================
+    
+    - id: "route_map"
+      tier: 0
+      priority: 0
+      visibility: "always"
+      condition: "route_data"
+      
+      content_source:
+        component: "MapViewer"
+        props:
+          route: "route_data"
+          originPort: "origin_port"
+          destinationPort: "destination_port"
+          bunkerPorts: "bunker_ports"
+          ecaZones: "compliance_data.eca_zones"
+      
+      notes: |
+        Map is PRIMARY interface for geographic context.
+        Always visible, never collapsed.
+        User orients within 2 seconds.
+
+    # ========================================================================
+    # TIER 1: THE ANSWER + CRITICAL DECISION (2-5 seconds, always visible)
+    # This is what the user came here to find out - keep it under 80 words
+    # ========================================================================
+    
+    # Query type specific responses
+    - id: "informational_response"
+      tier: 1
+      title: ""
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'informational'"
+      max_words: 80
+      
+      content_source:
+        state_path: "synthesized_insights.response.informational"
+        render_as: "informational_card"
+    
+    - id: "executive_decision"
+      tier: 1
+      title: ""
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'decision-required'"
+      max_words: 80
+      
+      content_source:
+        state_path: "synthesized_insights.response.decision"
+        render_as: "decision_card"
+    
+    - id: "validation_result"
+      tier: 1
+      title: ""
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'validation'"
+      max_words: 80
+      
+      content_source:
+        state_path: "synthesized_insights.response.validation"
+        render_as: "validation_card"
+    
+    - id: "comparison_result"
+      tier: 1
+      title: ""
+      visibility: "conditional"
+      priority: 1
+      condition: "synthesized_insights.query_type === 'comparison'"
+      max_words: 80
+      
+      content_source:
+        state_path: "synthesized_insights.response.comparison"
+        render_as: "comparison_card"
+    
+    # Fallback for when synthesis didn't run
+    - id: "basic_recommendation_fallback"
+      tier: 1
+      title: ""
+      visibility: "conditional"
+      priority: 99
+      condition: "!synthesized_insights && bunker_analysis"
+      
+      content_source:
+        state_path: "bunker_analysis.best_option"
+        render_as: "basic_recommendation"
+
+    # Multi-port bunkering (always visible when required - critical decision)
+    - id: "multi_port_breakdown"
+      tier: 1
+      title: "🚨 Multi-Port Bunkering Required"
+      visibility: "conditional"
+      priority: 4
+      condition: "multi_bunker_plan && multi_bunker_plan.required"
+      max_words: 150
+      
+      content_source:
+        state_path: "multi_bunker_plan"
+        render_as: "port_breakdown_table"
+
+    # ========================================================================
+    # TIER 2: SUPPORTING DETAILS (5-30 seconds, expandable cards)
+    # User decides to dig deeper - provide context for decision making
+    # ========================================================================
+    
+    - id: "action_items"
+      tier: 2
+      title: "📋 Action Items"
+      visibility: "conditional"
+      priority: 10
+      condition: "synthesized_insights.strategic_priorities.length > 0"
+      collapsed: false  # Start expanded - user likely needs this
+      max_items: 3
+      
+      content_source:
+        state_path: "synthesized_insights.strategic_priorities"
+        render_as: "priority_cards"
+    
+    - id: "critical_risks"
+      tier: 2
+      title: "⚠️ Critical Risks"
+      visibility: "conditional"
+      priority: 11
+      condition: "synthesized_insights.critical_risks.length > 0"
+      collapsed: false  # Start expanded - risks are important
+      max_items: 3
+      
+      content_source:
+        state_path: "synthesized_insights.critical_risks"
+        render_as: "risk_alert_cards"
+    
+    - id: "rob_waypoint_tracking"
+      tier: 2
+      title: "⛽ Fuel Tracking"
+      visibility: "conditional"
+      priority: 12
+      condition: "rob_waypoints && rob_waypoints.length > 0"
+      collapsed: true  # Start collapsed - detail level
+      max_items: 5
+      
+      content_source:
+        state_path: "rob_waypoints"
+        render_as: "rob_timeline_table"
+    
+    - id: "weather_impact"
+      tier: 2
+      title: "🌊 Weather Impact"
+      visibility: "conditional"
+      priority: 13
+      condition: "weather_consumption && weather_consumption.consumption_increase_percent > 0"
+      collapsed: true
+      max_words: 100
+      
+      content_source:
+        state_path: "weather_consumption"
+        render_as: "weather_summary"
+
+    # ========================================================================
+    # TIER 3: TECHNICAL DEEP-DIVE (30+ seconds, collapsed by default)
+    # For users who need comprehensive analysis
+    # ========================================================================
+    
+    - id: "eca_compliance_details"
+      tier: 3
+      title: "⚓ ECA Compliance"
+      visibility: "conditional"
+      priority: 20
+      condition: "synthesized_insights.details_to_surface.show_eca_details && compliance_data.eca_zones"
+      collapsed: true
+      max_words: 200
+      
+      content_source:
+        state_path: "compliance_data.eca_zones"
+        render_as: "eca_switching_timeline"
+    
+    - id: "alternative_ports"
+      tier: 3
+      title: "📊 Alternative Ports"
+      visibility: "conditional"
+      priority: 21
+      condition: "synthesized_insights.details_to_surface.show_alternatives && bunker_analysis.recommendations.length > 1"
+      collapsed: true
+      max_items: 3
+      
+      content_source:
+        state_path: "bunker_analysis.recommendations"
+        render_as: "alternative_cards"
+
+  # ============================================================================
+  # BUSINESS RULES (handled programmatically in BunkerResponseViewer)
+  # ============================================================================
+  
+  business_rules: []

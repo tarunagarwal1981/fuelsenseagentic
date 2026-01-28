@@ -1,0 +1,163 @@
+template:
+  query_type: "cii-rating"
+  name: "CII Rating Response"
+  version: "1.0.0"
+  description: "Carbon Intensity Indicator analysis and improvement recommendations"
+  
+  # ===========================================================================
+  # TIER 1: CII RATING OVERVIEW (Always Visible)
+  # ===========================================================================
+  
+  sections:
+    - id: "cii_rating_card"
+      title: "📊 Your CII Rating"
+      tier: 1
+      priority: 1
+      visibility: "always"
+      max_words: 150
+      
+      content_source:
+        state_path: "cii_rating"
+        template: |
+          **Current Rating:** {rating}
+          **CII Value:** {cii_value:.2f} gCO2/t·nm
+          **Rating Year:** {year}
+          
+          **Rating Scale:**
+          - A: Superior performance
+          - B: Minor superior
+          - C: Moderate (baseline)
+          - D: Minor inferior
+          - E: Inferior (requires action plan)
+    
+    - id: "top_recommendations"
+      title: "🎯 Top 3 Actions to Improve"
+      tier: 1
+      priority: 2
+      visibility: "always"
+      max_words: 200
+      
+      content_source:
+        state_path: "cii_recommendations"
+        template: |
+          1. **{recommendation_1_title}**
+             - Impact: {recommendation_1_impact}
+             - Implementation: {recommendation_1_effort}
+          
+          2. **{recommendation_2_title}**
+             - Impact: {recommendation_2_impact}
+             - Implementation: {recommendation_2_effort}
+          
+          3. **{recommendation_3_title}**
+             - Impact: {recommendation_3_impact}
+             - Implementation: {recommendation_3_effort}
+  
+  # ===========================================================================
+  # TIER 2: DETAILED ANALYSIS (Expandable)
+  # ===========================================================================
+  
+    - id: "rating_breakdown"
+      title: "📈 Rating Breakdown"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      max_words: 300
+      
+      content_source:
+        state_path: "cii_calculation"
+        template: |
+          **Attained CII:**
+          - Annual CO2 Emissions: {annual_co2_tonnes:,.0f} tonnes
+          - Annual Distance: {annual_distance_nm:,.0f} nm
+          - Deadweight Tonnage: {dwt:,.0f} DWT
+          - Attained CII: {attained_cii:.2f} gCO2/t·nm
+          
+          **Required CII:**
+          - Reference Line Value: {reference_cii:.2f}
+          - Reduction Factor ({year}): {reduction_factor:.1f}%
+          - Required CII: {required_cii:.2f} gCO2/t·nm
+          
+          **Rating Calculation:**
+          - Ratio (Attained/Required): {cii_ratio:.2f}
+          - Rating Boundaries: {rating_boundaries}
+          - Final Rating: {rating}
+    
+    - id: "optimization_strategies"
+      title: "🎯 Detailed Optimization Strategies"
+      tier: 2
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      max_words: 400
+      
+      content_source:
+        state_path: "cii_optimization"
+        template: |
+          **Operational Improvements:**
+          {operational_strategies}
+          
+          **Technical Improvements:**
+          {technical_strategies}
+          
+          **Voyage Optimization:**
+          {voyage_strategies}
+          
+          **Estimated Impact:**
+          - Current CII: {current_cii:.2f}
+          - Potential CII: {potential_cii:.2f}
+          - Improvement: {improvement_percent:.1f}%
+  
+  # ===========================================================================
+  # TIER 3: TECHNICAL DETAILS (Collapsed by Default)
+  # ===========================================================================
+  
+    - id: "calculation_methodology"
+      title: "🔢 IMO Calculation Methodology"
+      tier: 3
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      
+      content_source:
+        state_path: "cii_calculation_details"
+        template: |
+          **IMO CII Framework (MEPC.352(78)):**
+          
+          **Formula:**
+          CII = (Annual CO2 Emissions) / (Capacity × Distance)
+          
+          **For this vessel:**
+          - Ship Type: {ship_type}
+          - Capacity Parameter: DWT ({dwt:,.0f} tonnes)
+          - Reference Line: CIIref = a × Capacity^(-c)
+          - Coefficients: a = {coefficient_a}, c = {coefficient_c}
+          
+          **Rating Boundaries:**
+          | Rating | Boundary |
+          |--------|----------|
+          | A | < d1 × Required CII |
+          | B | d1-d2 × Required CII |
+          | C | d2-d3 × Required CII |
+          | D | d3-d4 × Required CII |
+          | E | > d4 × Required CII |
+          
+          **Correction Factors Applied:**
+          {correction_factors}
+  
+  # ===========================================================================
+  # BUSINESS RULES
+  # ===========================================================================
+  
+  business_rules:
+    - name: "highlight_poor_rating"
+      description: "Surface optimization strategies if rating is D or E"
+      condition: "cii_rating && (cii_rating.rating === 'D' || cii_rating.rating === 'E')"
+      action: "move_to_tier_1"
+      target: "optimization_strategies"
+    
+    - name: "expand_breakdown_for_poor_rating"
+      description: "Auto-expand rating breakdown for poor ratings"
+      condition: "cii_rating && (cii_rating.rating === 'D' || cii_rating.rating === 'E')"
+      action: "expand"
+      target: "rating_breakdown"

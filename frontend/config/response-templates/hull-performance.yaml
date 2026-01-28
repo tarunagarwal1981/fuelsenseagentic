@@ -1,0 +1,124 @@
+template:
+  query_type: "hull-performance"
+  name: "Hull Performance Analysis"
+  version: "1.0.0"
+  description: "Hull fouling analysis and cleaning recommendations"
+  
+  # ===========================================================================
+  # TIER 1: HULL CONDITION OVERVIEW (Always Visible)
+  # ===========================================================================
+  
+  sections:
+    - id: "hull_condition"
+      title: "🚢 Hull Condition Summary"
+      tier: 1
+      priority: 1
+      visibility: "always"
+      max_words: 150
+      
+      content_source:
+        state_path: "hull_analysis"
+        template: |
+          **Fouling Level:** {fouling_level}
+          **Last Cleaning:** {last_cleaning_date}
+          **Days Since Cleaning:** {days_since_cleaning}
+          
+          **Hull Roughness:**
+          - Current: {current_roughness} μm
+          - Baseline: {baseline_roughness} μm
+          - Increase: {roughness_increase:.1f}%
+    
+    - id: "fouling_impact"
+      title: "📉 Performance Impact"
+      tier: 1
+      priority: 2
+      visibility: "always"
+      max_words: 150
+      
+      content_source:
+        state_path: "hull_analysis.performance_impact"
+        template: |
+          **Speed Loss:** {speed_loss_percent:.1f}%
+          **Fuel Penalty:** +{fuel_penalty_percent:.1f}%
+          **Power Loss:** {power_loss_kw:.0f} kW at design speed
+          
+          **Estimated Additional Costs:**
+          - Per Day: ${daily_fuel_cost_increase:,.0f}
+          - Per Voyage: ${voyage_cost_increase:,.0f}
+          - Annual: ${annual_cost_increase:,.0f}
+  
+  # ===========================================================================
+  # TIER 2: RECOMMENDATIONS (Expandable)
+  # ===========================================================================
+  
+    - id: "cleaning_recommendation"
+      title: "🧽 Cleaning Recommendations"
+      tier: 2
+      priority: 1
+      visibility: "expandable"
+      collapsed: true
+      max_words: 250
+      
+      content_source:
+        state_path: "hull_analysis.cleaning_recommendations"
+        template: |
+          **Recommended Action:** {recommended_action}
+          **Urgency:** {urgency_level}
+          
+          **Cleaning Options:**
+          1. **In-Water Cleaning**
+             - Type: {in_water_type}
+             - Cost: ${in_water_cost:,.0f}
+             - Duration: {in_water_duration}
+             - Locations: {in_water_locations}
+          
+          2. **Dry Dock Cleaning**
+             - Next Scheduled: {next_drydock_date}
+             - Recommended: {drydock_recommended}
+          
+          **Optimal Timing:** {optimal_timing}
+    
+    - id: "roi_analysis"
+      title: "💰 ROI Analysis"
+      tier: 2
+      priority: 2
+      visibility: "expandable"
+      collapsed: true
+      max_words: 200
+      
+      content_source:
+        state_path: "hull_analysis.roi"
+        template: |
+          **Cost-Benefit Analysis:**
+          
+          | Metric | Value |
+          |--------|-------|
+          | Cleaning Cost | ${cleaning_cost:,.0f} |
+          | Annual Fuel Savings | ${annual_fuel_savings:,.0f} |
+          | Payback Period | {payback_days} days |
+          | ROI (Annual) | {annual_roi:.0f}% |
+          
+          **Break-Even Analysis:**
+          - At current fuel prices: {break_even_days} days
+          - Recommended cleaning frequency: {recommended_frequency}
+          
+          **5-Year Projection:**
+          - Total Savings: ${five_year_savings:,.0f}
+          - Net Benefit: ${five_year_net_benefit:,.0f}
+  
+  # ===========================================================================
+  # BUSINESS RULES
+  # ===========================================================================
+  
+  business_rules:
+    - name: "urgent_cleaning_alert"
+      description: "Surface cleaning recommendations if fouling is severe"
+      condition: "hull_analysis && hull_analysis.fouling_level === 'severe'"
+      action: "move_to_tier_1"
+      target: "cleaning_recommendation"
+    
+    - name: "expand_roi_for_high_impact"
+      description: "Auto-expand ROI if fuel penalty exceeds 10%"
+      condition: "hull_analysis && hull_analysis.performance_impact && hull_analysis.performance_impact.fuel_penalty_percent > 10"
+      action: "expand"
+      target: "roi_analysis"
