@@ -1,6 +1,11 @@
 /**
  * SeaRoute API Client
  * Wrapper for Maritime Route API
+ *
+ * COORDINATE ORDER:
+ * - Input (from / to): [lat, lon] — standard geographic format
+ * - Output geometry: [lon, lat] — GeoJSON format; must be converted before use
+ * - Conversion: RouteService.convertGeometryToWaypoints() flips to [lat, lon]
  */
 
 import { SeaRouteAPIResponse } from './types';
@@ -10,7 +15,11 @@ export class SeaRouteAPIClient {
   private timeoutMs: number = 20000;
 
   /**
-   * Calculate route between two coordinates
+   * Calculate route between two coordinates.
+   *
+   * @param params.from - Origin as [lat, lon]
+   * @param params.to - Destination as [lat, lon]
+   * @returns Route with distance, duration, and geometry in [lon, lat] GeoJSON order
    */
   async calculateRoute(params: {
     from: [number, number]; // [lat, lon]
@@ -18,7 +27,7 @@ export class SeaRouteAPIClient {
     speed?: number;
   }): Promise<{
     distance: number;
-    geometry: [number, number][]; // [lon, lat] from API
+    geometry: [number, number][]; // [lon, lat] from API — convert before passing to map
     duration: number;
   }> {
     const apiUrl = `${this.baseUrl}/route`;

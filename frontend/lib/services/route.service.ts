@@ -18,6 +18,11 @@ import {
 } from './types';
 import { ECA_ZONES } from '@/lib/tools/eca-config';
 import * as turf from '@turf/turf';
+import {
+  validateCoordinates,
+  arrayToObject,
+  logCoordConversion,
+} from '@/lib/utils/coordinate-validator';
 
 export type { RouteData } from './types';
 
@@ -139,12 +144,37 @@ export class RouteService {
       throw new Error(`Destination port not found: ${params.destination}`);
     }
 
+    // Validate port coordinates ([lat, lon])
+    const originCoords = arrayToObject(originPort.coordinates);
+    const destCoords = arrayToObject(destPort.coordinates);
+    if (!validateCoordinates(originCoords)) {
+      throw new Error(
+        `Invalid origin coordinates for ${params.origin}: ${JSON.stringify(originCoords)}`
+      );
+    }
+    if (!validateCoordinates(destCoords)) {
+      throw new Error(
+        `Invalid destination coordinates for ${params.destination}: ${JSON.stringify(destCoords)}`
+      );
+    }
+
     // Call SeaRoute API
     const apiResponse = await this.seaRouteAPI.calculateRoute({
       from: originPort.coordinates,
       to: destPort.coordinates,
       speed: params.speed,
     });
+
+    // Log API geometry format for debugging (first/last only)
+    if (apiResponse.geometry.length > 0) {
+      const first = apiResponse.geometry[0];
+      const last = apiResponse.geometry[apiResponse.geometry.length - 1];
+      console.log('📊 [ROUTE-SERVICE] API geometry (GeoJSON [lon, lat]):', {
+        count: apiResponse.geometry.length,
+        first,
+        last,
+      });
+    }
 
     // Convert API geometry ([lon, lat]) to waypoints ([lat, lon])
     const waypoints = this.convertGeometryToWaypoints(
@@ -221,6 +251,15 @@ export class RouteService {
     for (let i = 0; i < geometry.length; i++) {
       const [lon, lat] = geometry[i];
       const coords: [number, number] = [lat, lon];
+
+      // Log conversion at boundaries for debugging
+      if (i === 0 || i === geometry.length - 1) {
+        logCoordConversion(
+          `Waypoint ${i}`,
+          { api: geometry[i], note: '[lon, lat]' },
+          coords
+        );
+      }
 
       let distanceFromPrevious = 0;
       if (i > 0) {

@@ -559,8 +559,8 @@
     "name": "Jebel Ali",
     "country": "AE",
     "coordinates": {
-      "lat": 0,
-      "lon": 0
+      "lat": 25.2532,
+      "lon": 55.2769
     },
     "fuel_capabilities": [
       "VLSFO",

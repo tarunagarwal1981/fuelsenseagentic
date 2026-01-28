@@ -34,7 +34,8 @@ interface JsonPort {
 }
 
 /**
- * Convert JSON port format to repository Port format
+ * Convert JSON port format to repository Port format.
+ * Coordinates stored as [lat, lon] for consistency with Leaflet and route services.
  */
 function mapJsonToPort(jsonPort: JsonPort): Port {
   return {
@@ -42,7 +43,7 @@ function mapJsonToPort(jsonPort: JsonPort): Port {
     code: jsonPort.port_code,
     name: jsonPort.name,
     country: jsonPort.country,
-    coordinates: [jsonPort.coordinates.lat, jsonPort.coordinates.lon],
+    coordinates: [jsonPort.coordinates.lat, jsonPort.coordinates.lon], // [lat, lon]
     bunkerCapable: jsonPort.fuel_capabilities && jsonPort.fuel_capabilities.length > 0,
     fuelsAvailable: jsonPort.fuel_capabilities || [],
     timezone: '', // Not in JSON, will be empty for now

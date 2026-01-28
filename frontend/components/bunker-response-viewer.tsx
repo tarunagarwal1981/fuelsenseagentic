@@ -72,18 +72,20 @@ function getPortDetails(portCode: string): PortDetails | null {
     (p) => p.port_code === portCode || p.port_code === portCode.toUpperCase()
   );
   
-  if (!port || !port.latitude || !port.longitude) {
+  if (!port) return null;
+
+  // Support both ports.json format (coordinates: { lat, lon }) and legacy (latitude, longitude)
+  const lat = port.coordinates?.lat ?? port.latitude;
+  const lon = port.coordinates?.lon ?? port.longitude;
+  if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
     return null;
   }
-  
+
   return {
     port_code: port.port_code,
-    name: port.port_name || port.name || portCode,
-    country: port.country || '',
-    coordinates: {
-      lat: port.latitude,
-      lon: port.longitude,
-    },
+    name: port.port_name ?? port.name ?? portCode,
+    country: port.country ?? '',
+    coordinates: { lat, lon },
   };
 }
 

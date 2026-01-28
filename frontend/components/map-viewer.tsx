@@ -4,6 +4,10 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { MapOverlaysData } from '@/lib/formatters/response-formatter';
+import {
+  waypointToCoords,
+  validateCoordinates,
+} from '@/lib/utils/coordinate-validator';
 
 // Dynamically import Leaflet to avoid SSR issues
 const L = typeof window !== 'undefined' ? require('leaflet') : null;
@@ -150,17 +154,19 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
         });
       } else {
         // Default route (single polyline)
+        // Normalize waypoints: support Waypoint ({ coordinates: [lat, lon] }), [lat, lon], or { lat, lon }
         const waypointCoords: [number, number][] = route.waypoints
           .map((wp: any) => {
-            // Handle both { lat, lon } and [lat, lon] formats
-            const lat = wp.lat ?? wp[0];
-            const lon = wp.lon ?? wp[1];
-            // Validate coordinates
-            if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
-              console.warn('Invalid waypoint:', wp);
+            const coords = waypointToCoords(wp);
+            if (!coords) {
+              console.warn('🗺️ [MAP] Invalid waypoint (skipping):', wp);
               return null;
             }
-            return [lat, lon] as [number, number];
+            if (!validateCoordinates(coords)) {
+              console.warn('🗺️ [MAP] Waypoint out of range (skipping):', coords);
+              return null;
+            }
+            return [coords.lat, coords.lon] as [number, number];
           })
           .filter((coord: any): coord is [number, number] => coord !== null);
 

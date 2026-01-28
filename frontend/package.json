@@ -27,6 +27,7 @@
     "test:registries:agent": "tsx tests/unit/registries/agent-registry.test.ts",
     "test:registries:workflow": "tsx tests/unit/registries/workflow-registry.test.ts",
     "test:route-dates": "tsx lib/services/__tests__/route-date-normalization.test.ts",
+    "test:coordinate-flow": "tsx scripts/test-coordinate-flow.ts",
     "test:plan-execute": "tsx tests/integration/plan-execute.test.ts",
     "test:state-management": "tsx tests/integration/state-management.test.ts",
     "test:benchmark": "tsx -e \"import('./tests/integration/plan-execute.test.js').then(m => m.runPerformanceBenchmark())\"",
