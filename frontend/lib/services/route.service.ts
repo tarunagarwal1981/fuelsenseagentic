@@ -133,37 +133,29 @@ export class RouteService {
       console.error('[RouteService] Cache read error:', error);
     }
 
-    // Get port coordinates from PortRepository
+    // Get port metadata from PortRepository (name, country, fuel_capabilities)
     const originPort = await this.portRepo.findByCode(params.origin);
     const destPort = await this.portRepo.findByCode(params.destination);
 
     if (!originPort) {
-      throw new Error(`Origin port not found: ${params.origin}`);
+      console.warn(`⚠️ [ROUTE-SERVICE] Origin port ${params.origin} not in database`);
     }
     if (!destPort) {
-      throw new Error(`Destination port not found: ${params.destination}`);
+      console.warn(`⚠️ [ROUTE-SERVICE] Destination port ${params.destination} not in database`);
     }
 
-    // Validate port coordinates ([lat, lon])
-    const originCoords = arrayToObject(originPort.coordinates);
-    const destCoords = arrayToObject(destPort.coordinates);
-    if (!validateCoordinates(originCoords)) {
-      throw new Error(
-        `Invalid origin coordinates for ${params.origin}: ${JSON.stringify(originCoords)}`
-      );
-    }
-    if (!validateCoordinates(destCoords)) {
-      throw new Error(
-        `Invalid destination coordinates for ${params.destination}: ${JSON.stringify(destCoords)}`
-      );
-    }
-
-    // Call SeaRoute API
+    // Call SeaRoute API with PORT CODES (API resolves coordinates from its database)
+    console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
+    console.log('🚢 [ROUTE-SERVICE] Sending port codes to SeaRoute API');
     const apiResponse = await this.seaRouteAPI.calculateRoute({
-      from: originPort.coordinates,
-      to: destPort.coordinates,
+      from: params.origin,
+      to: params.destination,
       speed: params.speed,
     });
+
+    console.log('✅ [ROUTE-SERVICE] Route received from API');
+    console.log('   Distance:', apiResponse.distance, 'nm');
+    console.log('   Duration:', apiResponse.duration, 'hours');
 
     // Log API geometry format for debugging (first/last only)
     if (apiResponse.geometry.length > 0) {
@@ -182,45 +174,54 @@ export class RouteService {
       apiResponse.distance
     );
 
-    // Validate waypoints are near origin and destination
+    // Resolve origin/destination coordinates: prefer API-resolved, else port DB, else first/last waypoint
+    const originCoordsResolved =
+      apiResponse.originResolved?.coordinates != null
+        ? { lat: apiResponse.originResolved.coordinates[0], lon: apiResponse.originResolved.coordinates[1] }
+        : originPort
+          ? arrayToObject(originPort.coordinates)
+          : waypoints.length > 0
+            ? arrayToObject(waypoints[0].coordinates)
+            : { lat: 0, lon: 0 };
+    const destCoordsResolved =
+      apiResponse.destinationResolved?.coordinates != null
+        ? { lat: apiResponse.destinationResolved.coordinates[0], lon: apiResponse.destinationResolved.coordinates[1] }
+        : destPort
+          ? arrayToObject(destPort.coordinates)
+          : waypoints.length > 0
+            ? arrayToObject(waypoints[waypoints.length - 1].coordinates)
+            : { lat: 0, lon: 0 };
+
+    // Validate waypoints are near origin and destination (use resolved coords)
     if (waypoints.length > 0) {
       const firstWp = waypoints[0];
       const lastWp = waypoints[waypoints.length - 1];
-
       const firstWpCoords = arrayToObject(firstWp.coordinates);
-      const distFromOrigin = haversineDistance(firstWpCoords, originCoords);
+      const lastWpCoords = arrayToObject(lastWp.coordinates);
+      const distFromOrigin = haversineDistance(firstWpCoords, originCoordsResolved);
+      const distFromDest = haversineDistance(lastWpCoords, destCoordsResolved);
 
       console.log('🔍 [ROUTE-SERVICE] Waypoint validation:');
-      console.log('   Origin port:', originPort.code, originCoords);
+      console.log('   Origin (resolved):', originCoordsResolved);
       console.log('   First waypoint:', firstWpCoords);
       console.log('   Distance from origin:', distFromOrigin.toFixed(2), 'nm');
+      console.log('   Destination (resolved):', destCoordsResolved);
+      console.log('   Last waypoint:', lastWpCoords);
+      console.log('   Distance from destination:', distFromDest.toFixed(2), 'nm');
 
       if (distFromOrigin > 100) {
         console.error('❌ [ROUTE-SERVICE] First waypoint too far from origin!');
         console.error('   Distance:', distFromOrigin.toFixed(2), 'nm');
-        console.error('   Expected: < 100 nm');
         throw new Error(
-          `Route validation failed: First waypoint is ${distFromOrigin.toFixed(0)}nm ` +
-            `from origin port ${originPort.code}. Expected < 100nm. ` +
-            `This indicates routing error or wrong port coordinates.`
+          `Route validation failed: First waypoint is ${distFromOrigin.toFixed(0)}nm from origin. Expected < 100nm.`
         );
       }
-
-      const lastWpCoords = arrayToObject(lastWp.coordinates);
-      const distFromDest = haversineDistance(lastWpCoords, destCoords);
-
-      console.log('   Destination port:', destPort.code, destCoords);
-      console.log('   Last waypoint:', lastWpCoords);
-      console.log('   Distance from destination:', distFromDest.toFixed(2), 'nm');
-
       if (distFromDest > 100) {
         console.error('❌ [ROUTE-SERVICE] Last waypoint too far from destination!');
         throw new Error(
-          `Route validation failed: Last waypoint is ${distFromDest.toFixed(0)}nm ` +
-            `from destination port ${destPort.code}.`
+          `Route validation failed: Last waypoint is ${distFromDest.toFixed(0)}nm from destination.`
         );
       }
-
       console.log('✅ [ROUTE-SERVICE] Waypoint validation passed');
     }
 
@@ -242,24 +243,18 @@ export class RouteService {
 
     const routeData: RouteData = {
       origin: {
-        port_code: originPort.code,
-        name: originPort.name,
-        country: originPort.country,
-        coordinates: {
-          lat: originPort.coordinates[0],
-          lon: originPort.coordinates[1],
-        },
-        fuel_capabilities: originPort.fuelsAvailable as any[],
+        port_code: params.origin,
+        name: originPort?.name ?? apiResponse.originResolved?.name ?? params.origin,
+        country: originPort?.country ?? 'Unknown',
+        coordinates: originCoordsResolved,
+        fuel_capabilities: (originPort?.fuelsAvailable as any[]) ?? [],
       },
       destination: {
-        port_code: destPort.code,
-        name: destPort.name,
-        country: destPort.country,
-        coordinates: {
-          lat: destPort.coordinates[0],
-          lon: destPort.coordinates[1],
-        },
-        fuel_capabilities: destPort.fuelsAvailable as any[],
+        port_code: params.destination,
+        name: destPort?.name ?? apiResponse.destinationResolved?.name ?? params.destination,
+        country: destPort?.country ?? 'Unknown',
+        coordinates: destCoordsResolved,
+        fuel_capabilities: (destPort?.fuelsAvailable as any[]) ?? [],
       },
       waypoints: enhancedWaypoints,
       totalDistanceNm: apiResponse.distance,
