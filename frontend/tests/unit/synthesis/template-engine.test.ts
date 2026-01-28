@@ -135,41 +135,39 @@ export async function testTemplateEngine(): Promise<void> {
     }
   }
   
-  // Test 2: Handlebars helpers work
+  // Test 2: Handlebars helpers and compilation (no raw {{#if}} / {{#each}} in output)
   console.log('\n📋 Test 2: Handlebars helpers work');
   try {
-    const template = `
-Test Helpers:
-- Currency: {{currency data.bunker.best_option.total_cost_usd}}
-- Number: {{number data.route.distance_nm 0}}
-- Percent: {{percent 16.7 1}}
-- Duration: {{duration data.route.estimated_hours h}}
-- Uppercase: {{uppercase data.bunker.best_option.port_code}}
-- Date: {{date synthesizedAt long}}
-- Conditional: {{#if (gt data.bunker.max_savings_usd 0)}}Has savings{{/if}}
-`;
-    
+    const templateId = 'charterer_bunker_planning_text';
     const synthesis = createMockSynthesis();
-    const context = {
-      ...synthesis,
-      data: synthesis.data,
-    };
-    
-    // Use private method via type assertion (for testing)
-    const rendered = (engine as any).renderTemplate(template, context);
-    
-    const hasCurrency = rendered.includes('$500,000') || rendered.includes('500000');
+    const rendered = await engine.render(synthesis, templateId, {
+      stakeholder: 'charterer',
+      format: 'text',
+    });
+
+    const hasRawHandlebars =
+      rendered.includes('{{#if') ||
+      rendered.includes('{{#each') ||
+      rendered.includes('{{/if}}') ||
+      rendered.includes('{{/each}}') ||
+      rendered.includes('(eq ') ||
+      rendered.includes('(gt ');
+
+    const hasCurrency = rendered.includes('$500,000') || rendered.includes('500,000') || rendered.includes('500000');
     const hasNumber = rendered.includes('8500');
-    const hasPercent = rendered.includes('16.7%') || rendered.includes('%');
+    const hasPercent = rendered.includes('%');
     const hasDuration = rendered.includes('h') || rendered.includes('240');
     const hasUppercase = rendered.includes('AEFJR');
-    const hasConditional = rendered.includes('Has savings');
-    
-    if (!hasCurrency && !hasNumber) {
+    const hasConditional = rendered.includes('Has savings') || rendered.includes('savings');
+
+    if (hasRawHandlebars) {
+      console.error('❌ Test 2 FAILED: Output must not contain raw Handlebars ({{#if}}, {{#each}}, etc.)');
+      allPassed = false;
+    } else if (!hasCurrency && !hasNumber) {
       console.error('❌ Test 2 FAILED: Helpers should render values');
       allPassed = false;
     } else {
-      console.log('✅ Test 2 PASSED: Handlebars helpers work');
+      console.log('✅ Test 2 PASSED: Handlebars helpers work, no raw syntax in output');
       console.log(`   - Currency helper: ${hasCurrency}`);
       console.log(`   - Number helper: ${hasNumber}`);
       console.log(`   - Percent helper: ${hasPercent}`);

@@ -4056,14 +4056,14 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         
         console.log(`   Template: ${templateId} (stakeholder: ${stakeholder}, format: ${format})`);
         
-        // Render template
+        // Render template (pass updatedState so template gets data.route, data.bunker from route_data / bunker_analysis)
         renderedResponse = await templateEngine.render(synthesizedResponse, templateId, {
           stakeholder: stakeholder as any,
           format: format as any,
           verbosity: requestContext.verbosity || 'detailed',
           includeMetrics: requestContext.includeMetrics || false,
           includeReasoning: requestContext.includeReasoning !== false,
-        });
+        }, updatedState as Record<string, unknown>);
         
         console.log(`✅ [FINALIZE] Template rendered successfully (${renderedResponse.length} chars)`);
       } catch (templateError: unknown) {

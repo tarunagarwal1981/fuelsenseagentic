@@ -3,10 +3,12 @@
  *
  * Renders synthesized responses using Handlebars templates.
  * Supports multiple stakeholders and output formats.
+ * Uses Handlebars.compile() so {{#if (eq ...)}}, {{#each}}, {{#unless}} etc. render correctly.
  */
 
+import Handlebars from 'handlebars';
 import { readFileSync, existsSync } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 
 // ============================================================================
 // Types
@@ -20,342 +22,269 @@ export interface RenderOptions {
   includeReasoning?: boolean;
 }
 
+/** Optional full state for mapping route/bunker data into template context (data.route, data.bunker) */
+export type TemplateState = Record<string, unknown>;
+
 interface TemplateContext {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================================================
-// Simple Template Engine (No External Dependencies)
+// Handlebars Helpers (registered once)
 // ============================================================================
 
-/**
- * Simple template engine that replaces {{variable}} placeholders
- * Supports basic conditionals and loops
- */
+let helpersRegistered = false;
+
+function registerHandlebarsHelpers(): void {
+  if (helpersRegistered) return;
+  helpersRegistered = true;
+
+  // Comparison (for {{#if (eq a b)}} and similar)
+  Handlebars.registerHelper('eq', function (a: unknown, b: unknown) {
+    return a === b;
+  });
+  Handlebars.registerHelper('ne', function (a: unknown, b: unknown) {
+    return a !== b;
+  });
+  Handlebars.registerHelper('lt', function (a: unknown, b: unknown) {
+    return Number(a) < Number(b);
+  });
+  Handlebars.registerHelper('gt', function (a: unknown, b: unknown) {
+    return Number(a) > Number(b);
+  });
+  Handlebars.registerHelper('lte', function (a: unknown, b: unknown) {
+    return Number(a) <= Number(b);
+  });
+  Handlebars.registerHelper('gte', function (a: unknown, b: unknown) {
+    return Number(a) >= Number(b);
+  });
+
+  // Formatting (for {{currency x}}, {{number x 0}}, etc.)
+  Handlebars.registerHelper('currency', function (value: unknown) {
+    const n = Number(value ?? 0);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(n);
+  });
+  Handlebars.registerHelper('number', function (value: unknown, decimals?: number) {
+    const n = Number(value ?? 0);
+    const d = typeof decimals === 'number' ? decimals : 0;
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    }).format(n);
+  });
+  Handlebars.registerHelper('percent', function (value: unknown, decimals?: number) {
+    const n = Number(value ?? 0);
+    const d = typeof decimals === 'number' ? decimals : 1;
+    return `${n.toFixed(d)}%`;
+  });
+  Handlebars.registerHelper('date', function (value: unknown, format?: string) {
+    if (value == null) return '';
+    const d = typeof value === 'string' ? new Date(value) : (value as Date);
+    const date = d instanceof Date ? d : new Date(String(value));
+    if (isNaN(date.getTime())) return String(value);
+    if (format === 'long') {
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    }
+    return date.toLocaleDateString('en-US');
+  });
+  Handlebars.registerHelper('duration', function (value: unknown, unit?: string) {
+    const hrs = Number(value ?? 0);
+    const u = (unit ?? 'auto') as string;
+    if (u === 'h') {
+      return `${hrs.toFixed(0)}h`;
+    }
+    if (u === 'min') {
+      return `${(hrs * 60).toFixed(0)}min`;
+    }
+    if (u === 's') {
+      return `${(hrs * 3600).toFixed(0)}s`;
+    }
+    // auto: treat as hours
+    if (hrs < 1) return `${(hrs * 60).toFixed(0)}min`;
+    return `${hrs.toFixed(0)}h`;
+  });
+  Handlebars.registerHelper('uppercase', function (value: unknown) {
+    return String(value ?? '').toUpperCase();
+  });
+  Handlebars.registerHelper('lowercase', function (value: unknown) {
+    return String(value ?? '').toLowerCase();
+  });
+}
+
+// ============================================================================
+// Template Engine
+// ============================================================================
+
 export class TemplateEngine {
-  private templates: Map<string, string> = new Map();
+  private compiled: Map<string, Handlebars.TemplateDelegate> = new Map();
   private templateDir: string;
 
   constructor(templateDir: string = 'config/response-templates') {
     this.templateDir = templateDir;
+    registerHandlebarsHelpers();
   }
 
   /**
-   * Render synthesized response using template
+   * Render synthesized response using Handlebars template.
+   * @param synthesis - Synthesis result (insights, recommendations, warnings, alerts, etc.)
+   * @param templateId - e.g. charterer_bunker_planning_text
+   * @param options - Render options
+   * @param state - Optional full state; when provided, maps route_data/bunker_analysis into data.route / data.bunker for templates
    */
   async render(
-    synthesis: any,
+    synthesis: unknown,
     templateId: string,
-    options?: RenderOptions
+    options?: RenderOptions,
+    state?: TemplateState
   ): Promise<string> {
-    const template = await this.getTemplate(templateId);
-
-    if (!template) {
+    const templateSource = await this.getTemplate(templateId);
+    if (!templateSource) {
       throw new Error(`Template not found: ${templateId}`);
     }
 
-    // Prepare context
-    const context = this.prepareContext(synthesis, options || {});
+    const context = this.prepareContext(synthesis, options ?? {}, state);
 
     try {
-      const rendered = this.renderTemplate(template, context);
+      let fn = this.compiled.get(templateId);
+      if (!fn) {
+        fn = Handlebars.compile(templateSource, { strict: false });
+        this.compiled.set(templateId, fn);
+      }
+      const rendered = fn(context);
       return rendered;
-    } catch (error: any) {
-      console.error(`❌ Template rendering failed for ${templateId}:`, error);
-      throw new Error(`Template rendering failed: ${error.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`❌ [TEMPLATE-ENGINE] Handlebars render failed for ${templateId}:`, msg);
+      throw new Error(`Template rendering failed: ${msg}`);
     }
   }
 
-  /**
-   * Get or load template
-   */
   private async getTemplate(templateId: string): Promise<string | null> {
-    // Check cache
-    if (this.templates.has(templateId)) {
-      return this.templates.get(templateId)!;
-    }
-
-    // Load template from file
     const templatePath = this.resolveTemplatePath(templateId);
     if (!existsSync(templatePath)) {
-      console.warn(`⚠️  Template not found: ${templatePath}`);
+      console.warn(`⚠️ [TEMPLATE-ENGINE] Template not found: ${templatePath}`);
       return null;
     }
-
     try {
-      const templateSource = readFileSync(templatePath, 'utf-8');
-      this.templates.set(templateId, templateSource);
-      return templateSource;
-    } catch (error) {
-      console.error(`❌ Failed to load template from ${templatePath}:`, error);
+      return readFileSync(templatePath, 'utf-8');
+    } catch (err) {
+      console.error(`❌ [TEMPLATE-ENGINE] Failed to read ${templatePath}:`, err);
       return null;
     }
   }
 
-  /**
-   * Resolve template path from ID
-   */
   private resolveTemplatePath(templateId: string): string {
-    // Template ID format: {stakeholder}_{queryType}_{format}
-    // Example: charterer_bunker_planning_text
-
     const parts = templateId.split('_');
     const stakeholder = parts[0];
     const format = parts[parts.length - 1];
     const queryType = parts.slice(1, -1).join('_');
 
-    // Try multiple possible paths
     const possiblePaths = [
       join(process.cwd(), this.templateDir, stakeholder, `${queryType}.${format}.hbs`),
       join(process.cwd(), this.templateDir, stakeholder, `${queryType}.${format}.txt`),
-      join(process.cwd(), this.templateDir, stakeholder, `${queryType}.${format}`),
       join(process.cwd(), 'frontend', this.templateDir, stakeholder, `${queryType}.${format}.hbs`),
+      join(process.cwd(), 'frontend', 'config', 'response-templates', stakeholder, `${queryType}.${format}.hbs`),
     ];
 
-    for (const path of possiblePaths) {
-      if (existsSync(path)) {
-        return path;
-      }
+    for (const p of possiblePaths) {
+      if (existsSync(p)) return p;
     }
-
-    // Return first path as default (will fail gracefully)
     return possiblePaths[0];
   }
 
   /**
-   * Prepare context for template rendering
+   * Build context for Handlebars. Merges synthesis with optional state-derived data.route / data.bunker.
    */
-  private prepareContext(synthesis: any, options: RenderOptions): TemplateContext {
-    return {
-      ...synthesis,
-      options: options || {},
-
-      // Computed fields
-      hasAlerts: synthesis.alerts?.length > 0,
-      hasWarnings: synthesis.warnings?.length > 0,
+  private prepareContext(
+    synthesis: unknown,
+    options: RenderOptions,
+    state?: TemplateState
+  ): TemplateContext {
+    const s = (synthesis ?? {}) as Record<string, unknown>;
+    const base: TemplateContext = {
+      ...s,
+      options: options ?? {},
+      success: (s.success as boolean) ?? true,
+      hasAlerts: Array.isArray(s.alerts) && (s.alerts as unknown[]).length > 0,
+      hasWarnings: Array.isArray(s.warnings) && (s.warnings as unknown[]).length > 0,
       hasCriticalIssues:
-        synthesis.alerts?.some((a: any) => a.level === 'critical') || false,
-
-      // Format helpers (will be used in template)
-      _formatCurrency: (value: number) =>
-        `$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
-      _formatDate: (date: Date | string) => {
-        const d = typeof date === 'string' ? new Date(date) : date;
-        return d.toLocaleDateString('en-US');
-      },
-      _formatDuration: (ms: number) => `${(ms / 1000).toFixed(1)}s`,
+        Array.isArray(s.alerts) &&
+        (s.alerts as { level?: string }[]).some((a) => a.level === 'critical'),
     };
-  }
 
-  /**
-   * Simple template rendering (replaces {{variable}} placeholders)
-   * Supports basic conditionals {{#if var}}...{{/if}} and loops {{#each array}}...{{/each}}
-   */
-  private renderTemplate(template: string, context: TemplateContext): string {
-    let result = template;
-
-    // Handle conditionals {{#if var}}...{{/if}}
-    result = result.replace(
-      /\{\{#if\s+([^}]+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
-      (match, condition, content) => {
-        const value = this.getNestedValue(context, condition.trim());
-        if (this.isTruthy(value)) {
-          return this.renderTemplate(content, context);
-        }
-        return '';
-      }
-    );
-
-    // Handle loops {{#each array}}...{{/each}}
-    result = result.replace(
-      /\{\{#each\s+([^}]+)\}\}([\s\S]*?)\{\{\/each\}\}/g,
-      (match, arrayPath, content) => {
-        const array = this.getNestedValue(context, arrayPath.trim());
-        if (Array.isArray(array)) {
-          return array
-            .map((item, index) => {
-              const itemContext = {
-                ...context,
-                ...item,
-                '@index': index,
-                '@first': index === 0,
-                '@last': index === array.length - 1,
-              };
-              // Replace @last and @index in content
-              let itemContent = content;
-              itemContent = itemContent.replace(/\{\{@last\}\}/g, String(index === array.length - 1));
-              itemContent = itemContent.replace(/\{\{@first\}\}/g, String(index === 0));
-              itemContent = itemContent.replace(/\{\{@index\}\}/g, String(index));
-              return this.renderTemplate(itemContent, itemContext);
-            })
-            .join('');
-        }
-        return '';
-      }
-    );
-
-      // Handle nested property access {{data.route.origin}}
-      result = result.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
-        const trimmedPath = path.trim();
-
-        // Skip if statements and each loops (already handled)
-        if (
-          trimmedPath.startsWith('#if') ||
-          trimmedPath.startsWith('#each') ||
-          trimmedPath.startsWith('/')
-        ) {
-          return match;
-        }
-
-        // Handle @last, @first, @index (loop context)
-        if (trimmedPath === '@last' || trimmedPath === '@first' || trimmedPath === '@index') {
-          const value = this.getNestedValue(context, trimmedPath);
-          return value !== undefined && value !== null ? String(value) : '';
-        }
-
-        // Handle helpers like {{currency value}} or {{number value}}
-        if (trimmedPath.includes(' ')) {
-          const [helper, ...args] = trimmedPath.split(' ');
-          return this.applyHelper(helper, args, context);
-        }
-
-        // Regular property access
-        const value = this.getNestedValue(context, trimmedPath);
-        return value !== undefined && value !== null ? String(value) : '';
-      });
-
-    return result;
-  }
-
-  /**
-   * Get nested value from object using dot notation
-   */
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, prop) => {
-      if (current === null || current === undefined) return undefined;
-      return current[prop];
-    }, obj);
-  }
-
-  /**
-   * Check if value is truthy
-   */
-  private isTruthy(value: any): boolean {
-    if (value === null || value === undefined) return false;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') return value.length > 0;
-    if (Array.isArray(value)) return value.length > 0;
-    if (typeof value === 'object') return Object.keys(value).length > 0;
-    return Boolean(value);
-  }
-
-  /**
-   * Apply template helper function
-   */
-  private applyHelper(helper: string, args: string[], context: TemplateContext): string {
-    const value = this.getNestedValue(context, args[0]);
-
-    switch (helper) {
-      case 'currency':
-        return `$${Number(value || 0).toLocaleString('en-US', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`;
-
-      case 'number':
-        const decimals = args[1] ? parseInt(args[1]) : 0;
-        return Number(value || 0).toLocaleString('en-US', {
-          minimumFractionDigits: decimals,
-          maximumFractionDigits: decimals,
-        });
-
-      case 'percent':
-        const dec = args[1] ? parseInt(args[1]) : 1;
-        return `${Number(value || 0).toFixed(dec)}%`;
-
-      case 'date':
-        const format = args[1] || 'short';
-        const date = typeof value === 'string' ? new Date(value) : value;
-        if (!(date instanceof Date)) return String(value);
-        if (format === 'long') {
-          return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
-        }
-        return date.toLocaleDateString('en-US');
-
-      case 'duration':
-        const unit = args[1] || 'auto';
-        const ms = Number(value || 0);
-        if (unit === 'auto') {
-          if (ms < 1000) return `${ms}ms`;
-          if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-          if (ms < 3600000) return `${(ms / 60000).toFixed(1)}min`;
-          return `${(ms / 3600000).toFixed(1)}h`;
-        } else if (unit === 's') {
-          return `${(ms / 1000).toFixed(1)}s`;
-        } else if (unit === 'min') {
-          return `${(ms / 60000).toFixed(1)}min`;
-        } else if (unit === 'h') {
-          return `${(ms / 3600000).toFixed(1)}h`;
-        }
-        return `${ms}ms`;
-
-      case 'uppercase':
-        return String(value || '').toUpperCase();
-
-      case 'lowercase':
-        return String(value || '').toLowerCase();
-
-      case 'truncate':
-        const length = args[1] ? parseInt(args[1]) : 100;
-        const str = String(value || '');
-        return str.length <= length ? str : str.substring(0, length) + '...';
-
-      case 'eq':
-        const val1 = this.getNestedValue(context, args[0]);
-        const val2 = args[1]?.startsWith('"') || args[1]?.startsWith("'")
-          ? args[1].slice(1, -1)
-          : this.getNestedValue(context, args[1]);
-        return val1 === val2 ? 'true' : '';
-
-      case 'gt':
-        const num1 = Number(this.getNestedValue(context, args[0]) || 0);
-        const num2 = Number(args[1] || 0);
-        return num1 > num2 ? 'true' : '';
-
-      case 'lt':
-        const num3 = Number(this.getNestedValue(context, args[0]) || 0);
-        const num4 = Number(args[1] || 0);
-        return num3 < num4 ? 'true' : '';
-
-      default:
-        return String(value || '');
+    if (state) {
+      base.data = this.mapStateToData(state);
+      base.correlationId = (state as { correlation_id?: string }).correlation_id ?? (state as { correlationId?: string }).correlationId;
+      base.synthesizedAt = (s as { synthesizedAt?: unknown }).synthesizedAt ?? new Date();
     }
+
+    return base;
   }
 
   /**
-   * Clear template cache
+   * Map full state into data.route and data.bunker for charterer-style templates.
    */
+  private mapStateToData(state: TemplateState): { route?: Record<string, unknown>; bunker?: Record<string, unknown> } {
+    const routeData = state.route_data as Record<string, unknown> | undefined;
+    const bunkerData = state.bunker_analysis as Record<string, unknown> | undefined;
+    const multiBunker = state.multi_bunker_plan as Record<string, unknown> | undefined;
+
+    const origin = routeData?.origin_port ?? routeData?.origin;
+    const dest = routeData?.destination_port ?? routeData?.destination;
+    const distanceNm =
+      (routeData?.totalDistanceNm as number) ??
+      (routeData?.distance_nm as number) ??
+      (routeData?.distance as number);
+    const estHours = (routeData?.estimatedHours as number) ?? (routeData?.estimated_hours as number);
+
+    const route = {
+      origin: typeof origin === 'object' && origin !== null ? (origin as Record<string, unknown>).port_code ?? (origin as Record<string, unknown>).code ?? String(origin) : String(origin ?? ''),
+      destination: typeof dest === 'object' && dest !== null ? (dest as Record<string, unknown>).port_code ?? (dest as Record<string, unknown>).code ?? String(dest) : String(dest ?? ''),
+      distance_nm: distanceNm ?? 0,
+      estimated_hours: estHours ?? 0,
+    };
+
+    const recs = (bunkerData?.recommendations ?? []) as unknown[];
+    const best = (bunkerData?.best_option ?? recs[0]) as Record<string, unknown> | undefined;
+    const bunker = {
+      best_option: best
+        ? {
+            port_name: (best as { port_name?: string }).port_name ?? (best as { name?: string }).name ?? '',
+            port_code: (best as { port_code?: string }).port_code ?? (best as { code?: string }).code ?? '',
+            fuel_cost_usd: (best as { fuel_cost_usd?: number }).fuel_cost_usd ?? (best as { total_cost?: number }).total_cost ?? 0,
+            deviation_cost_usd: (best as { deviation_cost_usd?: number }).deviation_cost_usd ?? (best as { deviation_fuel_cost?: number }).deviation_fuel_cost ?? 0,
+            total_cost_usd: (best as { total_cost_usd?: number }).total_cost_usd ?? (best as { total_cost?: number }).total_cost ?? 0,
+          }
+        : undefined,
+      max_savings_usd: (bunkerData?.max_savings_usd as number) ?? (bunkerData?.savings as number) ?? 0,
+      alternatives_count: Array.isArray(recs) ? recs.length : 0,
+    };
+
+    return { route, bunker };
+  }
+
   clearCache(): void {
-    this.templates.clear();
-    console.log('🧹 Template cache cleared');
+    this.compiled.clear();
+    console.log('🧹 [TEMPLATE-ENGINE] Template cache cleared');
   }
 
-  /**
-   * Preload templates
-   */
   async preloadTemplates(templateIds: string[]): Promise<void> {
     await Promise.all(templateIds.map((id) => this.getTemplate(id)));
-    console.log(`✅ Preloaded ${templateIds.length} templates`);
+    console.log(`✅ [TEMPLATE-ENGINE] Preloaded ${templateIds.length} templates`);
   }
 }
 
 // ============================================================================
-// Singleton Export
+// Singleton
 // ============================================================================
 
 let engineInstance: TemplateEngine | null = null;
