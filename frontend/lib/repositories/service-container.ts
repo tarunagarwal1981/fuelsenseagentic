@@ -20,6 +20,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PortRepository } from './port-repository';
 import { PriceRepository } from './price-repository';
 import { VesselRepository } from './vessel-repository';
+import { WorldPortRepositoryCSV } from './world-port-repository';
+import type { IWorldPortRepository } from './types';
 import { RouteService } from '@/lib/services/route.service';
 import { BunkerService } from '@/lib/services/bunker.service';
 import { WeatherService } from '@/lib/services/weather.service';
@@ -129,6 +131,7 @@ export class ServiceContainer {
   private portRepo!: PortRepository;
   private priceRepo!: PriceRepository;
   private vesselRepo!: VesselRepository;
+  private worldPortRepo!: IWorldPortRepository;
   private routeService!: RouteService;
   private bunkerService!: BunkerService;
   private weatherService!: WeatherService;
@@ -221,6 +224,7 @@ export class ServiceContainer {
       this.portRepo = new PortRepository(this.cache as RedisCache, this.db);
       this.priceRepo = new PriceRepository(this.cache as RedisCache, this.db);
       this.vesselRepo = new VesselRepository(this.cache as RedisCache, this.db);
+      this.worldPortRepo = new WorldPortRepositoryCSV();
 
       console.log('[SERVICE-CONTAINER] Repositories initialized');
     } catch (error) {
@@ -245,7 +249,8 @@ export class ServiceContainer {
       this.routeService = new RouteService(
         this.portRepo,
         this.cache as RedisCache,
-        seaRouteAPI
+        seaRouteAPI,
+        this.worldPortRepo
       );
 
       this.weatherService = new WeatherService(
@@ -290,6 +295,13 @@ export class ServiceContainer {
    */
   public getVesselRepository(): VesselRepository {
     return this.vesselRepo;
+  }
+
+  /**
+   * Get WorldPortRepository instance (Pub150 / World Port Index)
+   */
+  public getWorldPortRepository(): IWorldPortRepository {
+    return this.worldPortRepo;
   }
 
   /**

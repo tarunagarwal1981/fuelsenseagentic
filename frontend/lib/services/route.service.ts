@@ -23,7 +23,8 @@ import {
   arrayToObject,
   haversineDistance,
 } from '@/lib/utils/coordinate-validator';
-import type { Port } from '@/lib/repositories/types';
+import type { Port, WorldPortEntry, IWorldPortRepository } from '@/lib/repositories/types';
+import type { FuelType } from '@/lib/types';
 
 export type { RouteData } from './types';
 
@@ -100,11 +101,15 @@ export function normalizeCachedRoute(cached: CachedRouteData): RouteData {
   };
 }
 
+/** Port-like shape for route resolution (Port or WorldPortEntry). */
+type PortLike = (Port | WorldPortEntry) & { coordinates: [number, number] };
+
 export class RouteService {
   constructor(
     private portRepo: PortRepository,
     private cache: RedisCache,
-    private seaRouteAPI: SeaRouteAPIClient
+    private seaRouteAPI: SeaRouteAPIClient,
+    private worldPortRepo?: IWorldPortRepository | null
   ) {}
 
   /**
@@ -144,15 +149,23 @@ export class RouteService {
       console.error('[RouteService] Cache read error:', error);
     }
 
-    // Get port metadata from PortRepository (name, country, fuel_capabilities)
-    const originPort = await this.portRepo.findByCode(params.origin);
-    const destPort = await this.portRepo.findByCode(params.destination);
+    // Get port metadata: PortRepository first, then World Port Index (Pub150) for coordinates fallback
+    let originPort: PortLike | null = (await this.portRepo.findByCode(params.origin)) as PortLike | null;
+    if (!originPort && this.worldPortRepo) {
+      const w = await this.worldPortRepo.findByCode(params.origin);
+      if (w?.coordinates) originPort = w as PortLike;
+    }
+    let destPort: PortLike | null = (await this.portRepo.findByCode(params.destination)) as PortLike | null;
+    if (!destPort && this.worldPortRepo) {
+      const w = await this.worldPortRepo.findByCode(params.destination);
+      if (w?.coordinates) destPort = w as PortLike;
+    }
 
     if (!originPort) {
-      console.warn(`⚠️ [ROUTE-SERVICE] Origin port ${params.origin} not in database`);
+      console.warn(`⚠️ [ROUTE-SERVICE] Origin port ${params.origin} not in database or World Port Index`);
     }
     if (!destPort) {
-      console.warn(`⚠️ [ROUTE-SERVICE] Destination port ${params.destination} not in database`);
+      console.warn(`⚠️ [ROUTE-SERVICE] Destination port ${params.destination} not in database or World Port Index`);
     }
 
     // Call SeaRoute API with PORT CODES (API resolves coordinates from its database)
@@ -177,36 +190,34 @@ export class RouteService {
         if (!unknownPort || attempt >= maxRetries) {
           throw apiError;
         }
-        const isOrigin: boolean = unknownPort === params.origin && typeof fromParam === 'string';
-        const isDest: boolean = unknownPort === params.destination && typeof toParam === 'string';
-        const portForCoords: Port | null = isOrigin ? originPort : isDest ? destPort : null;
-        if (!portForCoords || !portForCoords.coordinates) {
+        // SeaRoute API accepts only (from, to) OR (origin_lon, origin_lat, dest_lon, dest_lat). No mixed mode.
+        // So when one port is unknown we must send BOTH ends as coordinates.
+        const needOriginCoords = unknownPort === params.origin && typeof fromParam === 'string';
+        const needDestCoords = unknownPort === params.destination && typeof toParam === 'string';
+        if (!originPort?.coordinates || !destPort?.coordinates) {
           throw new Error(
             `SeaRoute API does not recognize port ${unknownPort}. ` +
-              `Port not found in local database or has invalid coordinates. ` +
+              `Port not found in local database or World Port Index, or has invalid coordinates. ` +
               `Try ports from: SGSIN, NLRTM, AEFJR, GIGIB, USHOU, LKCMB, EGPSD, ESBCN, USNYC, INMUN`
           );
         }
-        const coords = portForCoords.coordinates as [number, number];
-        const lat = coords[0];
-        const lon = coords[1];
-        if (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001) {
+        const [latO, lonO] = originPort.coordinates;
+        const [latD, lonD] = destPort.coordinates;
+        if (
+          Math.abs(latO) < 0.001 && Math.abs(lonO) < 0.001 ||
+          Math.abs(latD) < 0.001 && Math.abs(lonD) < 0.001
+        ) {
           throw new Error(
             `SeaRoute API does not recognize port ${unknownPort}. ` +
               `Local coordinates are invalid (0,0). Try a different port.`
           );
         }
-        if (!validateCoordinates({ lat, lon })) {
-          throw new Error(`Invalid coordinates for port ${unknownPort}. Cannot fall back to coordinates.`);
+        if (!validateCoordinates({ lat: latO, lon: lonO }) || !validateCoordinates({ lat: latD, lon: lonD })) {
+          throw new Error(`Invalid coordinates for one or both ports. Cannot fall back to coordinates.`);
         }
-        console.warn(`⚠️ [ROUTE-SERVICE] Port ${unknownPort} not in SeaRoute API, using coordinates from local DB`);
-        if (isOrigin) {
-          fromParam = [lat, lon];
-        } else if (isDest) {
-          toParam = [lat, lon];
-        } else {
-          throw apiError;
-        }
+        console.warn(`⚠️ [ROUTE-SERVICE] Port ${unknownPort} not in SeaRoute API, using coordinates from local DB / World Port Index for both ends`);
+        fromParam = [latO, lonO];
+        toParam = [latD, lonD];
       }
     }
 
@@ -299,20 +310,22 @@ export class RouteService {
     // Determine route type
     const routeType = this.determineRouteType(enhancedWaypoints);
 
+    const originCountry = (originPort as Port)?.country ?? (originPort as WorldPortEntry)?.countryCode ?? 'Unknown';
+    const destCountry = (destPort as Port)?.country ?? (destPort as WorldPortEntry)?.countryCode ?? 'Unknown';
     const routeData: RouteData = {
       origin: {
         port_code: params.origin,
         name: originPort?.name ?? apiResponse.originResolved?.name ?? params.origin,
-        country: originPort?.country ?? 'Unknown',
+        country: originCountry,
         coordinates: originCoordsResolved,
-        fuel_capabilities: (originPort?.fuelsAvailable as any[]) ?? [],
+        fuel_capabilities: ((originPort as Port)?.fuelsAvailable ?? []) as FuelType[],
       },
       destination: {
         port_code: params.destination,
         name: destPort?.name ?? apiResponse.destinationResolved?.name ?? params.destination,
-        country: destPort?.country ?? 'Unknown',
+        country: destCountry,
         coordinates: destCoordsResolved,
-        fuel_capabilities: (destPort?.fuelsAvailable as any[]) ?? [],
+        fuel_capabilities: ((destPort as Port)?.fuelsAvailable ?? []) as FuelType[],
       },
       waypoints: enhancedWaypoints,
       totalDistanceNm: apiResponse.distance,

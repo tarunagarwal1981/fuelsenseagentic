@@ -70,6 +70,36 @@ export interface PriceQuery {
 }
 
 /**
+ * World Port Index (Pub150) entry for worldwide port lookup.
+ * Used when ports.json / DB does not have a port; supports CSV now, DB later.
+ */
+export interface WorldPortEntry {
+  /** Stable id: normalized UN/LOCODE when present, else WPI_<OID_> */
+  id: string;
+  /** Normalized UN/LOCODE (no space, uppercase) or null when CSV has none */
+  code: string | null;
+  /** Display name (main port name from CSV) */
+  name: string;
+  /** [latitude, longitude] from CSV */
+  coordinates: [number, number];
+  /** Country code from CSV */
+  countryCode?: string;
+  /** Harbor Size from CSV (e.g. Large, Medium, Small) for multi-match rule */
+  harborSize?: string;
+}
+
+/**
+ * Repository for worldwide port data (Pub150 / World Port Index).
+ * Implementation can read from CSV now or DB later without changing callers.
+ */
+export interface IWorldPortRepository {
+  /** Resolve by main or alternate port name; applies multi-match rule when multiple rows match. */
+  findByName(name: string): Promise<WorldPortEntry | null>;
+  /** Lookup by normalized port code (UN/LOCODE or WPI_<OID_>). */
+  findByCode(code: string): Promise<WorldPortEntry | null>;
+}
+
+/**
  * Vessel profile entity for repository layer
  */
 export interface VesselProfile {

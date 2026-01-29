@@ -2,11 +2,22 @@
  * Port Resolver Utility
  * 
  * Validates port codes against SeaRoute API and provides fallback port resolution.
- * Uses static ports.json as primary source, falls back to API when needed.
+ * Uses static ports.json as primary source, then SeaRoute API, then World Port Index (Pub150).
  */
 
 import portsData from '@/lib/data/ports.json';
 import { PortLogger } from './debug-logger';
+import { WorldPortRepositoryCSV } from '@/lib/repositories/world-port-repository';
+import type { IWorldPortRepository } from '@/lib/repositories/types';
+
+let worldPortRepoInstance: IWorldPortRepository | null = null;
+
+function getWorldPortRepository(): IWorldPortRepository {
+  if (!worldPortRepoInstance) {
+    worldPortRepoInstance = new WorldPortRepositoryCSV();
+  }
+  return worldPortRepoInstance;
+}
 
 interface Port {
   port_code: string;
@@ -221,7 +232,7 @@ export async function validatePortCode(
  */
 export async function resolvePortCode(
   query: string
-): Promise<{ port_code: string; coordinates: { lat: number; lon: number }; source: 'static' | 'api' } | null> {
+): Promise<{ port_code: string; coordinates: { lat: number; lon: number }; source: 'static' | 'api' | 'world_port' } | null> {
   const normalizedQuery = query.toLowerCase().trim();
   
   // Remove common noise words before searching
@@ -337,6 +348,23 @@ export async function resolvePortCode(
     }
   } catch (error) {
     console.warn(`[PORT-RESOLVE] API resolution failed for "${query}":`, error);
+  }
+
+  // Try World Port Index (Pub150)
+  try {
+    const worldRepo = getWorldPortRepository();
+    const entry = await worldRepo.findByName(query);
+    if (entry?.coordinates) {
+      console.log(`✅ [PORT-RESOLVE] World Port (Pub150) match: ${entry.id} (${entry.name})`);
+      PortLogger.logPortResolution(entry.id, { lat: entry.coordinates[0], lon: entry.coordinates[1] }, 'world_port');
+      return {
+        port_code: entry.id,
+        coordinates: { lat: entry.coordinates[0], lon: entry.coordinates[1] },
+        source: 'world_port',
+      };
+    }
+  } catch (error) {
+    console.warn(`[PORT-RESOLVE] World Port resolution failed for "${query}":`, error);
   }
 
   console.warn(`❌ [PORT-RESOLVE] No match found for: "${query}"`);

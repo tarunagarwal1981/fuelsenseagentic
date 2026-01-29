@@ -9,6 +9,7 @@ export { createSupabaseClient, getSupabaseClient } from './db-client';
 export { PortRepository } from './port-repository';
 export { PriceRepository } from './price-repository';
 export { VesselRepository } from './vessel-repository';
+export { WorldPortRepositoryCSV } from './world-port-repository';
 export { ServiceContainer } from './service-container';
 export type {
   RepositoryConfig,
@@ -17,5 +18,7 @@ export type {
   FuelPrice,
   PriceQuery,
   VesselProfile,
+  WorldPortEntry,
+  IWorldPortRepository,
 } from './types';
 

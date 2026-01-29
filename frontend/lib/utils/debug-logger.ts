@@ -81,7 +81,7 @@ export const PortLogger = {
   /**
    * Log port resolution (static vs API)
    */
-  logPortResolution: (code: string, coords: { lat: number; lon: number }, source: 'static' | 'api') => {
+  logPortResolution: (code: string, coords: { lat: number; lon: number }, source: 'static' | 'api' | 'world_port') => {
     formatLog('PORT-RESOLVE', `Resolved ${code}: ${coords.lat}°N, ${coords.lon}°E (source: ${source})`);
   },
 

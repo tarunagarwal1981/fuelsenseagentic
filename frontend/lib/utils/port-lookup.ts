@@ -1,11 +1,42 @@
 /**
  * Port Lookup Utility
  * 
- * Fuzzy searches port database to find port codes from user queries
+ * Fuzzy searches port database to find port codes from user queries.
+ * Falls back to World Port Index (Pub150) when ports.json has no match.
  */
 
 import portsData from '@/lib/data/ports.json';
 import { PortLogger, startLoggingSession } from './debug-logger';
+import { WorldPortRepositoryCSV } from '@/lib/repositories/world-port-repository';
+import type { IWorldPortRepository } from '@/lib/repositories/types';
+
+let worldPortRepoInstance: IWorldPortRepository | null = null;
+
+function getWorldPortRepository(): IWorldPortRepository {
+  if (!worldPortRepoInstance) {
+    worldPortRepoInstance = new WorldPortRepositoryCSV();
+  }
+  return worldPortRepoInstance;
+}
+
+/**
+ * Extract origin and destination query strings from query (for World Port fallback).
+ * Matches "X to Y", "from X to Y", "between X and Y".
+ */
+function getOriginDestQueries(query: string): { originQuery: string | null; destQuery: string | null } {
+  const trimmed = query.trim();
+  const toPattern = /(?:from\s+)?([A-Za-z0-9°\s,\.]+?)\s+to\s+([A-Za-z\s]+)/i;
+  const toMatch = trimmed.match(toPattern);
+  if (toMatch) {
+    return { originQuery: toMatch[1].trim() || null, destQuery: toMatch[2].trim() || null };
+  }
+  const betweenPattern = /between\s+([A-Za-z0-9°\s,\.]+?)\s+and\s+([A-Za-z\s]+)/i;
+  const betweenMatch = trimmed.match(betweenPattern);
+  if (betweenMatch) {
+    return { originQuery: betweenMatch[1].trim() || null, destQuery: betweenMatch[2].trim() || null };
+  }
+  return { originQuery: null, destQuery: null };
+}
 
 interface Port {
   port_code: string;
@@ -810,7 +841,39 @@ export async function extractPortsFromQuery(query: string): Promise<{ origin: st
     PortLogger.logPortIdentification(deterministicResult.origin, deterministicResult.destination, 'deterministic');
     return deterministicResult;
   }
-  
+
+  // STEP 1b: Try World Port Index (Pub150) for any missing origin/destination
+  if (!deterministicResult.origin || !deterministicResult.destination) {
+    const { originQuery, destQuery } = getOriginDestQueries(query);
+    const worldRepo = getWorldPortRepository();
+    if (!deterministicResult.origin && originQuery) {
+      try {
+        const w = await worldRepo.findByName(originQuery);
+        if (w) {
+          deterministicResult.origin = w.id;
+          console.log(`✅ [PORT-LOOKUP] World Port (Pub150) origin: ${w.id} (${w.name})`);
+        }
+      } catch (e) {
+        console.warn('[PORT-LOOKUP] World Port findByName(origin) failed:', e instanceof Error ? e.message : e);
+      }
+    }
+    if (!deterministicResult.destination && destQuery) {
+      try {
+        const w = await worldRepo.findByName(destQuery);
+        if (w) {
+          deterministicResult.destination = w.id;
+          console.log(`✅ [PORT-LOOKUP] World Port (Pub150) destination: ${w.id} (${w.name})`);
+        }
+      } catch (e) {
+        console.warn('[PORT-LOOKUP] World Port findByName(destination) failed:', e instanceof Error ? e.message : e);
+      }
+    }
+    if (deterministicResult.origin && deterministicResult.destination) {
+      PortLogger.logPortIdentification(deterministicResult.origin, deterministicResult.destination, 'world_port');
+      return deterministicResult;
+    }
+  }
+
   // STEP 2: Try SeaRoute API fallback if deterministic failed or partial
   console.log('🔄 [PORT-LOOKUP] Deterministic extraction incomplete, trying API fallback...');
   const apiResult = await extractPortsFromSeaRouteAPI(query);
