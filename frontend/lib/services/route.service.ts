@@ -23,8 +23,19 @@ import {
   arrayToObject,
   haversineDistance,
 } from '@/lib/utils/coordinate-validator';
+import type { Port } from '@/lib/repositories/types';
 
 export type { RouteData } from './types';
+
+/**
+ * Parse SeaRoute API 400 error for "Unknown port code: X".
+ * Returns the unknown port code if found, else undefined.
+ */
+function parseSeaRouteUnknownPortError(error: Error): string | undefined {
+  const msg = error.message || '';
+  const match = msg.match(/Unknown port code:\s*([A-Z]{5})/i);
+  return match ? match[1].toUpperCase() : undefined;
+}
 
 /**
  * Cached route data contract.
@@ -147,11 +158,55 @@ export class RouteService {
     // Call SeaRoute API with PORT CODES (API resolves coordinates from its database)
     console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
     console.log('🚢 [ROUTE-SERVICE] Sending port codes to SeaRoute API');
-    const apiResponse = await this.seaRouteAPI.calculateRoute({
-      from: params.origin,
-      to: params.destination,
-      speed: params.speed,
-    });
+
+    let apiResponse!: Awaited<ReturnType<SeaRouteAPIClient['calculateRoute']>>;
+    let fromParam: string | [number, number] = params.origin;
+    let toParam: string | [number, number] = params.destination;
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        apiResponse = await this.seaRouteAPI.calculateRoute({
+          from: fromParam,
+          to: toParam,
+          speed: params.speed,
+        });
+        break;
+      } catch (apiError) {
+        const unknownPort = parseSeaRouteUnknownPortError(apiError instanceof Error ? apiError : new Error(String(apiError)));
+        if (!unknownPort || attempt >= maxRetries) {
+          throw apiError;
+        }
+        const isOrigin: boolean = unknownPort === params.origin && typeof fromParam === 'string';
+        const isDest: boolean = unknownPort === params.destination && typeof toParam === 'string';
+        const portForCoords: Port | null = isOrigin ? originPort : isDest ? destPort : null;
+        if (!portForCoords || !portForCoords.coordinates) {
+          throw new Error(
+            `SeaRoute API does not recognize port ${unknownPort}. ` +
+              `Port not found in local database or has invalid coordinates. ` +
+              `Try ports from: SGSIN, NLRTM, AEFJR, GIGIB, USHOU, LKCMB, EGPSD, ESBCN, USNYC, INMUN`
+          );
+        }
+        const [lat, lon]: [number, number] = portForCoords.coordinates;
+        if (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001) {
+          throw new Error(
+            `SeaRoute API does not recognize port ${unknownPort}. ` +
+              `Local coordinates are invalid (0,0). Try a different port.`
+          );
+        }
+        if (!validateCoordinates({ lat, lon })) {
+          throw new Error(`Invalid coordinates for port ${unknownPort}. Cannot fall back to coordinates.`);
+        }
+        console.warn(`⚠️ [ROUTE-SERVICE] Port ${unknownPort} not in SeaRoute API, using coordinates from local DB`);
+        if (isOrigin) {
+          fromParam = [lat, lon];
+        } else if (isDest) {
+          toParam = [lat, lon];
+        } else {
+          throw apiError;
+        }
+      }
+    }
 
     console.log('✅ [ROUTE-SERVICE] Route received from API');
     console.log('   Distance:', apiResponse.distance, 'nm');

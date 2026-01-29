@@ -238,19 +238,21 @@ export class TemplateEngine {
     const bunkerData = state.bunker_analysis as Record<string, unknown> | undefined;
     const multiBunker = state.multi_bunker_plan as Record<string, unknown> | undefined;
 
-    const origin = routeData?.origin_port ?? routeData?.origin;
-    const dest = routeData?.destination_port ?? routeData?.destination;
+    const origin = routeData?.origin_port ?? routeData?.origin ?? routeData?.origin_port_code;
+    const dest = routeData?.destination_port ?? routeData?.destination ?? routeData?.destination_port_code;
     const distanceNm =
       (routeData?.totalDistanceNm as number) ??
       (routeData?.distance_nm as number) ??
       (routeData?.distance as number);
     const estHours = (routeData?.estimatedHours as number) ?? (routeData?.estimated_hours as number);
 
+    const waypointsCount = (routeData?.waypoints as unknown[] | undefined)?.length ?? (routeData?.waypoints_count as number) ?? 0;
     const route = {
       origin: typeof origin === 'object' && origin !== null ? (origin as Record<string, unknown>).port_code ?? (origin as Record<string, unknown>).code ?? String(origin) : String(origin ?? ''),
       destination: typeof dest === 'object' && dest !== null ? (dest as Record<string, unknown>).port_code ?? (dest as Record<string, unknown>).code ?? String(dest) : String(dest ?? ''),
       distance_nm: distanceNm ?? 0,
       estimated_hours: estHours ?? 0,
+      waypoints_count: waypointsCount,
     };
 
     const recs = (bunkerData?.recommendations ?? []) as unknown[];

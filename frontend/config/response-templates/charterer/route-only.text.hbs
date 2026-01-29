@@ -1,0 +1,19 @@
+📍 ROUTE CALCULATION
+===================
+
+{{#if success}}
+✅ Route calculated successfully
+{{else}}
+⚠️  Route calculation completed with warnings
+{{/if}}
+
+ROUTE SUMMARY
+-------------
+Origin: {{data.route.origin}}
+Destination: {{data.route.destination}}
+Distance: {{number data.route.distance_nm 0}} nm
+Estimated Duration: {{duration data.route.estimated_hours h}}
+
+{{#if (gt data.route.waypoints_count 0)}}
+Waypoints: {{data.route.waypoints_count}} points along the route
+{{/if}}

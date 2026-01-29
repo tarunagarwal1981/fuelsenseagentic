@@ -68,6 +68,7 @@ import { formatResponse } from '../formatters/response-formatter';
 import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
 import { isFeatureEnabled } from '../config/feature-flags';
 import { generateSynthesis } from './synthesis/synthesis-engine';
+import { classifyQuery } from './synthesis/query-classifier';
 import { getSynthesisEngine } from '@/lib/synthesis';
 import { getTemplateEngine } from '@/lib/synthesis/template-engine';
 import { getTemplateSelector } from '@/lib/synthesis/template-selector';
@@ -4050,8 +4051,11 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         const requestContext = state.request_context || {};
         const stakeholder = templateSelector.detectStakeholder(requestContext);
         const format = templateSelector.detectFormat(requestContext);
-        // Use query classifier result from synthesis when available, else execution_plan, else fallback
+        // Use query classifier when synthesis doesn't provide classification (decoupled synthesis flow)
+        const rawMessage = state.messages?.[0]?.content;
+        const userMessage = typeof rawMessage === 'string' ? rawMessage : (rawMessage != null ? String(rawMessage) : '');
         const queryType = updatedState.synthesized_insights?.synthesis_metadata?.classification_result?.queryType
+          ?? (() => { const c = classifyQuery(userMessage, state); return c.queryType; })()
           ?? state.execution_plan?.queryType
           ?? 'bunker_planning';
 
