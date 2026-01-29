@@ -175,9 +175,10 @@ export class RouteService {
     );
 
     // Resolve origin/destination coordinates: prefer API-resolved, else port DB, else first/last waypoint
+    // API returns from/to in GeoJSON [lon, lat] - same as route geometry; convert to [lat, lon]
     const originCoordsResolved =
       apiResponse.originResolved?.coordinates != null
-        ? { lat: apiResponse.originResolved.coordinates[0], lon: apiResponse.originResolved.coordinates[1] }
+        ? { lat: apiResponse.originResolved.coordinates[1], lon: apiResponse.originResolved.coordinates[0] }
         : originPort
           ? arrayToObject(originPort.coordinates)
           : waypoints.length > 0
@@ -185,7 +186,7 @@ export class RouteService {
             : { lat: 0, lon: 0 };
     const destCoordsResolved =
       apiResponse.destinationResolved?.coordinates != null
-        ? { lat: apiResponse.destinationResolved.coordinates[0], lon: apiResponse.destinationResolved.coordinates[1] }
+        ? { lat: apiResponse.destinationResolved.coordinates[1], lon: apiResponse.destinationResolved.coordinates[0] }
         : destPort
           ? arrayToObject(destPort.coordinates)
           : waypoints.length > 0
