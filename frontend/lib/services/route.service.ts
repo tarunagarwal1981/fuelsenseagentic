@@ -187,7 +187,9 @@ export class RouteService {
               `Try ports from: SGSIN, NLRTM, AEFJR, GIGIB, USHOU, LKCMB, EGPSD, ESBCN, USNYC, INMUN`
           );
         }
-        const [lat, lon]: [number, number] = portForCoords.coordinates;
+        const coords = portForCoords.coordinates as [number, number];
+        const lat = coords[0];
+        const lon = coords[1];
         if (Math.abs(lat) < 0.001 && Math.abs(lon) < 0.001) {
           throw new Error(
             `SeaRoute API does not recognize port ${unknownPort}. ` +
