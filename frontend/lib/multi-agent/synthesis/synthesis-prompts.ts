@@ -52,8 +52,8 @@ function extractAgentDataInternal(state: MultiAgentState, agentName: string): st
         distance_nm: state.route_data.distance_nm,
         estimated_hours: state.route_data.estimated_hours,
         waypoints_count: state.route_data.waypoints?.length || 0,
-        origin: state.route_data.origin_port_code,
-        destination: state.route_data.destination_port_code,
+        origin: state.route_data.origin_port_name ?? state.route_data.origin_port_code,
+        destination: state.route_data.destination_port_name ?? state.route_data.destination_port_code,
       }, null, 2);
       
     case 'weather_agent':
@@ -318,8 +318,8 @@ function extractAgentData(agent: string, state: MultiAgentState): Record<string,
         distance_nm: state.route_data.distance_nm,
         estimated_hours: state.route_data.estimated_hours,
         route_type: state.route_data.route_type,
-        origin: state.route_data.origin_port_code,
-        destination: state.route_data.destination_port_code,
+        origin: state.route_data.origin_port_name ?? state.route_data.origin_port_code,
+        destination: state.route_data.destination_port_name ?? state.route_data.destination_port_code,
       };
     
     case 'bunker_agent':

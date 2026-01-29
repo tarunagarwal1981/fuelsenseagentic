@@ -3471,8 +3471,8 @@ function formatSynthesisAsNarrative(state: MultiAgentState): string {
   
   // --- ONE-LINE VOYAGE SUMMARY ---
   if (state.route_data) {
-    const origin = state.route_data.origin_port_code || 'Origin';
-    const dest = state.route_data.destination_port_code || 'Destination';
+    const origin = (state.route_data.origin_port_name ?? state.route_data.origin_port_code) || 'Origin';
+    const dest = (state.route_data.destination_port_name ?? state.route_data.destination_port_code) || 'Destination';
     const distance = state.route_data.distance_nm.toFixed(0);
     const days = Math.floor((state.route_data.estimated_hours || 0) / 24);
     const weatherPct = state.weather_consumption?.consumption_increase_percent;
@@ -3589,7 +3589,7 @@ function generateClarificationResponse(state: MultiAgentState): string {
   // Add available data context
   const availableData: string[] = [];
   if (state.route_data) {
-    availableData.push(`Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code}`);
+    availableData.push(`Route: ${(state.route_data.origin_port_name ?? state.route_data.origin_port_code)} → ${(state.route_data.destination_port_name ?? state.route_data.destination_port_code)}`);
   }
   if (state.weather_forecast) {
     availableData.push('Weather forecast available');
@@ -3675,8 +3675,8 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
     parts.push(`**Total Cost**: $${totalCost.toLocaleString()}`);
     
     if (state.route_data) {
-      const origin = state.route_data.origin_port_code || 'Origin';
-      const dest = state.route_data.destination_port_code || 'Destination';
+      const origin = (state.route_data.origin_port_name ?? state.route_data.origin_port_code) || 'Origin';
+      const dest = (state.route_data.destination_port_name ?? state.route_data.destination_port_code) || 'Destination';
       parts.push(`\n📍 **Route**: ${origin} → ${dest}`);
       parts.push(`**Distance**: ${state.route_data.distance_nm.toFixed(0)} nm\n`);
     }
@@ -3692,8 +3692,8 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
   // Strategy 3: Route-only response
   if (state.route_data) {
     console.log('ℹ️ [LEGACY-OUTPUT] Using route-only summary');
-    const origin = state.route_data.origin_port_code || 'Origin';
-    const dest = state.route_data.destination_port_code || 'Destination';
+    const origin = (state.route_data.origin_port_name ?? state.route_data.origin_port_code) || 'Origin';
+    const dest = (state.route_data.destination_port_name ?? state.route_data.destination_port_code) || 'Destination';
     const hours = state.route_data.estimated_hours || 0;
     return `📍 Route calculated: ${origin} → ${dest}\n` +
            `Distance: ${state.route_data.distance_nm.toFixed(0)} nautical miles\n` +

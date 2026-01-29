@@ -605,7 +605,7 @@ function summarizeState(state: MultiAgentState): string {
   const items: string[] = [];
   
   if (state.route_data) {
-    items.push(`✅ Route: ${state.route_data.origin_port_code} → ${state.route_data.destination_port_code} (${state.route_data.distance_nm}nm)`);
+    items.push(`✅ Route: ${(state.route_data.origin_port_name ?? state.route_data.origin_port_code)} → ${(state.route_data.destination_port_name ?? state.route_data.destination_port_code)} (${state.route_data.distance_nm}nm)`);
   } else {
     items.push('❌ Route: Not calculated');
   }

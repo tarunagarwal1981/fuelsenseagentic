@@ -448,6 +448,8 @@ export async function POST(req: Request) {
                       destination_port_code: accumulatedState.route_data.destination_port_code,
                       origin_port_name: accumulatedState.route_data.origin_port_name,
                       destination_port_name: accumulatedState.route_data.destination_port_name,
+                      origin_coordinates: accumulatedState.route_data.origin_coordinates,
+                      destination_coordinates: accumulatedState.route_data.destination_coordinates,
                     },
                   })}\n\n`
                 )
@@ -477,6 +479,10 @@ export async function POST(req: Request) {
                       route_type: accumulatedState.route_data.route_type,
                       origin_port_code: accumulatedState.route_data.origin_port_code,
                       destination_port_code: accumulatedState.route_data.destination_port_code,
+                      origin_port_name: accumulatedState.route_data.origin_port_name,
+                      destination_port_name: accumulatedState.route_data.destination_port_name,
+                      origin_coordinates: accumulatedState.route_data.origin_coordinates,
+                      destination_coordinates: accumulatedState.route_data.destination_coordinates,
                     },
                   })}\n\n`
                 )
