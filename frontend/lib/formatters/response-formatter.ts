@@ -424,7 +424,7 @@ function formatTimeline(state: MultiAgentState): TimelineData | null {
       hourFormatted: '0h',
       type: 'DEPARTURE',
       icon: '⚓',
-      title: `Depart ${state.route_data.origin_port_code}`,
+      title: `Depart ${state.route_data.origin_port_name ?? state.route_data.origin_port_code}`,
       description: 'Starting voyage with VLSFO',
       actionRequired: false,
     });
@@ -471,7 +471,7 @@ function formatTimeline(state: MultiAgentState): TimelineData | null {
       hourFormatted: `${Math.floor(state.route_data.estimated_hours)}h`,
       type: 'ARRIVAL',
       icon: '🏁',
-      title: `Arrive ${state.route_data.destination_port_code}`,
+      title: `Arrive ${state.route_data.destination_port_name ?? state.route_data.destination_port_code}`,
       description: 'Voyage complete',
       actionRequired: false,
     });
@@ -882,8 +882,8 @@ function formatTextOutput(state: MultiAgentState): string {
   // Section 1: Route Information (if available)
   if (state.route_data) {
     output += '🗺️ **ROUTE INFORMATION**\n';
-    output += `Origin: ${state.route_data.origin_port_code}\n`;
-    output += `Destination: ${state.route_data.destination_port_code}\n`;
+    output += `Origin: ${state.route_data.origin_port_name ?? state.route_data.origin_port_code}\n`;
+    output += `Destination: ${state.route_data.destination_port_name ?? state.route_data.destination_port_code}\n`;
     output += `Distance: ${state.route_data.distance_nm.toFixed(1)} nm\n`;
     output += `Estimated Time: ${state.route_data.estimated_hours.toFixed(0)} hours\n`;
   }

@@ -133,6 +133,14 @@ export interface RouteData {
   origin_port_code: string;
   /** Destination port code */
   destination_port_code: string;
+  /** Origin port display name (e.g. "Fujairah", "Port Clyde") when resolved from World Port / service */
+  origin_port_name?: string;
+  /** Destination port display name when resolved */
+  destination_port_name?: string;
+  /** Origin coordinates for map when port is not in ports.json (e.g. WPI_*) */
+  origin_coordinates?: { lat: number; lon: number };
+  /** Destination coordinates for map when port is not in ports.json */
+  destination_coordinates?: { lat: number; lon: number };
   /** Flag indicating if route came from cache */
   _from_cache?: boolean;
 }

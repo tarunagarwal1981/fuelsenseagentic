@@ -1247,8 +1247,10 @@ function formatRouteSummary(state: MultiAgentState): string {
   const rd = state.route_data;
   const days = (rd.estimated_hours / 24).toFixed(1);
   
-  let output = `**Origin:** ${rd.origin_port_code}\n`;
-  output += `**Destination:** ${rd.destination_port_code}\n`;
+  const originLabel = rd.origin_port_name ?? rd.origin_port_code;
+  const destLabel = rd.destination_port_name ?? rd.destination_port_code;
+  let output = `**Origin:** ${originLabel}\n`;
+  output += `**Destination:** ${destLabel}\n`;
   output += `**Distance:** ${rd.distance_nm.toLocaleString('en-US', { maximumFractionDigits: 0 })} nm\n`;
   output += `**Estimated Duration:** ${rd.estimated_hours.toFixed(0)} hours (~${days} days)\n`;
   output += `**Route Type:** ${rd.route_type || 'Direct'}\n`;

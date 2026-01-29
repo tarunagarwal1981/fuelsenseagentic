@@ -98,12 +98,28 @@ export function BunkerResponseViewer({ state }: BunkerResponseViewerProps) {
   const synthesis = state.synthesized_insights;
   const queryType = synthesis?.query_type || 'decision-required';
   
-  // Get port details for map
-  const originPort = hasRoute && state.route_data?.origin_port_code 
-    ? getPortDetails(state.route_data.origin_port_code)
+  // Get port details for map: use ports.json when available, else use route_data resolved names/coordinates (e.g. WPI_*)
+  const originPort = hasRoute && state.route_data?.origin_port_code
+    ? (getPortDetails(state.route_data.origin_port_code) ??
+        (state.route_data.origin_coordinates
+          ? {
+              port_code: state.route_data.origin_port_code,
+              name: state.route_data.origin_port_name ?? state.route_data.origin_port_code,
+              country: '',
+              coordinates: state.route_data.origin_coordinates,
+            }
+          : null))
     : null;
-  const destinationPort = hasRoute && state.route_data?.destination_port_code 
-    ? getPortDetails(state.route_data.destination_port_code)
+  const destinationPort = hasRoute && state.route_data?.destination_port_code
+    ? (getPortDetails(state.route_data.destination_port_code) ??
+        (state.route_data.destination_coordinates
+          ? {
+              port_code: state.route_data.destination_port_code,
+              name: state.route_data.destination_port_name ?? state.route_data.destination_port_code,
+              country: '',
+              coordinates: state.route_data.destination_coordinates,
+            }
+          : null))
     : null;
   
   // Prepare bunker ports with coordinates

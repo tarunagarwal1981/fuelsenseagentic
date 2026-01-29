@@ -240,6 +240,8 @@ export class TemplateEngine {
 
     const origin = routeData?.origin_port ?? routeData?.origin ?? routeData?.origin_port_code;
     const dest = routeData?.destination_port ?? routeData?.destination ?? routeData?.destination_port_code;
+    const originName = routeData?.origin_port_name ?? (typeof origin === 'object' && origin !== null ? (origin as Record<string, unknown>).name as string : undefined);
+    const destName = routeData?.destination_port_name ?? (typeof dest === 'object' && dest !== null ? (dest as Record<string, unknown>).name as string : undefined);
     const distanceNm =
       (routeData?.totalDistanceNm as number) ??
       (routeData?.distance_nm as number) ??
@@ -247,12 +249,21 @@ export class TemplateEngine {
     const estHours = (routeData?.estimatedHours as number) ?? (routeData?.estimated_hours as number);
 
     const waypointsCount = (routeData?.waypoints as unknown[] | undefined)?.length ?? (routeData?.waypoints_count as number) ?? 0;
+    const originStr = typeof origin === 'object' && origin !== null ? (origin as Record<string, unknown>).port_code ?? (origin as Record<string, unknown>).code ?? String(origin) : String(origin ?? '');
+    const destStr = typeof dest === 'object' && dest !== null ? (dest as Record<string, unknown>).port_code ?? (dest as Record<string, unknown>).code ?? String(dest) : String(dest ?? '');
     const route = {
-      origin: typeof origin === 'object' && origin !== null ? (origin as Record<string, unknown>).port_code ?? (origin as Record<string, unknown>).code ?? String(origin) : String(origin ?? ''),
-      destination: typeof dest === 'object' && dest !== null ? (dest as Record<string, unknown>).port_code ?? (dest as Record<string, unknown>).code ?? String(dest) : String(dest ?? ''),
+      origin: originName ?? originStr,
+      destination: destName ?? destStr,
+      origin_port_code: routeData?.origin_port_code ?? originStr,
+      destination_port_code: routeData?.destination_port_code ?? destStr,
+      origin_port_name: originName,
+      destination_port_name: destName,
+      origin_coordinates: routeData?.origin_coordinates,
+      destination_coordinates: routeData?.destination_coordinates,
       distance_nm: distanceNm ?? 0,
       estimated_hours: estHours ?? 0,
       waypoints_count: waypointsCount,
+      waypoints: routeData?.waypoints,
     };
 
     const recs = (bunkerData?.recommendations ?? []) as unknown[];

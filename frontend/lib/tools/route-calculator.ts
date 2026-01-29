@@ -44,6 +44,14 @@ export interface RouteCalculatorOutput {
   origin_port_code: string;
   /** Destination port code */
   destination_port_code: string;
+  /** Origin port display name (e.g. "Fujairah") when resolved from service */
+  origin_port_name?: string;
+  /** Destination port display name (e.g. "Port Clyde") when resolved */
+  destination_port_name?: string;
+  /** Origin coordinates for map when port not in ports.json (e.g. WPI_*) */
+  origin_coordinates?: { lat: number; lon: number };
+  /** Destination coordinates for map */
+  destination_coordinates?: { lat: number; lon: number };
 }
 
 
@@ -202,7 +210,9 @@ export async function calculateRoute(
       lon: wp.coordinates[1],
     }));
     
-    // Format output for agent consumption
+    // Format output for agent consumption (include names and coordinates for UI/map when using WPI_* etc.)
+    const routeOriginCoords = routeData.origin.coordinates;
+    const routeDestCoords = routeData.destination.coordinates;
     const result: RouteCalculatorOutput = {
       distance_nm: routeData.totalDistanceNm,
       estimated_hours: Math.round(routeData.estimatedHours * 100) / 100, // Round to 2 decimal places
@@ -210,6 +220,16 @@ export async function calculateRoute(
       route_type: routeData.routeType,
       origin_port_code: routeData.origin.port_code,
       destination_port_code: routeData.destination.port_code,
+      origin_port_name: routeData.origin.name ?? undefined,
+      destination_port_name: routeData.destination.name ?? undefined,
+      origin_coordinates:
+        Array.isArray(routeOriginCoords) && routeOriginCoords.length >= 2
+          ? { lat: routeOriginCoords[0], lon: routeOriginCoords[1] }
+          : undefined,
+      destination_coordinates:
+        Array.isArray(routeDestCoords) && routeDestCoords.length >= 2
+          ? { lat: routeDestCoords[0], lon: routeDestCoords[1] }
+          : undefined,
     };
     
     PortLogger.logRouteCalculation(

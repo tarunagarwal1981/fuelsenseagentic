@@ -89,11 +89,14 @@ export function MultiAgentAnalysisDisplay({ data, mapOverlays }: AnalysisDisplay
               </div>
             </div>
             
-            {/* Map Visualization */}
+            {/* Map Visualization: use ports.json when available, else route_data resolved coords (e.g. WPI_*) */}
             {route.waypoints && route.origin_port_code && route.destination_port_code && (() => {
-              const originPort = getPortDetails(route.origin_port_code);
-              const destinationPort = getPortDetails(route.destination_port_code);
-              
+              const originPort = getPortDetails(route.origin_port_code) ?? (route.origin_coordinates
+                ? { port_code: route.origin_port_code, name: route.origin_port_name ?? route.origin_port_code, country: '', coordinates: route.origin_coordinates }
+                : null);
+              const destinationPort = getPortDetails(route.destination_port_code) ?? (route.destination_coordinates
+                ? { port_code: route.destination_port_code, name: route.destination_port_name ?? route.destination_port_code, country: '', coordinates: route.destination_coordinates }
+                : null);
               if (originPort && destinationPort) {
                 return (
                   <div className="mt-4">

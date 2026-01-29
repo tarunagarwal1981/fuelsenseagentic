@@ -306,9 +306,11 @@ function formatRouteData(route: any): string {
   
   const days = (route.estimated_hours / 24).toFixed(1);
   
+  const originLabel = route.origin_port_name ?? route.origin_port_code;
+  const destLabel = route.destination_port_name ?? route.destination_port_code;
   let output = '**Route Information:**\n';
-  output += `- Origin: ${route.origin_port_code}\n`;
-  output += `- Destination: ${route.destination_port_code}\n`;
+  output += `- Origin: ${originLabel}\n`;
+  output += `- Destination: ${destLabel}\n`;
   output += `- Distance: ${route.distance_nm?.toLocaleString('en-US', { maximumFractionDigits: 0 })} nm\n`;
   output += `- Duration: ${route.estimated_hours?.toFixed(0)} hours (~${days} days)\n`;
   if (route.route_type) {
