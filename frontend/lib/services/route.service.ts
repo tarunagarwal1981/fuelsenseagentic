@@ -149,16 +149,14 @@ export class RouteService {
       console.error('[RouteService] Cache read error:', error);
     }
 
-    // Get port metadata: PortRepository first, then World Port Index (Pub150) for coordinates fallback
-    let originPort: PortLike | null = (await this.portRepo.findByCode(params.origin)) as PortLike | null;
-    if (!originPort && this.worldPortRepo) {
-      const w = await this.worldPortRepo.findByCode(params.origin);
-      if (w?.coordinates) originPort = w as PortLike;
-    }
-    let destPort: PortLike | null = (await this.portRepo.findByCode(params.destination)) as PortLike | null;
-    if (!destPort && this.worldPortRepo) {
-      const w = await this.worldPortRepo.findByCode(params.destination);
-      if (w?.coordinates) destPort = w as PortLike;
+    // Get port metadata: route flow uses only World Port Index (Pub150) for resolution; no ports.json
+    let originPort: PortLike | null = null;
+    let destPort: PortLike | null = null;
+    if (this.worldPortRepo) {
+      const wOrigin = await this.worldPortRepo.findByCode(params.origin);
+      if (wOrigin?.coordinates) originPort = wOrigin as PortLike;
+      const wDest = await this.worldPortRepo.findByCode(params.destination);
+      if (wDest?.coordinates) destPort = wDest as PortLike;
     }
 
     if (!originPort) {
@@ -168,13 +166,38 @@ export class RouteService {
       console.warn(`⚠️ [ROUTE-SERVICE] Destination port ${params.destination} not in database or World Port Index`);
     }
 
-    // Call SeaRoute API with PORT CODES (API resolves coordinates from its database)
-    console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
-    console.log('🚢 [ROUTE-SERVICE] Sending port codes to SeaRoute API');
+    // When UN/LOCODE is not available (e.g. WPI_*), use coordinates for both ends from the first request
+    const isUnLoCode = (code: string) => /^[A-Z0-9]{5}$/.test(code);
+    const useCoordinatesFirst =
+      !isUnLoCode(params.origin) || !isUnLoCode(params.destination);
 
-    let apiResponse!: Awaited<ReturnType<SeaRouteAPIClient['calculateRoute']>>;
     let fromParam: string | [number, number] = params.origin;
     let toParam: string | [number, number] = params.destination;
+    if (useCoordinatesFirst && originPort?.coordinates && destPort?.coordinates) {
+      const [latO, lonO] = originPort.coordinates;
+      const [latD, lonD] = destPort.coordinates;
+      if (
+        !(
+          (Math.abs(latO) < 0.001 && Math.abs(lonO) < 0.001) ||
+          (Math.abs(latD) < 0.001 && Math.abs(lonD) < 0.001)
+        ) &&
+        validateCoordinates({ lat: latO, lon: lonO }) &&
+        validateCoordinates({ lat: latD, lon: lonD })
+      ) {
+        console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
+        console.warn(
+          `⚠️ [ROUTE-SERVICE] One or both ports have no UN/LOCODE; using coordinates from World Port Index for both ends`
+        );
+        fromParam = [latO, lonO];
+        toParam = [latD, lonD];
+      }
+    }
+    if (typeof fromParam === 'string') {
+      console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
+      console.log('🚢 [ROUTE-SERVICE] Sending port codes to SeaRoute API');
+    }
+
+    let apiResponse!: Awaited<ReturnType<SeaRouteAPIClient['calculateRoute']>>;
     const maxRetries = 2;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {

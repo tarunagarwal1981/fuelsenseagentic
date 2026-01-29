@@ -1,10 +1,12 @@
 /**
  * Route Validator Utility
- * 
+ *
  * Validates routes before returning results to catch port identification errors early.
  * Performs geographic sanity checks and compares with known routes.
+ * Gets port coordinates via PortResolutionService (World Port Index); no ports.json.
  */
 
+import { ServiceContainer } from '@/lib/repositories/service-container';
 import { haversineDistance } from './port-lookup';
 
 interface ValidationResult {
@@ -32,7 +34,8 @@ const KNOWN_ROUTES: Record<string, { min: number; max: number }> = {
 };
 
 /**
- * Validate route makes geographic sense
+ * Validate route makes geographic sense.
+ * Uses PortResolutionService (World Port Index) for port coordinates; Agent → Utility → Service → Repository.
  */
 export async function validateRoute(
   originCode: string,
@@ -44,30 +47,23 @@ export async function validateRoute(
   const warnings: string[] = [];
   const suggestions: { origin?: string; dest?: string } = {};
 
-  // Load ports data
+  // Get coordinates via service layer (World Port Index only; no ports.json)
   let originCoords: { lat: number; lon: number } | null = null;
   let destCoords: { lat: number; lon: number } | null = null;
 
   try {
-    const portsModule = await import('@/lib/data/ports.json');
-    const ports = Array.isArray(portsModule) ? portsModule : (portsModule as any).default || portsModule;
+    const portResolutionService = ServiceContainer.getInstance().getPortResolutionService();
+    originCoords = await portResolutionService.getCoordinatesForPort(originCode);
+    destCoords = await portResolutionService.getCoordinatesForPort(destCode);
 
-    const originPort = ports.find((p: any) => p.port_code === originCode);
-    const destPort = ports.find((p: any) => p.port_code === destCode);
-
-    if (!originPort || !originPort.coordinates) {
+    if (!originCoords) {
       warnings.push(`Origin port ${originCode} not found in database`);
-    } else {
-      originCoords = originPort.coordinates;
     }
-
-    if (!destPort || !destPort.coordinates) {
+    if (!destCoords) {
       warnings.push(`Destination port ${destCode} not found in database`);
-    } else {
-      destCoords = destPort.coordinates;
     }
   } catch (error) {
-    warnings.push('Failed to load ports data for validation');
+    warnings.push('Failed to resolve port coordinates for validation');
   }
 
   // Calculate straight-line distance if we have coordinates

@@ -47,22 +47,27 @@ export interface RouteCalculatorOutput {
 }
 
 
+/** Port code: 5-char UN/LOCODE (e.g. AEFJR) or World Port Index id (e.g. WPI_710). */
+const portCodeSchema = z
+  .string()
+  .min(5, 'Port code must be at least 5 characters')
+  .max(15, 'Port code must be at most 15 characters')
+  .refine(
+    (val) => /^[A-Z0-9]{5}$/.test(val) || /^WPI_\d+$/.test(val),
+    { message: 'Port code must be 5-character UN/LOCODE (e.g. AEFJR) or World Port Index id (e.g. WPI_710)' }
+  );
+
 /**
  * Zod schema for input validation
  * Validates that required fields are present and have correct types
  */
 export const routeCalculatorInputSchema = z.object({
-  origin_port_code: z
-    .string()
-    .min(5, 'Origin port code must be exactly 5 characters (UNLOCODE format)')
-    .max(5, 'Origin port code must be exactly 5 characters (UNLOCODE format)')
-    .describe('Origin port code in UNLOCODE format (e.g., SGSIN for Singapore)'),
-  
-  destination_port_code: z
-    .string()
-    .min(5, 'Destination port code must be exactly 5 characters (UNLOCODE format)')
-    .max(5, 'Destination port code must be exactly 5 characters (UNLOCODE format)')
-    .describe('Destination port code in UNLOCODE format (e.g., NLRTM for Rotterdam)'),
+  origin_port_code: portCodeSchema.describe(
+    'Origin port code: UN/LOCODE (5 chars, e.g. SGSIN) or World Port Index id (e.g. WPI_710)'
+  ),
+  destination_port_code: portCodeSchema.describe(
+    'Destination port code: UN/LOCODE (5 chars, e.g. NLRTM) or World Port Index id (e.g. WPI_710)'
+  ),
   
   vessel_speed_knots: z
     .number()
@@ -273,15 +278,9 @@ export const routeCalculatorToolSchema = {
     Returns distance, estimated travel time, waypoints, and route type (e.g., via Suez Canal).
     Accounts for navigable waterways, canal passages, and restricted areas.
     
-    Port codes must be valid UN/LOCODE format (5 characters):
-    - Format: [2-letter country][3-letter port]
-    - Examples: SGSIN (Singapore), NLRTM (Rotterdam), USNYC (New York)
+    Port codes: UN/LOCODE (5 characters, e.g. SGSIN, NLRTM) or World Port Index id (e.g. WPI_710 for ports without UN/LOCODE).
     
-    Common ports:
-    - Asia: SGSIN, CNSHA, HKHKG, JPYOK, KRPUS
-    - Middle East: AEJEA, AEFUJ, INMUN
-    - Europe: NLRTM, DEHAM, GIGIB, GRPIR
-    - Americas: USNYC, USHOU, PAMIT
+    Common UN/LOCODEs: SGSIN, CNSHA, HKHKG, NLRTM, AEFJR, USHOU, USNYC, INMUN.
     
     The tool will return a helpful error if port codes are invalid.`,
   input_schema: {
@@ -289,11 +288,11 @@ export const routeCalculatorToolSchema = {
     properties: {
       origin_port_code: {
         type: 'string',
-        description: 'Origin port code in UNLOCODE format (5 characters, e.g., SGSIN for Singapore). Must be exactly 5 alphanumeric characters.',
+        description: 'Origin port code: UN/LOCODE (5 chars, e.g. SGSIN) or World Port Index id (e.g. WPI_710).',
       },
       destination_port_code: {
         type: 'string',
-        description: 'Destination port code in UNLOCODE format (5 characters, e.g., NLRTM for Rotterdam). Must be exactly 5 alphanumeric characters.',
+        description: 'Destination port code: UN/LOCODE (5 chars, e.g. NLRTM) or World Port Index id (e.g. WPI_710).',
       },
       vessel_speed_knots: {
         type: 'number',

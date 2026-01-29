@@ -25,6 +25,7 @@ import type { IWorldPortRepository } from './types';
 import { RouteService } from '@/lib/services/route.service';
 import { BunkerService } from '@/lib/services/bunker.service';
 import { WeatherService } from '@/lib/services/weather.service';
+import { PortResolutionService } from '@/lib/services/port-resolution.service';
 import { SeaRouteAPIClient } from '@/lib/services/sea-route-api-client';
 import { OpenMeteoAPIClient } from '@/lib/services/open-meteo-api-client';
 
@@ -135,6 +136,7 @@ export class ServiceContainer {
   private routeService!: RouteService;
   private bunkerService!: BunkerService;
   private weatherService!: WeatherService;
+  private portResolutionService!: PortResolutionService;
   private cacheEnabled: boolean = false;
 
   /**
@@ -259,6 +261,8 @@ export class ServiceContainer {
         this.portRepo
       );
 
+      this.portResolutionService = new PortResolutionService(this.worldPortRepo, true);
+
       this.bunkerService = new BunkerService(
         this.portRepo,
         this.priceRepo,
@@ -309,6 +313,13 @@ export class ServiceContainer {
    */
   public getRouteService(): RouteService {
     return this.routeService;
+  }
+
+  /**
+   * Get PortResolutionService instance (World Port + API; no ports.json)
+   */
+  public getPortResolutionService(): PortResolutionService {
+    return this.portResolutionService;
   }
 
   /**
