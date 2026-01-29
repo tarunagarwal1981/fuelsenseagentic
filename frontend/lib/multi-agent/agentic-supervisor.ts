@@ -427,6 +427,11 @@ ACTIONS YOU CAN TAKE
    CRITICAL: When recovery_action is "retry_agent" and the failure was due to 
    invalid/misspelled ports, you MUST provide corrected_params. The agent will 
    use these corrected parameters directly instead of re-parsing the query.
+   
+   WPI_* CODES: Do NOT replace a WPI_* port code (e.g. WPI_710 for Port Clyde) with a 
+   guessed UN/LOCODE (e.g. GBPCD). WPI_* codes are valid World Port Index IDs. If the 
+   error was "Unknown port code: WPI_*", retry WITHOUT changing the port codes in 
+   corrected_params, or use ask_user instead of substituting a different code.
 
 4. "clarify" - Ask user for clarification
    When: Confidence < 30% AND critical info completely missing
@@ -585,7 +590,8 @@ function buildErrorContext(state: MultiAgentState): string {
 AGENT ERRORS:${errorMessages.join('')}
 
 RECOVERY HINT: If error mentions a typo like "sigapore", retry with corrected_params.
-Common port codes: SGSIN (Singapore), NLRTM (Rotterdam), JPCHB (Chiba), AEDXB (Dubai)`;
+Common port codes: SGSIN (Singapore), NLRTM (Rotterdam), JPCHB (Chiba), AEDXB (Dubai).
+Do NOT replace WPI_* codes (e.g. WPI_710) with a guessed UN/LOCODE like GBPCD; retry without changing ports or ask_user.`;
 }
 
 // ============================================================================
@@ -829,19 +835,28 @@ function handleRecover(
     // If this is route_agent and we have corrected port parameters, pass them via port_overrides
     if (targetAgent === 'route_agent' && correctedParams) {
       const originPort = (correctedParams.origin_port || correctedParams.origin) as string | undefined;
-      const destPort = (correctedParams.destination_port || correctedParams.destination) as string | undefined;
-      
+      let destPort = (correctedParams.destination_port || correctedParams.destination) as string | undefined;
+
+      // Do not apply a guessed 5-char UN/LOCODE when the failure was "Unknown port code: WPI_*"
+      const routeError = state.agent_errors?.route_agent?.error ?? '';
+      if (routeError.includes('Unknown port code: WPI_') && destPort && /^[A-Z0-9]{5}$/.test(destPort)) {
+        console.warn('⚠️ [AGENTIC-SUPERVISOR] Ignoring corrected destination (WPI_* error):', destPort, '- retry will re-extract ports');
+        destPort = undefined;
+      }
+
       if (originPort || destPort) {
         console.log('🎯 [AGENTIC-SUPERVISOR] Passing corrected ports to route_agent:');
         if (originPort) console.log(`   Origin: ${originPort}`);
         if (destPort) console.log(`   Destination: ${destPort}`);
-        
+
         stateUpdate.port_overrides = {
           origin: originPort,
           destination: destPort,
         };
-        
+
         step.observation = `Retrying ${targetAgent} with corrected ports: ${originPort} → ${destPort}`;
+      } else if (routeError.includes('Unknown port code: WPI_')) {
+        step.observation = `Retrying ${targetAgent} without port overrides (WPI_* codes preserved)`;
       } else {
         console.warn('⚠️ [AGENTIC-SUPERVISOR] corrected_params found but no port data:', correctedParams);
       }

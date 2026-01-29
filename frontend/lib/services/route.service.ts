@@ -30,12 +30,12 @@ export type { RouteData } from './types';
 
 /**
  * Parse SeaRoute API 400 error for "Unknown port code: X".
- * Returns the unknown port code if found, else undefined.
+ * Returns the unknown port code if found (e.g. 5-char UN/LOCODE or WPI_710), else undefined.
  */
 function parseSeaRouteUnknownPortError(error: Error): string | undefined {
   const msg = error.message || '';
-  const match = msg.match(/Unknown port code:\s*([A-Z]{5})/i);
-  return match ? match[1].toUpperCase() : undefined;
+  const match = msg.match(/Unknown port code:\s*([A-Z0-9_]+)/i);
+  return match ? match[1].trim() : undefined;
 }
 
 /**
