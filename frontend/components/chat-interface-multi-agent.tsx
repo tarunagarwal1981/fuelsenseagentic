@@ -946,26 +946,26 @@ export function ChatInterfaceMultiAgent() {
                   <div
                       className={`rounded-xl px-3 py-2 ${
                       message.role === "user"
-                        ? "bg-blue-600 text-white"
-                          : "bg-white dark:bg-gray-800 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm dark:text-gray-100"
+                        ? "bg-gradient-to-r from-gray-100 via-teal-100 to-green-100 dark:from-gray-800/70 dark:via-teal-900/25 dark:to-green-900/25 text-gray-800 dark:text-gray-100 border border-teal-300/70 dark:border-teal-600/50 rounded-xl shadow-sm [&_*]:text-inherit"
+                          : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm [&_*]:text-inherit"
                     }`}
                   >
-                      <div className="prose prose-sm dark:prose-invert max-w-none prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
+                      <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           components={{
-                            p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed text-gray-900 dark:text-gray-100">{children}</p>,
+                            p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed font-sans">{children}</p>,
                             strong: ({ children }) => <strong className="font-bold">{children}</strong>,
                             em: ({ children }) => <em className="italic">{children}</em>,
-                            h1: ({ children }) => <h1 className="text-sm font-bold mb-1 mt-2 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h1>,
-                            h2: ({ children }) => <h2 className="text-xs font-bold mb-1 mt-1.5 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h3>,
-                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-xs text-gray-900 dark:text-gray-100">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-xs text-gray-900 dark:text-gray-100">{children}</ol>,
-                            li: ({ children }) => <li className="ml-1 text-xs text-gray-900 dark:text-gray-100">{children}</li>,
-                            code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
-                            pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
-                            blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
+                            h1: ({ children }) => <h1 className="text-sm font-bold mb-1 mt-2 first:mt-0 font-sans">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xs font-bold mb-1 mt-1.5 first:mt-0 font-sans">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1 first:mt-0 font-sans">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ol>,
+                            li: ({ children }) => <li className="ml-1 text-xs font-sans">{children}</li>,
+                            code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>,
+                            pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-[11px]">{children}</pre>,
+                            blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-xs font-sans">{children}</blockquote>,
                             a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
                             table: ({ children }) => (
                               <div className="my-4 overflow-x-auto -mx-2 px-2 not-prose">
@@ -1028,7 +1028,7 @@ export function ChatInterfaceMultiAgent() {
                   </div>
 
                   {message.role === "user" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
                       <User className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
@@ -1037,8 +1037,10 @@ export function ChatInterfaceMultiAgent() {
 
               {/* Template-Formatted Response (Progressive Disclosure) */}
               {!isLoading && structuredData?.sections_by_tier && (
-                <div className="mt-4 p-4 bg-white/50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <TemplateResponseContainer response={structuredData} />
+                <div className="mt-4 p-[1px] rounded-xl bg-gradient-to-r from-teal-200 via-teal-100 to-green-200 dark:from-teal-800/50 dark:via-teal-900/30 dark:to-green-800/50">
+                  <div className="rounded-xl bg-white dark:bg-gray-800/95 p-4">
+                    <TemplateResponseContainer response={structuredData} />
+                  </div>
                 </div>
               )}
 
