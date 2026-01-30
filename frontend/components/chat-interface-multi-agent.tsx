@@ -12,26 +12,27 @@ import {
   Bot,
   User,
   Ship,
-  Anchor,
   Route,
   Cloud,
   Fuel,
   Clock,
   Activity,
   Menu,
-  X,
   Sun,
   Moon,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
+  FileStack,
+  Lock,
+  MessageCircle,
+  MoreVertical,
+  RefreshCw,
+  Settings,
+  Compass,
+  Maximize2,
   Sparkles,
+  FileText,
 } from "lucide-react";
-import { ResultsTable } from "./results-table";
-import { RouteSelector } from "./route-selector";
-import { PerformanceMetricsPane } from "./performance-metrics-pane";
-import { ExampleQueriesMultiAgent } from "./example-queries-multi-agent";
 import { MultiAgentAnalysisDisplay } from "./multi-agent-analysis-display";
 import { ComplianceCard } from './compliance-card';
 import { WeatherCard } from './weather-card';
@@ -99,14 +100,7 @@ interface AgentLog {
 }
 
 export function ChatInterfaceMultiAgent() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hello! I'm your multi-agent bunker optimization assistant. I coordinate specialized agents (Route, Weather, Bunker) to provide comprehensive analysis.\n\nJust tell me your origin port, destination port, and fuel requirements.",
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
@@ -606,206 +600,271 @@ export function ChatInterfaceMultiAgent() {
 
   return (
     <div className="flex h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
-      {/* Left Sidebar - 25% width, collapsible */}
-      <div className={`${
-        leftSidebarCollapsed ? 'w-12' : 'w-[25%] min-w-[280px]'
-      } flex flex-col border-r border-green-200/20 dark:border-green-900/10 bg-gradient-to-b from-green-50/15 via-white to-orange-50/15 dark:from-green-950/5 dark:via-gray-800 dark:to-orange-950/5 transition-all duration-300 flex-shrink-0`}>
-        {/* Sidebar Header */}
-        <div className="h-14 border-b border-green-200/20 dark:border-green-900/10 flex items-center justify-between px-4 flex-shrink-0">
-          {!leftSidebarCollapsed && (
-            <h2 className="text-sm font-semibold dark:text-white">Tools & Activity</h2>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0 ml-auto"
-            onClick={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
-          >
-            {leftSidebarCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
-        {!leftSidebarCollapsed && (
-          <div className="flex-1 overflow-y-auto">
-            {/* Example Queries Section - Collapsible */}
-            <div className="border-b border-green-200/30 dark:border-green-900/15">
-              <button
-                onClick={() => setExampleQueriesExpanded(!exampleQueriesExpanded)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-medium dark:text-white">Example Queries</span>
-                </div>
-                {exampleQueriesExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                )}
-              </button>
-              
-              {exampleQueriesExpanded && (
-                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
-                  <ExampleQueriesMultiAgent 
-                    onSelect={(query) => {
-                      setInput(query);
-                      // Focus the input field
-                      setTimeout(() => {
-                        inputRef.current?.focus();
-                      }, 100);
-                    }} 
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Cached Routes Section - Collapsible */}
-            <div className="border-b border-green-200/30 dark:border-green-900/15">
-              <button
-                onClick={() => setRoutesExpanded(!routesExpanded)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Route className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-medium dark:text-white">Cached Routes</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {cachedRoutes.length}
-                  </Badge>
-                </div>
-                {routesExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                )}
-              </button>
-              
-              {routesExpanded && (
-                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
-                  <RouteSelector
-                    routes={cachedRoutes}
-                    selectedRouteId={selectedRouteId}
-                    onRouteSelect={(routeId) => {
-                      setSelectedRouteId(routeId);
-                      addAgentLog("system", `Route ${routeId} selected`, "complete");
-                    }}
-                    hideHeader={true}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Agent Activity Log - Collapsible */}
-            <div className="border-b border-green-200/30 dark:border-green-900/15">
-              <button
-                onClick={() => setAgentLogExpanded(!agentLogExpanded)}
-                className="w-full px-4 py-3 flex items-center justify-between hover:bg-orange-50/30 dark:hover:bg-orange-950/10 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm font-medium dark:text-white">Agent Activity</span>
-                  {agentLogs.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {agentLogs.length}
-                    </Badge>
-                  )}
-                </div>
-                {agentLogExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-gray-500" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-500" />
-                )}
-              </button>
-              
-              {agentLogExpanded && (
-                <div className="px-4 pb-4 max-h-[400px] overflow-y-auto">
-                  <div className="space-y-1.5">
-                    {agentLogs.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">
-                        No activity yet
-                      </p>
-                    ) : (
-                      agentLogs.map((log, idx) => (
-                        <div
-                          key={idx}
-                          className={`flex items-start gap-2 p-2 rounded-lg text-xs ${
-                            log.status === 'complete' 
-                              ? 'bg-green-50/40 dark:bg-green-950/20 border-l-2 border-green-300/50 dark:border-green-600/30' 
-                              : log.status === 'error' 
-                              ? 'bg-red-50/40 dark:bg-red-950/20 border-l-2 border-red-300/50 dark:border-red-600/30'
-                              : 'bg-orange-50/30 dark:bg-orange-950/15 border-l-2 border-orange-300/40 dark:border-orange-600/20'
-                          }`}
-                        >
-                          <div className={`flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${
-                            log.status === 'complete' ? 'bg-green-500' :
-                            log.status === 'error' ? 'bg-red-500' :
-                            'bg-orange-500 animate-pulse'
-                          }`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="font-medium dark:text-white">
-                                {getAgentLabel(log.agent)}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                {log.timestamp.toLocaleTimeString()}
-                              </span>
-                            </div>
-                            <p className="text-muted-foreground">{log.action}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    <div ref={agentLogEndRef} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Performance Metrics */}
-            {performanceMetrics && (
-              <div className="p-4">
-                <PerformanceMetricsPane metrics={performanceMetrics} />
-              </div>
-            )}
+      {/* 1. Narrow dark nav sidebar (placeholder) */}
+      <div className="w-16 flex-shrink-0 flex flex-col items-center py-4 bg-gray-800 dark:bg-gray-900 border-r border-gray-700">
+        <div className="flex flex-col items-center gap-1 mb-6">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+            <Bot className="h-5 w-5 text-white" />
           </div>
-        )}
+          <span className="text-[10px] text-gray-400 text-center leading-tight">Super agent</span>
+          <ChevronDown className="h-3 w-3 text-gray-500" />
+        </div>
+        <nav className="flex-1 flex flex-col gap-1">
+          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md bg-gray-700/50 text-white border-l-2 border-blue-500 -ml-px pl-px">
+            <Settings className="h-5 w-5" />
+            <span className="text-[10px]">Agents</span>
+          </button>
+          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md text-gray-400 hover:bg-gray-700/30 hover:text-gray-300">
+            <FileStack className="h-5 w-5" />
+            <span className="text-[10px]">Projects</span>
+          </button>
+          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md text-gray-400 hover:bg-gray-700/30 hover:text-gray-300">
+            <Clock className="h-5 w-5" />
+            <span className="text-[10px]">Archive</span>
+          </button>
+        </nav>
+        <button className="mt-auto p-2 text-gray-500 hover:text-gray-300 rounded-md">
+          <RefreshCw className="h-5 w-5" />
+        </button>
       </div>
 
-      {/* Right Chat Area - 75% width */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Minimal Header */}
-        <div className="h-14 border-b border-green-200/20 dark:border-green-900/10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm flex items-center justify-between px-4 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Ship className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            <h1 className="text-base font-semibold dark:text-white">FuelSense 360</h1>
-            <Badge variant="secondary" className="text-xs">
-              {useMultiAgent ? "Multi-Agent" : "Single-Agent"}
-            </Badge>
+      {/* 2. Left content: Today's Intelligence (50% width) - thin border all around, small gap from nav */}
+      <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
+        {/* Top header bar: Super agent (left) + Today's Intelligence (right) */}
+        <div className="flex items-center justify-between pl-4 pr-4 py-3.5 border-b border-l border-l-gray-300 dark:border-l-gray-600 border-b-gray-200 dark:border-b-gray-600 bg-white dark:bg-gray-800 shrink-0 [border-left-style:dashed]">
+          <button type="button" className="flex items-center gap-2 text-left hover:opacity-90 transition-opacity">
+            <span className="text-sm font-medium text-[#5E50F3] dark:text-indigo-400">Super agent</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 shrink-0" aria-hidden />
+            <ChevronDown className="h-4 w-4 text-gray-700 dark:text-gray-300 shrink-0" />
+          </button>
+          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+            Today&apos;s Intelligence
+          </h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {/* Fleet Summary (placeholder) - rounded box with gradient border */}
+          <div className="mb-4 p-[1px] rounded-2xl bg-gradient-to-r from-[#ADD8E6] via-sky-100 to-[#FFDAB9] dark:from-sky-800/50 dark:via-slate-700/50 dark:to-amber-800/40 shadow-sm">
+            <div className="rounded-2xl bg-white dark:bg-gray-800 overflow-hidden">
+              <div className="px-3 pt-2 pb-2">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-6 h-6 rounded-full bg-teal-500 flex items-center justify-center">
+                      <Sparkles className="h-3 w-3 text-white" />
+                    </div>
+                    <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-teal-400 flex items-center justify-center">
+                      <Sparkles className="h-1.5 w-1.5 text-white" />
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-gray-800 dark:text-gray-200">Fleet Summary</span>
+                </div>
+                <div className="border-b border-gray-200 dark:border-gray-600 mb-2" />
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
+                      <Ship className="h-3 w-3 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Cost Exposure</p>
+                      <p className="text-[10px] font-normal text-gray-700 dark:text-gray-300 mt-0.5">Moderate</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
+                      <Ship className="h-3 w-3 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Efficiency</p>
+                      <p className="text-[10px] font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">3 Vessel</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
+                      <Ship className="h-3 w-3 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Emissions Risk</p>
+                      <p className="text-[10px] font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">1 Vessel</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
+                      <Ship className="h-3 w-3 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Data Reliability</p>
+                      <p className="text-[10px] font-normal text-gray-700 dark:text-gray-300 mt-0.5">high</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-2">
+
+          {/* Alerts (placeholder) - match screenshot: small bold font, teal accents, card layout */}
+          <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
+            <div className="px-3 pt-3 pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                  Alerts <span className="font-normal text-gray-700 dark:text-gray-300">25</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <button type="button" className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline font-normal">
+                    View all
+                  </button>
+                  <button type="button" className="p-0.5 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="border-b border-gray-200 dark:border-gray-600" />
+              <div className="flex gap-3 mt-0 border-b border-gray-200 dark:border-gray-600">
+                <button
+                  type="button"
+                  className="text-[11px] font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-teal-500 dark:border-teal-400"
+                >
+                  Active <span className="font-normal text-gray-500 dark:text-gray-400">(15)</span>
+                </button>
+                <button type="button" className="text-[11px] font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+                  Monitoring (5)
+                </button>
+                <button type="button" className="text-[11px] font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+                  CTA (5)
+                </button>
+              </div>
+            </div>
+            <div className="space-y-0 max-h-[260px] overflow-y-auto">
+              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
+                    Hull Condition:{" "}
+                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
+                    <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
+                      <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
+                    </div>
+                    <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+                  </div>
+                </div>
+                <p className="text-[10px] font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
+                  Fuel Consumption is 18% above expect for MV Nova. Power and RPM are stable, Indicating hull Fouling as the primary cause
+                </p>
+              </div>
+              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-[11px] font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
+                    Bad Weather:{" "}
+                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
+                    <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
+                      <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
+                    </div>
+                    <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+                  </div>
+                </div>
+                <p className="text-[10px] font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
+                  Facing Severe Weather Condition
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Query area at bottom of left pane - light blue border, soft shadow, 3D lift */}
+        <div className="relative border-t border-l border-r border-sky-200 dark:border-sky-800 rounded-t-xl pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+          {/* Bottom accent stripe (golden-orange) */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
+          <div className="flex gap-2 mb-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              disabled
+            >
+              Show Critical Vessels
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              disabled
+            >
+              Show Vessel Needing action
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              disabled
+            >
+              Show Monitoring Status
+            </Button>
+          </div>
+          <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
+            <div className="flex-1 relative rounded-xl overflow-visible">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="What can I help you with?"
+                className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                disabled={isLoading}
+                rows={1}
+              />
+              <Button
+                type="submit"
+                variant="ghost"
+                size="sm"
+                className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
+                disabled={!input.trim() || isLoading}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* 3. Right content: Sense AI Analysis (50% width) - thin border, small gap from left */}
+      <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
+        {/* Sense AI header bar: same color as narrow sidebar, title left-aligned */}
+        <div className="h-14 border-b border-gray-700 bg-gray-800 dark:bg-gray-900 flex items-center justify-between px-4 flex-shrink-0">
+          <h1 className="text-lg font-bold text-white text-left">Sense AI Analysis</h1>
+          <div className="flex items-center gap-2 flex-1 justify-end">
+            <span className="flex items-center gap-1.5 text-sm font-normal text-white">
+              <FileText className="h-4 w-4 text-white" />
+              Save as Project
+            </span>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white" disabled>
+              <Maximize2 className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
               onClick={() => setDarkMode(!darkMode)}
             >
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            
             <div className="relative">
-            <Button
+              <Button
                 variant="ghost"
-              size="sm"
-                className="h-8 w-8 p-0"
+                size="sm"
+                className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
                 onClick={() => setShowMenu(!showMenu)}
-            >
+              >
                 <Menu className="h-4 w-4" />
-            </Button>
-              
+              </Button>
               {showMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
@@ -816,7 +875,7 @@ export function ChatInterfaceMultiAgent() {
                         setShowMenu(false);
                       }}
                       className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        useMultiAgent ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        useMultiAgent ? "bg-blue-50 dark:bg-blue-900/20" : ""
                       }`}
                     >
                       Multi-Agent Mode
@@ -827,32 +886,44 @@ export function ChatInterfaceMultiAgent() {
                         setShowMenu(false);
                       }}
                       className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        !useMultiAgent ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        !useMultiAgent ? "bg-blue-50 dark:bg-blue-900/20" : ""
                       }`}
                     >
                       Single-Agent Mode
                     </button>
                     <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
-            <Link href="/chat-langgraph">
+                    <Link href="/chat-langgraph">
                       <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
-                LangGraph UI
+                        LangGraph UI
                       </button>
                     </Link>
                     <Link href="/compare">
                       <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
                         Compare Versions
                       </button>
-            </Link>
-          </div>
+                    </Link>
+                  </div>
                 </>
               )}
-        </div>
-      </div>
             </div>
+          </div>
+        </div>
 
-        {/* Messages Area - Tight spacing, modern design */}
-        <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white via-green-50/5 to-orange-50/5 dark:from-gray-900 dark:via-green-950/5 dark:to-orange-950/5">
+        {/* Messages Area - white with subtle dotted grid, font sizes per screenshot */}
+        <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.06)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_0)] bg-[size:16px_16px]">
           <div className="max-w-4xl mx-auto px-4 py-2">
+            {/* Agent identification: medium-small black, View Source small blue */}
+            {messages.some((m) => m.role === "assistant") && (
+              <div className="flex items-center justify-between gap-2 mb-2 text-sm text-gray-900 dark:text-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center flex-shrink-0">
+                    <Bot className="h-3 w-3 text-white" />
+                  </div>
+                  <span className="font-normal text-gray-900 dark:text-gray-100">Super Agent</span>
+                </div>
+                <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-normal" disabled>View Source</button>
+              </div>
+            )}
 
             {/* Messages - Very tight spacing */}
             <div className="space-y-0.5">
@@ -864,7 +935,7 @@ export function ChatInterfaceMultiAgent() {
                   }`}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
                       <Bot className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
@@ -876,22 +947,22 @@ export function ChatInterfaceMultiAgent() {
                       className={`rounded-xl px-3 py-2 ${
                       message.role === "user"
                         ? "bg-blue-600 text-white"
-                          : "bg-white dark:bg-gray-800 border border-green-200/20 dark:border-green-900/15 shadow-sm dark:text-gray-100"
+                          : "bg-white dark:bg-gray-800 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm dark:text-gray-100"
                     }`}
                   >
                       <div className="prose prose-sm dark:prose-invert max-w-none prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           components={{
-                            p: ({ children }) => <p className="mb-1 last:mb-0 text-sm leading-relaxed">{children}</p>,
-                            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                            p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed text-gray-900 dark:text-gray-100">{children}</p>,
+                            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
                             em: ({ children }) => <em className="italic">{children}</em>,
-                            h1: ({ children }) => <h1 className="text-lg font-bold mb-1 mt-2 first:mt-0">{children}</h1>,
-                            h2: ({ children }) => <h2 className="text-base font-bold mb-1 mt-1.5 first:mt-0">{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-1 first:mt-0">{children}</h3>,
-                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-sm">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-sm">{children}</ol>,
-                            li: ({ children }) => <li className="ml-1 text-sm">{children}</li>,
+                            h1: ({ children }) => <h1 className="text-sm font-bold mb-1 mt-2 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xs font-bold mb-1 mt-1.5 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1 first:mt-0 text-gray-900 dark:text-gray-100">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-xs text-gray-900 dark:text-gray-100">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-xs text-gray-900 dark:text-gray-100">{children}</ol>,
+                            li: ({ children }) => <li className="ml-1 text-xs text-gray-900 dark:text-gray-100">{children}</li>,
                             code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
                             pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-xs">{children}</pre>,
                             blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-sm">{children}</blockquote>,
@@ -1052,37 +1123,13 @@ export function ChatInterfaceMultiAgent() {
           </div>
         </div>
 
-        {/* Input Bar - Sticky */}
-        <div className="border-t border-green-200/20 dark:border-green-900/10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm p-4 flex-shrink-0">
-          <div className="max-w-4xl mx-auto">
-            <form onSubmit={handleSubmit} className="flex items-end gap-2">
-              <div className="flex-1 relative">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about routes, weather, or bunker options..."
-                  className="w-full min-h-[52px] max-h-[180px] px-4 py-3 pr-12 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-green-400/20 focus:border-orange-300/30 dark:focus:ring-green-600/15 dark:focus:border-orange-600/15 text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                  disabled={isLoading}
-                  rows={1}
-                />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-2 bottom-2 h-8 w-8 p-0"
-                  disabled={!input.trim() || isLoading}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </form>
+        {/* Possible next actions - medium bold title, buttons with light gray bg and border */}
+        <div className="border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-4 flex-shrink-0">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Possible next actions</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Review risk breakdown</Button>
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>View affected vessels</Button>
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Run delay impact simulation</Button>
           </div>
         </div>
       </div>
