@@ -30,6 +30,7 @@ import {
   Compass,
   Maximize2,
   Sparkles,
+  X,
   FileText,
 } from "lucide-react";
 import { MultiAgentAnalysisDisplay } from "./multi-agent-analysis-display";
@@ -118,6 +119,7 @@ export function ChatInterfaceMultiAgent() {
   }, [structuredData]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
+  const [expandedPopup, setExpandedPopup] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [routesExpanded, setRoutesExpanded] = useState(false);
   const [exampleQueriesExpanded, setExampleQueriesExpanded] = useState(false);
@@ -572,6 +574,210 @@ export function ChatInterfaceMultiAgent() {
     return undefined;
   };
 
+  // Chat body (messages + analysis + possible next actions) - shared by right card and expanded popup
+  const renderChatBody = () => (
+    <>
+        {/* Messages Area - white with subtle dotted grid, font sizes per screenshot */}
+        <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-gray-900 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.06)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_0)] bg-[size:16px_16px]">
+          <div className="max-w-4xl mx-auto px-4 py-2">
+            {messages.some((m) => m.role === "assistant") && (
+              <div className="flex items-center justify-between gap-2 mb-2 text-sm text-gray-900 dark:text-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center flex-shrink-0">
+                    <Bot className="h-3 w-3 text-white" />
+                  </div>
+                  <span className="font-normal text-gray-900 dark:text-gray-100">Super Agent</span>
+                </div>
+                <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-normal" disabled>View Source</button>
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`group flex gap-2 py-1 ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  {message.role === "assistant" && (
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
+                      <Bot className="h-3.5 w-3.5 text-white" />
+                    </div>
+                  )}
+                  <div className={`flex-1 min-w-0 max-w-[85%] ${
+                    message.role === "user" ? "flex justify-end" : ""
+                  }`}>
+                  <div
+                      className={`rounded-xl px-3 py-2 ${
+                      message.role === "user"
+                        ? "bg-gradient-to-r from-gray-100 via-teal-100 to-green-100 dark:from-gray-800/70 dark:via-teal-900/25 dark:to-green-900/25 text-gray-800 dark:text-gray-100 border border-teal-300/70 dark:border-teal-600/50 rounded-xl shadow-sm [&_*]:text-inherit"
+                          : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm [&_*]:text-inherit"
+                    }`}
+                  >
+                      <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed font-sans">{children}</p>,
+                            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                            h1: ({ children }) => <h1 className="text-sm font-bold mb-1 mt-2 first:mt-0 font-sans">{children}</h1>,
+                            h2: ({ children }) => <h2 className="text-xs font-bold mb-1 mt-1.5 first:mt-0 font-sans">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1 first:mt-0 font-sans">{children}</h3>,
+                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ol>,
+                            li: ({ children }) => <li className="ml-1 text-xs font-sans">{children}</li>,
+                            code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>,
+                            pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-[11px]">{children}</pre>,
+                            blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-xs font-sans">{children}</blockquote>,
+                            a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
+                            table: ({ children }) => (
+                              <div className="my-4 overflow-x-auto -mx-2 px-2 not-prose">
+                                <table className="w-full border-collapse border border-green-200/30 dark:border-green-900/20 rounded-lg overflow-hidden shadow-sm table-auto">
+                                  {children}
+                                </table>
+                              </div>
+                            ),
+                          thead: ({ children }) => (
+                            <thead className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b-2 border-blue-200 dark:border-blue-800">
+                              {children}
+                            </thead>
+                          ),
+                          tbody: ({ children }) => (
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-green-100/50 dark:divide-green-900/20">
+                              {children}
+                            </tbody>
+                          ),
+                          tr: ({ children, ...props }) => {
+                            const extractText = (node: any): string => {
+                              if (typeof node === "string") return node;
+                              if (typeof node === "number") return String(node);
+                              if (Array.isArray(node)) return node.map(extractText).join("");
+                              if (node?.props?.children) return extractText(node.props.children);
+                              return "";
+                            };
+                            const rowText = extractText(children);
+                            const isBestRow = rowText.includes("BEST") || rowText.includes("⭐") || rowText.includes("vs. Cheapest");
+                            return (
+                              <tr
+                                className={`hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors ${
+                                  isBestRow ? "bg-green-50/40 dark:bg-green-950/20 border-l-2 border-green-300/50 dark:border-green-600/30" : ""
+                                }`}
+                                {...props}
+                              >
+                                {children}
+                              </tr>
+                            );
+                          },
+                          th: ({ children }) => (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
+                              {children}
+                            </td>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                      </div>
+                    </div>
+                  </div>
+                  {message.role === "user" && (
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
+                      <User className="h-3.5 w-3.5 text-white" />
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!isLoading && structuredData?.sections_by_tier && (
+                <div className="mt-4 p-[1px] rounded-xl bg-gradient-to-r from-teal-200 via-teal-100 to-green-200 dark:from-teal-800/50 dark:via-teal-900/30 dark:to-green-800/50">
+                  <div className="rounded-xl bg-white dark:bg-gray-800/95 p-4">
+                    <TemplateResponseContainer response={structuredData} />
+                  </div>
+                </div>
+              )}
+              {isLoading && thinkingState && (
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 shadow-sm">
+                  <div className="animate-pulse">
+                    <div className="h-3 w-3 bg-blue-600 rounded-full"></div>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900">{thinkingState}</p>
+                    {currentAgent && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">Agent:</span>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${
+                            currentAgent === "route_agent" ? "bg-blue-50 border-blue-200 text-blue-700" :
+                            currentAgent === "weather_agent" ? "bg-cyan-50 border-cyan-200 text-cyan-700" :
+                            currentAgent === "bunker_agent" ? "bg-green-50 border-green-200 text-green-700" :
+                            "bg-purple-50 border-purple-200 text-purple-700"
+                          }`}
+                        >
+                          {getAgentLabel(currentAgent)}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+            {analysisData && (
+              <>
+                {isFeatureEnabled("USE_RESPONSE_FORMATTER") && structuredData ? (
+                  <div className="space-y-4 mt-4">
+                    {analysisData.route && (
+                      <MultiAgentAnalysisDisplay
+                        data={{
+                          route: analysisData.route,
+                          ports: analysisData.ports,
+                          prices: analysisData.prices,
+                          analysis: analysisData.analysis,
+                        }}
+                        mapOverlays={structuredData.mapOverlays}
+                      />
+                    )}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <ComplianceCard data={structuredData.structured.compliance} />
+                      <WeatherCard data={structuredData.structured.weather} />
+                    </div>
+                    <div className="space-y-4">
+                      <VoyageTimeline data={structuredData.structured.timeline} />
+                      {structuredData.structured.bunker ? (
+                        <EnhancedBunkerTable data={structuredData.structured.bunker} />
+                      ) : (
+                        analysisData.analysis && (
+                          <div className="mt-4">
+                            <MultiAgentAnalysisDisplay data={{ analysis: analysisData.analysis }} />
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <MultiAgentAnalysisDisplay data={analysisData} />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {/* Possible next actions */}
+        <div className="border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-4 flex-shrink-0">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Possible next actions</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Review risk breakdown</Button>
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>View affected vessels</Button>
+            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Run delay impact simulation</Button>
+          </div>
+        </div>
+    </>
+  );
 
   return (
     <div className="flex h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
@@ -631,44 +837,44 @@ export function ChatInterfaceMultiAgent() {
                       <Sparkles className="h-1.5 w-1.5 text-white" />
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-gray-800 dark:text-gray-200">Fleet Summary</span>
+                  <span className="text-sm font-bold text-gray-800 dark:text-gray-200">Fleet Summary</span>
                 </div>
                 <div className="border-b border-gray-200 dark:border-gray-600 mb-2" />
                 <div className="grid grid-cols-4 gap-2">
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
                     <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
                       <Ship className="h-3 w-3 text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Cost Exposure</p>
-                      <p className="text-[10px] font-normal text-gray-700 dark:text-gray-300 mt-0.5">Moderate</p>
+                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Cost Exposure</p>
+                      <p className="text-xs font-normal text-gray-700 dark:text-gray-300 mt-0.5">Moderate</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
                     <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
                       <Ship className="h-3 w-3 text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Efficiency</p>
-                      <p className="text-[10px] font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">3 Vessel</p>
+                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Efficiency</p>
+                      <p className="text-xs font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">3 Vessel</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
                     <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
                       <Ship className="h-3 w-3 text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Emissions Risk</p>
-                      <p className="text-[10px] font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">1 Vessel</p>
+                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Emissions Risk</p>
+                      <p className="text-xs font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">1 Vessel</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
                     <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
                       <Ship className="h-3 w-3 text-white" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Data Reliability</p>
-                      <p className="text-[10px] font-normal text-gray-700 dark:text-gray-300 mt-0.5">high</p>
+                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Data Reliability</p>
+                      <p className="text-xs font-normal text-gray-700 dark:text-gray-300 mt-0.5">high</p>
                     </div>
                   </div>
                 </div>
@@ -680,11 +886,11 @@ export function ChatInterfaceMultiAgent() {
           <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
             <div className="px-3 pt-3 pb-2">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                <span className="text-sm font-bold text-gray-800 dark:text-gray-100">
                   Alerts <span className="font-normal text-gray-700 dark:text-gray-300">25</span>
                 </span>
                 <div className="flex items-center gap-1">
-                  <button type="button" className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline font-normal">
+                  <button type="button" className="text-xs text-teal-600 dark:text-teal-400 hover:underline font-normal">
                     View all
                   </button>
                   <button type="button" className="p-0.5 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
@@ -696,14 +902,14 @@ export function ChatInterfaceMultiAgent() {
               <div className="flex gap-3 mt-0 border-b border-gray-200 dark:border-gray-600">
                 <button
                   type="button"
-                  className="text-[11px] font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-teal-500 dark:border-teal-400"
+                  className="text-xs font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-teal-500 dark:border-teal-400"
                 >
                   Active <span className="font-normal text-gray-500 dark:text-gray-400">(15)</span>
                 </button>
-                <button type="button" className="text-[11px] font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+                <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
                   Monitoring (5)
                 </button>
-                <button type="button" className="text-[11px] font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+                <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
                   CTA (5)
                 </button>
               </div>
@@ -711,37 +917,37 @@ export function ChatInterfaceMultiAgent() {
             <div className="space-y-0 max-h-[260px] overflow-y-auto">
               <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-[11px] font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
                     Hull Condition:{" "}
                     <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
                   </p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
+                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
                     <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
                       <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
                     </div>
                     <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
                   </div>
                 </div>
-                <p className="text-[10px] font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
+                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
                   Fuel Consumption is 18% above expect for MV Nova. Power and RPM are stable, Indicating hull Fouling as the primary cause
                 </p>
               </div>
               <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-[11px] font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
                     Bad Weather:{" "}
                     <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
                   </p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
+                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
                     <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
                       <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
                     </div>
                     <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
                   </div>
                 </div>
-                <p className="text-[10px] font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
+                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
                   Facing Severe Weather Condition
                 </p>
               </div>
@@ -810,9 +1016,10 @@ export function ChatInterfaceMultiAgent() {
         </div>
       </div>
 
-      {/* 3. Right content: Sense AI Analysis (50% width) - thin border, small gap from left */}
+      {/* 3. Right content: Sense AI Analysis (50% width) - hidden when expanded */}
+      {!expandedPopup && (
       <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
-        {/* Sense AI header bar: same color as narrow sidebar, title left-aligned */}
+        {/* Sense AI header bar */}
         <div className="h-14 border-b border-gray-700 bg-gray-800 dark:bg-gray-900 flex items-center justify-between px-4 flex-shrink-0">
           <h1 className="text-lg font-bold text-white text-left">Sense AI Analysis</h1>
           <div className="flex items-center gap-2 flex-1 justify-end">
@@ -820,7 +1027,13 @@ export function ChatInterfaceMultiAgent() {
               <FileText className="h-4 w-4 text-white" />
               Save as Project
             </span>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white" disabled>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
+              onClick={() => setExpandedPopup(true)}
+              title="Expand chat"
+            >
               <Maximize2 className="h-4 w-4" />
             </Button>
             <Button
@@ -834,232 +1047,60 @@ export function ChatInterfaceMultiAgent() {
           </div>
         </div>
 
-        {/* Messages Area - white with subtle dotted grid, font sizes per screenshot */}
-        <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-900 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.06)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_0)] bg-[size:16px_16px]">
-          <div className="max-w-4xl mx-auto px-4 py-2">
-            {/* Agent identification: medium-small black, View Source small blue */}
-            {messages.some((m) => m.role === "assistant") && (
-              <div className="flex items-center justify-between gap-2 mb-2 text-sm text-gray-900 dark:text-gray-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center flex-shrink-0">
-                    <Bot className="h-3 w-3 text-white" />
-                  </div>
-                  <span className="font-normal text-gray-900 dark:text-gray-100">Super Agent</span>
-                </div>
-                <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-normal" disabled>View Source</button>
-              </div>
-            )}
-
-            {/* Messages - Very tight spacing */}
-            <div className="space-y-0.5">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`group flex gap-2 py-1 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
-                      <Bot className="h-3.5 w-3.5 text-white" />
-                    </div>
-                  )}
-
-                  <div className={`flex-1 min-w-0 max-w-[85%] ${
-                    message.role === "user" ? "flex justify-end" : ""
-                  }`}>
-                  <div
-                      className={`rounded-xl px-3 py-2 ${
-                      message.role === "user"
-                        ? "bg-gradient-to-r from-gray-100 via-teal-100 to-green-100 dark:from-gray-800/70 dark:via-teal-900/25 dark:to-green-900/25 text-gray-800 dark:text-gray-100 border border-teal-300/70 dark:border-teal-600/50 rounded-xl shadow-sm [&_*]:text-inherit"
-                          : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm [&_*]:text-inherit"
-                    }`}
-                  >
-                      <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed font-sans">{children}</p>,
-                            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                            em: ({ children }) => <em className="italic">{children}</em>,
-                            h1: ({ children }) => <h1 className="text-sm font-bold mb-1 mt-2 first:mt-0 font-sans">{children}</h1>,
-                            h2: ({ children }) => <h2 className="text-xs font-bold mb-1 mt-1.5 first:mt-0 font-sans">{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1 first:mt-0 font-sans">{children}</h3>,
-                            ul: ({ children }) => <ul className="list-disc list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal list-inside mb-1 space-y-0.5 text-xs font-sans">{children}</ol>,
-                            li: ({ children }) => <li className="ml-1 text-xs font-sans">{children}</li>,
-                            code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>,
-                            pre: ({ children }) => <pre className="bg-black/10 dark:bg-white/10 p-2 rounded mb-1 overflow-x-auto text-[11px]">{children}</pre>,
-                            blockquote: ({ children }) => <blockquote className="border-l-2 border-gray-300 dark:border-gray-600 pl-2 italic my-1 text-xs font-sans">{children}</blockquote>,
-                            a: ({ href, children }) => <a href={href} className="text-blue-600 dark:text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>,
-                            table: ({ children }) => (
-                              <div className="my-4 overflow-x-auto -mx-2 px-2 not-prose">
-                                <table className="w-full border-collapse border border-green-200/30 dark:border-green-900/20 rounded-lg overflow-hidden shadow-sm table-auto">
-                                  {children}
-                                </table>
-                              </div>
-                            ),
-                          thead: ({ children }) => (
-                            <thead className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-b-2 border-blue-200 dark:border-blue-800">
-                              {children}
-                            </thead>
-                          ),
-                          tbody: ({ children }) => (
-                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-green-100/50 dark:divide-green-900/20">
-                              {children}
-                            </tbody>
-                          ),
-                          tr: ({ children, ...props }) => {
-                            // Helper function to extract text from React nodes
-                            const extractText = (node: any): string => {
-                              if (typeof node === 'string') return node;
-                              if (typeof node === 'number') return String(node);
-                              if (Array.isArray(node)) return node.map(extractText).join('');
-                              if (node?.props?.children) return extractText(node.props.children);
-                              return '';
-                            };
-                            
-                            // Check if row contains "BEST" or "⭐" for special styling
-                            const rowText = extractText(children);
-                            const isBestRow = rowText.includes('BEST') || rowText.includes('⭐') || rowText.includes('vs. Cheapest');
-                            
-                            return (
-                              <tr 
-                                className={`hover:bg-green-50/30 dark:hover:bg-green-950/10 transition-colors ${
-                                  isBestRow ? 'bg-green-50/40 dark:bg-green-950/20 border-l-2 border-green-300/50 dark:border-green-600/30' : ''
-                                }`}
-                                {...props}
-                              >
-                                {children}
-                              </tr>
-                            );
-                          },
-                          th: ({ children }) => (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
-                              {children}
-                            </th>
-                          ),
-                          td: ({ children }) => (
-                            <td className="px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 border-r border-green-200/20 dark:border-green-900/15 last:border-r-0">
-                              {children}
-                            </td>
-                          ),
-                        }}
-                      >
-                        {message.content}
-                      </ReactMarkdown>
-                      </div>
-                    </div>
-                  </div>
-
-                  {message.role === "user" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
-                      <User className="h-3.5 w-3.5 text-white" />
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {/* Template-Formatted Response (Progressive Disclosure) */}
-              {!isLoading && structuredData?.sections_by_tier && (
-                <div className="mt-4 p-[1px] rounded-xl bg-gradient-to-r from-teal-200 via-teal-100 to-green-200 dark:from-teal-800/50 dark:via-teal-900/30 dark:to-green-800/50">
-                  <div className="rounded-xl bg-white dark:bg-gray-800/95 p-4">
-                    <TemplateResponseContainer response={structuredData} />
-                  </div>
-                </div>
-              )}
-
-              {/* Thinking Indicator - Fleet Sense Style */}
-              {isLoading && thinkingState && (
-                <div className="flex items-center gap-3 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 shadow-sm">
-                  <div className="animate-pulse">
-                    <div className="h-3 w-3 bg-blue-600 rounded-full"></div>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-900">{thinkingState}</p>
-                    {currentAgent && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-gray-500">Agent:</span>
-                        <Badge 
-                          variant="outline" 
-                          className={`text-xs ${
-                            currentAgent === 'route_agent' ? 'bg-blue-50 border-blue-200 text-blue-700' :
-                            currentAgent === 'weather_agent' ? 'bg-cyan-50 border-cyan-200 text-cyan-700' :
-                            currentAgent === 'bunker_agent' ? 'bg-green-50 border-green-200 text-green-700' :
-                            'bg-purple-50 border-purple-200 text-purple-700'
-                          }`}
-                        >
-                          {getAgentLabel(currentAgent)}
-                        </Badge>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Analysis Data Visualization - Inline */}
-            {analysisData && (
-              <>
-                {/* NEW: Enhanced Components Section (Feature Flag Controlled) */}
-                {isFeatureEnabled('USE_RESPONSE_FORMATTER') && structuredData ? (
-                  <div className="space-y-4 mt-4">
-                    {/* Full Width Map */}
-                    {analysisData.route && (
-                      <MultiAgentAnalysisDisplay 
-                        data={{ 
-                          route: analysisData.route, 
-                          ports: analysisData.ports, 
-                          prices: analysisData.prices,
-                          analysis: analysisData.analysis
-                        }} 
-                        mapOverlays={structuredData.mapOverlays}
-                      />
-                    )}
-
-                    {/* Full Width Cards: Compliance + Weather */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <ComplianceCard data={structuredData.structured.compliance} />
-                      <WeatherCard data={structuredData.structured.weather} />
-                    </div>
-
-                    {/* Compact Timeline + Enhanced Table */}
-                    <div className="space-y-4">
-                      <VoyageTimeline data={structuredData.structured.timeline} />
-                      {structuredData.structured.bunker ? (
-                        <EnhancedBunkerTable data={structuredData.structured.bunker} />
-                      ) : (
-                        // Fallback to existing table if no formatted bunker data
-                        analysisData.analysis && (
-                          <div className="mt-4">
-                            <MultiAgentAnalysisDisplay data={{ analysis: analysisData.analysis }} />
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  /* Fallback: Show existing display if formatter not enabled or no structured data */
-                  <MultiAgentAnalysisDisplay data={analysisData} />
-                )}
-
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Possible next actions - medium bold title, buttons with light gray bg and border */}
-        <div className="border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-4 flex-shrink-0">
-          <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Possible next actions</p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Review risk breakdown</Button>
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>View affected vessels</Button>
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Run delay impact simulation</Button>
-          </div>
-        </div>
+        {renderChatBody()}
       </div>
+      )}
+
+      {/* Expanded chat: almost full-screen chat interface with query at bottom */}
+      {expandedPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/40 dark:bg-black/50" onClick={() => setExpandedPopup(false)}>
+          <div
+            className="flex flex-col w-[96vw] h-[96vh] max-w-[96vw] max-h-[96vh] rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 flex-shrink-0">
+              <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Sense AI Analysis</h2>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100" onClick={() => setExpandedPopup(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {renderChatBody()}
+            </div>
+            {/* Query field at bottom of expanded window */}
+            <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
+              <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
+              <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
+                <div className="flex-1 relative rounded-xl overflow-visible">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="What can I help you with?"
+                    className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmit();
+                      }
+                    }}
+                    disabled={isLoading}
+                    rows={1}
+                  />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
+                    disabled={!input.trim() || isLoading}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
