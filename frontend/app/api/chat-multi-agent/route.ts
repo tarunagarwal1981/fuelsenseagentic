@@ -213,8 +213,7 @@ export async function POST(req: Request) {
       console.warn('⚠️ [MULTI-AGENT-API] Multi-agent system disabled via feature flag');
       return new Response(
         JSON.stringify({
-          error: 'Multi-agent system is temporarily disabled. Please use /api/chat-langgraph',
-          fallback_endpoint: '/api/chat-langgraph',
+          error: 'Multi-agent system is temporarily disabled. Please try again later.',
         }),
         {
           status: 503,
@@ -729,7 +728,6 @@ export async function POST(req: Request) {
           type: 'credit_error',
           details: errorMessage,
           execution_time_ms: executionTime,
-          fallback_endpoint: '/api/chat-langgraph',
         },
         { 
           status: 402, // Payment Required
@@ -750,7 +748,6 @@ export async function POST(req: Request) {
         type: 'internal_error',
         details: errorMessage,
         execution_time_ms: executionTime,
-        fallback_endpoint: '/api/chat-langgraph',
       },
       { 
         status: 500,

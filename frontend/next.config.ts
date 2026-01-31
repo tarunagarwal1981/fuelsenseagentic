@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  redirects: async () => [
+    { source: "/chat", destination: "/", permanent: true },
+    { source: "/chat-langgraph", destination: "/", permanent: true },
+    { source: "/chat-multi-agent", destination: "/", permanent: true },
+  ],
   // Exclude repository files from Edge Runtime bundling
   // These files use Node.js modules (fs, path) and should only run in Node.js runtime
   webpack: (config, { isServer }) => {

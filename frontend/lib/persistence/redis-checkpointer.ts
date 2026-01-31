@@ -6,7 +6,7 @@
  *   UPSTASH_REDIS_REST_TOKEN are set
  * - MemorySaver in development when Redis is unavailable or env vars are missing
  *
- * Compatible with both /chat-langgraph and /chat-multi-agent. State schema is
+ * Used by /chat-multi-agent. State schema is
  * unchanged; this layer is interchangeable with MemorySaver.
  *
  * Includes state versioning integration:

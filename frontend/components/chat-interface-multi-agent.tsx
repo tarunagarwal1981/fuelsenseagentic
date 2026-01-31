@@ -17,7 +17,6 @@ import {
   Fuel,
   Clock,
   Activity,
-  Menu,
   Sun,
   Moon,
   ChevronDown,
@@ -42,7 +41,6 @@ import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import dynamic from "next/dynamic";
 import portsData from "@/lib/data/ports.json";
 import cachedRoutesData from "@/lib/data/cached-routes.json";
-import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { FormattedResponse } from "@/lib/formatters/response-formatter";
@@ -110,7 +108,6 @@ export function ChatInterfaceMultiAgent() {
     useState<PerformanceMetrics | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [structuredData, setStructuredData] = useState<TemplateFormattedResponse | null>(null);
-  const [useMultiAgent, setUseMultiAgent] = useState(true);
 
   // Debug logging for feature flags
   useEffect(() => {
@@ -120,7 +117,6 @@ export function ChatInterfaceMultiAgent() {
     });
   }, [structuredData]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const [showMenu, setShowMenu] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [routesExpanded, setRoutesExpanded] = useState(false);
@@ -272,28 +268,19 @@ export function ChatInterfaceMultiAgent() {
     const startTime = Date.now();
 
     try {
-      const endpoint = useMultiAgent
-        ? "/api/chat-multi-agent"
-        : "/api/chat-langgraph";
+      const endpoint = "/api/chat-multi-agent";
 
       console.log(`🌐 [MULTI-AGENT-FRONTEND] Fetching ${endpoint}...`);
       
       // Build request body
-      const requestBody = useMultiAgent
-        ? {
-            message: userMessage.content,
-            origin: extractPortCode(userMessage.content, "from"),
-            destination: extractPortCode(userMessage.content, "to"),
-            ...(selectedRouteId && { selectedRouteId }),
-          }
-        : {
-            messages: [...messages, userMessage].map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-          };
+      const requestBody = {
+        message: userMessage.content,
+        origin: extractPortCode(userMessage.content, "from"),
+        destination: extractPortCode(userMessage.content, "to"),
+        ...(selectedRouteId && { selectedRouteId }),
+      };
       
-      if (selectedRouteId && useMultiAgent) {
+      if (selectedRouteId) {
         console.log(`🎯 [MULTI-AGENT-FRONTEND] Using cached route: ${selectedRouteId}`);
         addAgentLog("system", `Using cached route: ${selectedRouteId}`, "complete");
       }
@@ -329,9 +316,8 @@ export function ChatInterfaceMultiAgent() {
         throw new Error(errorMessage);
       }
 
-      if (useMultiAgent) {
-        // Multi-agent returns SSE stream
-        const reader = response.body?.getReader();
+      // Multi-agent returns SSE stream
+      const reader = response.body?.getReader();
         if (!reader) {
           throw new Error("No response body reader available");
         }
@@ -547,17 +533,6 @@ export function ChatInterfaceMultiAgent() {
         ]);
 
         setCurrentAgent(null);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content:
-              "Single-agent mode requires streaming implementation. Please use multi-agent mode.",
-            timestamp: new Date(),
-          },
-        ]);
-      }
     } catch (error) {
       console.error("❌ [MULTI-AGENT-FRONTEND] Error in chat submission:", error);
       setCurrentAgent(null);
@@ -856,56 +831,6 @@ export function ChatInterfaceMultiAgent() {
             >
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
-                onClick={() => setShowMenu(!showMenu)}
-              >
-                <Menu className="h-4 w-4" />
-              </Button>
-              {showMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                  <div className="absolute right-0 top-10 z-20 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1">
-                    <button
-                      onClick={() => {
-                        setUseMultiAgent(true);
-                        setShowMenu(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        useMultiAgent ? "bg-blue-50 dark:bg-blue-900/20" : ""
-                      }`}
-                    >
-                      Multi-Agent Mode
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUseMultiAgent(false);
-                        setShowMenu(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        !useMultiAgent ? "bg-blue-50 dark:bg-blue-900/20" : ""
-                      }`}
-                    >
-                      Single-Agent Mode
-                    </button>
-                    <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
-                    <Link href="/chat-langgraph">
-                      <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
-                        LangGraph UI
-                      </button>
-                    </Link>
-                    <Link href="/compare">
-                      <button className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
-                        Compare Versions
-                      </button>
-                    </Link>
-                  </div>
-                </>
-              )}
-            </div>
           </div>
         </div>
 

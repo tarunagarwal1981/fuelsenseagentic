@@ -494,42 +494,7 @@ async function testPerformanceComparison(): Promise<TestResult> {
     console.log(`\n🧪 Running: ${testName}`);
     const testQuery = 'Best bunker option Singapore to Rotterdam';
 
-    // Test old endpoint (if available)
-    let oldEndpointTime = 0;
-    try {
-      const oldStart = Date.now();
-      const oldResponse = await fetch(`${API_BASE}/api/chat-langgraph`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: testQuery }],
-        }),
-      });
-
-      if (oldResponse.ok) {
-        // Consume stream for accurate timing
-        const reader = oldResponse.body?.getReader();
-        if (reader) {
-          while (true) {
-            const { done } = await reader.read();
-            if (done) break;
-          }
-        }
-        oldEndpointTime = Date.now() - oldStart;
-        result.assertions.passed++;
-        result.assertions.details.push(
-          `✅ Old endpoint (chat-langgraph): ${oldEndpointTime}ms`
-        );
-      }
-    } catch (error) {
-      result.assertions.details.push(
-        `⚠️  Old endpoint not available or error: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    // Test new multi-agent endpoint
+    // Test multi-agent endpoint
     const newStart = Date.now();
     const newResponse = await fetch(`${API_BASE}/api/chat-multi-agent`, {
       method: 'POST',

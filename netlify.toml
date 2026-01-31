@@ -55,8 +55,6 @@
 # API Routes Configuration
 # All API routes are automatically handled by Next.js
 # Available endpoints:
-# - /api/chat (legacy single-agent)
-# - /api/chat-langgraph (single-agent LangGraph)
-# - /api/chat-multi-agent (multi-agent system) [NEW]
+# - /api/chat-multi-agent (multi-agent system)
 # - /api/test-* (testing endpoints, can be disabled in production)
 

@@ -6,13 +6,13 @@ export interface PerformanceMetrics {
   toolCalls: number;
   llmCalls: number;
   tokensUsed?: number;
-  version: "manual" | "langgraph";
+  version: "multi-agent";
 }
 
 export class PerformanceMonitor {
   private metrics: PerformanceMetrics;
 
-  constructor(version: "manual" | "langgraph") {
+  constructor(version: "multi-agent") {
     this.metrics = {
       startTime: Date.now(),
       toolCalls: 0,

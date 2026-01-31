@@ -1,7 +1,7 @@
 // app/analytics/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import {
   BarChart,
@@ -15,9 +15,8 @@ import {
 } from "recharts";
 
 export default function AnalyticsPage() {
-  const [metrics, setMetrics] = useState({
-    manual: { avgDuration: 0, queries: 0 },
-    langgraph: { avgDuration: 0, queries: 0 },
+  const [metrics] = useState({
+    multiAgent: { avgDuration: 0, queries: 0 },
   });
 
   return (
@@ -28,45 +27,27 @@ export default function AnalyticsPage() {
             Performance Analytics
           </h1>
           <p className="text-muted-foreground">
-            Compare Manual vs LangGraph implementations
+            Multi-Agent system metrics (run from frontend for full analytics)
           </p>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-6">
             <div className="text-sm text-muted-foreground mb-1">
-              Manual Queries
-            </div>
-            <div className="text-3xl font-bold">
-              {metrics.manual.queries}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <div className="text-sm text-muted-foreground mb-1">
-              LangGraph Queries
+              Multi-Agent Queries
             </div>
             <div className="text-3xl font-bold text-purple-600">
-              {metrics.langgraph.queries}
+              {metrics.multiAgent.queries}
             </div>
           </Card>
 
           <Card className="p-6">
             <div className="text-sm text-muted-foreground mb-1">
-              Avg Manual Duration
-            </div>
-            <div className="text-3xl font-bold">
-              {metrics.manual.avgDuration}ms
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <div className="text-sm text-muted-foreground mb-1">
-              Avg LangGraph Duration
+              Avg Duration
             </div>
             <div className="text-3xl font-bold text-purple-600">
-              {metrics.langgraph.avgDuration}ms
+              {metrics.multiAgent.avgDuration}ms
             </div>
           </Card>
         </div>
@@ -74,15 +55,14 @@ export default function AnalyticsPage() {
         {/* Chart */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">
-            Response Time Comparison
+            Response Time
           </h2>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart
               data={[
                 {
                   name: "Average Response",
-                  Manual: metrics.manual.avgDuration,
-                  LangGraph: metrics.langgraph.avgDuration,
+                  "Multi-Agent": metrics.multiAgent.avgDuration,
                 },
               ]}
             >
@@ -91,8 +71,7 @@ export default function AnalyticsPage() {
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="Manual" fill="#10b981" />
-              <Bar dataKey="LangGraph" fill="#8b5cf6" />
+              <Bar dataKey="Multi-Agent" fill="#8b5cf6" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -100,4 +79,3 @@ export default function AnalyticsPage() {
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-// tests/compare-implementations.test.ts
+// tests/compare-implementations.test.ts - Multi-Agent endpoint test
 const TEST_QUERIES = [
   "Calculate route from Singapore to Rotterdam at 14 knots",
   "Find cheapest bunker from SGSIN to NLRTM",
@@ -6,21 +6,22 @@ const TEST_QUERIES = [
   "Analyze bunker options for 1000 MT fuel from Dubai to Shanghai",
 ];
 
-async function testEndpoint(endpoint: string, query: string) {
+async function testEndpoint(query: string) {
   const startTime = Date.now();
 
   try {
-    const response = await fetch(`http://localhost:3000/api/${endpoint}`, {
+    const response = await fetch(`http://localhost:3000/api/chat-multi-agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: [{ role: "user", content: query }],
+        message: query,
+        origin: "Singapore",
+        destination: "Rotterdam",
       }),
     });
 
     if (!response.ok) {
       return {
-        endpoint,
         query,
         duration: Date.now() - startTime,
         success: false,
@@ -28,10 +29,7 @@ async function testEndpoint(endpoint: string, query: string) {
       };
     }
 
-    // Consume the stream to get accurate timing
     const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-
     if (reader) {
       while (true) {
         const { done } = await reader.read();
@@ -40,10 +38,9 @@ async function testEndpoint(endpoint: string, query: string) {
     }
 
     const duration = Date.now() - startTime;
-    return { endpoint, query, duration, success: true };
+    return { query, duration, success: true };
   } catch (error) {
     return {
-      endpoint,
       query,
       duration: Date.now() - startTime,
       success: false,
@@ -53,43 +50,22 @@ async function testEndpoint(endpoint: string, query: string) {
 }
 
 async function runComparison() {
-  console.log("🧪 Running Comparison Tests...\n");
+  console.log("🧪 Running Multi-Agent Tests...\n");
 
   for (const query of TEST_QUERIES) {
     console.log(`\n📝 Testing: "${query}"\n`);
 
-    const [manualResult, langGraphResult] = await Promise.all([
-      testEndpoint("chat", query),
-      testEndpoint("chat-langgraph", query),
-    ]);
-
-    const manualStatus = manualResult.success ? "✓" : "✗";
-    const langGraphStatus = langGraphResult.success ? "✓" : "✗";
+    const result = await testEndpoint(query);
+    const status = result.success ? "✓" : "✗";
 
     console.log(
-      `⚙️  Manual:    ${manualStatus} ${manualResult.duration}ms${
-        !manualResult.success ? ` (${manualResult.error})` : ""
+      `🤖 Multi-Agent: ${status} ${result.duration}ms${
+        !result.success ? ` (${result.error})` : ""
       }`
     );
-    console.log(
-      `🔷 LangGraph: ${langGraphStatus} ${langGraphResult.duration}ms${
-        !langGraphResult.success ? ` (${langGraphResult.error})` : ""
-      }`
-    );
-
-    if (manualResult.success && langGraphResult.success) {
-      const diff = langGraphResult.duration - manualResult.duration;
-      const diffPercent = ((diff / manualResult.duration) * 100).toFixed(1);
-
-      console.log(
-        `📊 Difference: ${diff > 0 ? "+" : ""}${diff}ms (${diffPercent}%)`
-      );
-    }
   }
 }
 
-// Run if called directly
 if (require.main === module) {
   runComparison();
 }
-

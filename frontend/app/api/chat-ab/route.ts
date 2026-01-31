@@ -7,7 +7,7 @@
 
 export const runtime = 'edge';
 
-import { getTestVariant, recordABTestResult } from '@/lib/utils/ab-testing';
+import { recordABTestResult } from '@/lib/utils/ab-testing';
 
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -17,29 +17,16 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { message, origin, destination, vessel_speed, departure_date, userId, sessionId } = body;
 
-    // Determine A/B test variant
-    const variant = getTestVariant(userId, sessionId);
-    console.log(`🎲 [AB-TEST-API] Assigned variant: ${variant}`);
-
-    // Route to appropriate endpoint
-    let endpoint: string;
-    let requestBody: any;
-
-    if (variant === 'multi-agent') {
-      endpoint = '/api/chat-multi-agent';
-      requestBody = {
-        message,
-        origin,
-        destination,
-        vessel_speed,
-        departure_date,
-      };
-    } else {
-      endpoint = '/api/chat-langgraph';
-      requestBody = {
-        messages: [{ role: 'user', content: message }],
-      };
-    }
+    // Always use multi-agent (single implementation)
+    const variant = 'multi-agent' as const;
+    const endpoint = '/api/chat-multi-agent';
+    const requestBody = {
+      message,
+      origin,
+      destination,
+      vessel_speed,
+      departure_date,
+    };
 
     // Make internal request to the appropriate endpoint
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
