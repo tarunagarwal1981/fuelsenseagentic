@@ -120,6 +120,8 @@ export class RouteService {
     destination: string; // Port code
     speed: number; // Knots
     departureDate: Date;
+    origin_coordinates?: [number, number]; // Optional coordinates from supervisor
+    destination_coordinates?: [number, number]; // Optional coordinates from supervisor
   }): Promise<RouteData> {
     // Generate cache key
     const cacheKey = `fuelsense:route:${params.origin}-${params.destination}-${params.speed}`;
@@ -152,11 +154,57 @@ export class RouteService {
     // Get port metadata: route flow uses only World Port Index (Pub150) for resolution; no ports.json
     let originPort: PortLike | null = null;
     let destPort: PortLike | null = null;
-    if (this.worldPortRepo) {
-      const wOrigin = await this.worldPortRepo.findByCode(params.origin);
-      if (wOrigin?.coordinates) originPort = wOrigin as PortLike;
-      const wDest = await this.worldPortRepo.findByCode(params.destination);
-      if (wDest?.coordinates) destPort = wDest as PortLike;
+
+    // PRIORITY 1: Both coordinates from supervisor
+    if (params.origin_coordinates && params.destination_coordinates) {
+      console.log(`🌐 [ROUTE-SERVICE] Using supervisor-provided coordinates`);
+      console.log(`   Origin: ${params.origin} @ [${params.origin_coordinates[0]}, ${params.origin_coordinates[1]}]`);
+      console.log(`   Destination: ${params.destination} @ [${params.destination_coordinates[0]}, ${params.destination_coordinates[1]}]`);
+      originPort = {
+        code: params.origin,
+        name: params.origin,
+        coordinates: params.origin_coordinates,
+      } as PortLike;
+      destPort = {
+        code: params.destination,
+        name: params.destination,
+        coordinates: params.destination_coordinates,
+      } as PortLike;
+    }
+    // PRIORITY 2: Only one side has coordinates – build that side from params, fill the other via findByCode
+    else if (this.worldPortRepo) {
+      if (params.origin_coordinates) {
+        originPort = {
+          code: params.origin,
+          name: params.origin,
+          coordinates: params.origin_coordinates,
+        } as PortLike;
+        const wDest = await this.worldPortRepo.findByCode(params.destination);
+        if (wDest?.coordinates) destPort = wDest as PortLike;
+        if (originPort && destPort) {
+          console.log(`🌐 [ROUTE-SERVICE] Origin from params, destination from World Port: ${params.destination}`);
+        }
+      } else if (params.destination_coordinates) {
+        destPort = {
+          code: params.destination,
+          name: params.destination,
+          coordinates: params.destination_coordinates,
+        } as PortLike;
+        const wOrigin = await this.worldPortRepo.findByCode(params.origin);
+        if (wOrigin?.coordinates) originPort = wOrigin as PortLike;
+        if (originPort && destPort) {
+          console.log(`🌐 [ROUTE-SERVICE] Destination from params, origin from World Port: ${params.origin}`);
+        }
+      }
+      // If still missing either port, lookup both by code
+      if (!originPort) {
+        const wOrigin = await this.worldPortRepo.findByCode(params.origin);
+        if (wOrigin?.coordinates) originPort = wOrigin as PortLike;
+      }
+      if (!destPort) {
+        const wDest = await this.worldPortRepo.findByCode(params.destination);
+        if (wDest?.coordinates) destPort = wDest as PortLike;
+      }
     }
 
     if (!originPort) {
@@ -166,13 +214,24 @@ export class RouteService {
       console.warn(`⚠️ [ROUTE-SERVICE] Destination port ${params.destination} not in database or World Port Index`);
     }
 
-    // When UN/LOCODE is not available (e.g. WPI_*), use coordinates for both ends from the first request
+    // When coordinates are available (from supervisor OR World Port Index), use them first
+    // This is especially important for ports that SeaRoute doesn't recognize by code
+    const hasCoordinates = originPort?.coordinates && destPort?.coordinates;
     const isUnLoCode = (code: string) => /^[A-Z0-9]{5}$/.test(code);
+    
+    // Use coordinates in these cases:
+    // 1. Non-UN/LOCODE ports (WPI_* format)
+    // 2. Coordinates were explicitly provided by supervisor
+    // 3. Coordinates are available from World Port Index
     const useCoordinatesFirst =
-      !isUnLoCode(params.origin) || !isUnLoCode(params.destination);
+      !isUnLoCode(params.origin) || 
+      !isUnLoCode(params.destination) ||
+      (params.origin_coordinates && params.destination_coordinates) ||
+      hasCoordinates;
 
     let fromParam: string | [number, number] = params.origin;
     let toParam: string | [number, number] = params.destination;
+    
     if (useCoordinatesFirst && originPort?.coordinates && destPort?.coordinates) {
       const [latO, lonO] = originPort.coordinates;
       const [latD, lonD] = destPort.coordinates;
@@ -185,9 +244,7 @@ export class RouteService {
         validateCoordinates({ lat: latD, lon: lonD })
       ) {
         console.log('📊 [ROUTE-SERVICE] Calculating route:', params.origin, '→', params.destination);
-        console.warn(
-          `⚠️ [ROUTE-SERVICE] One or both ports have no UN/LOCODE; using coordinates from World Port Index for both ends`
-        );
+        console.log('🌐 [ROUTE-SERVICE] Using coordinate-based routing (coordinates available)');
         fromParam = [latO, lonO];
         toParam = [latD, lonD];
       }

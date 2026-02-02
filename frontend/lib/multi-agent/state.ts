@@ -74,6 +74,17 @@ export interface AgentContext {
     task_description: string;
     /** Priority level for this agent's work */
     priority: 'critical' | 'important' | 'optional';
+    /** Port overrides extracted by supervisor (origin/destination and optional coordinates) */
+    port_overrides?: {
+      origin?: string;
+      destination?: string;
+      origin_coordinates?: [number, number];
+      destination_coordinates?: [number, number];
+    };
+    /** Vessel speed extracted by supervisor */
+    vessel_speed?: number;
+    /** Departure date extracted by supervisor */
+    departure_date?: string;
   };
   weather_agent?: {
     /** Whether weather consumption calculation is needed (for bunker planning) */
@@ -98,6 +109,10 @@ export interface AgentContext {
     task_description: string;
     /** Priority level for this agent's work */
     priority: 'critical' | 'important' | 'optional';
+    /** Fuel types extracted by supervisor */
+    fuel_types?: Array<{ type: string; quantity?: number; unit?: string }>;
+    /** Bunker ports extracted by supervisor */
+    bunker_ports?: string[];
   };
   compliance_agent?: {
     /** Tool names this agent should bind (from supervisor plan) */
@@ -1168,6 +1183,8 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   port_overrides: Annotation<{
     origin?: string;      // UN/LOCODE format (e.g., "JPCHB")
     destination?: string; // UN/LOCODE format (e.g., "SGSIN")
+    origin_coordinates?: [number, number];      // [latitude, longitude]
+    destination_coordinates?: [number, number]; // [latitude, longitude]
   } | undefined>({
     reducer: (_, update) => update,
     default: () => undefined,

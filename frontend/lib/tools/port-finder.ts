@@ -1,12 +1,12 @@
 /**
  * Port Finder Tool
- * 
+ *
  * Finds bunker ports near a shipping route by calculating distances
  * from route waypoints to available ports using the haversine formula.
- * 
- * Refactored to use PortRepository with 3-tier caching:
- * Cache → Database → JSON Fallback
- * 
+ *
+ * Bunker port list comes from BunkerPricing API; coordinates from ports.json
+ * or World Port Index. Deviation = min haversine distance to any waypoint.
+ *
  * This tool is useful for:
  * - Finding refueling options along a route
  * - Identifying alternative ports for bunkering
@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import { Coordinates, Port, FuelType } from '@/lib/types';
 import { ServiceContainer } from '@/lib/repositories/service-container';
-import type { Port as RepositoryPort } from '@/lib/repositories/types';
+import { BunkerPricingClient } from '@/lib/clients/bunker-pricing-client';
 
 /**
  * Input parameters for port finder
@@ -128,41 +128,126 @@ export function haversineDistance(
   return distance;
 }
 
+/** Port entry from ports.json (for coordinates/name/country) */
+interface PortsJsonEntry {
+  port_code: string;
+  name: string;
+  country: string;
+  coordinates: { lat: number; lon: number };
+  fuel_capabilities?: string[];
+}
+
+/** Looks like a LOCODE (e.g. 5 chars, uppercase, no spaces). */
+function looksLikeLOCODE(key: string): boolean {
+  const k = String(key).trim();
+  return k.length >= 4 && k.length <= 6 && /^[A-Z0-9]+$/.test(k.toUpperCase());
+}
+
+/** Max concurrent WPI API calls to avoid timeout (83 sequential calls exceeded 15s). */
+const WPI_LOOKUP_CONCURRENCY = 15;
+
 /**
- * Loads bunker-capable port data from PortRepository
- * Uses ServiceContainer to access PortRepository with 3-tier caching:
- * Cache → Database → JSON Fallback
- * 
- * Refactored to use PortRepository instead of direct JSON import.
+ * Build Port[] from identifier (port code or name) -> fuel types map.
+ * Resolves coordinates via ports.json or WPI (findByCode for LOCODE, findByName for port names).
+ * WPI lookups run in parallel batches so port finder completes within timeout.
+ */
+async function buildPortsFromIdentifiers(
+  identifierToFuelTypes: Map<string, Set<string>>,
+  portRepo: {
+    findByCode: (code: string) => Promise<{ name: string; country: string; coordinates: [number, number] } | null>;
+    findByName: (name: string) => Promise<{ name: string; country: string; coordinates: [number, number] } | null>;
+  }
+): Promise<Port[]> {
+  let portsByCode: Record<string, PortsJsonEntry> = {};
+  try {
+    const portsModule = await import('@/lib/data/ports.json');
+    const arr = portsModule.default ?? portsModule;
+    if (Array.isArray(arr)) {
+      for (const entry of arr as PortsJsonEntry[]) {
+        portsByCode[entry.port_code] = entry;
+      }
+    }
+  } catch {
+    console.warn('[port-finder] Could not load ports.json for coordinates');
+  }
+
+  const ports: Port[] = [];
+  const needWpi: { identifier: string; fuelTypes: FuelType[] }[] = [];
+
+  for (const [identifier, fuelSet] of identifierToFuelTypes) {
+    if (identifier == null || String(identifier).trim() === '') continue;
+    const fuelTypes = Array.from(fuelSet) as FuelType[];
+    const fromJson = portsByCode[identifier];
+    if (fromJson?.coordinates) {
+      ports.push({
+        port_code: identifier,
+        name: fromJson.name,
+        country: fromJson.country,
+        coordinates: fromJson.coordinates,
+        fuel_capabilities: fuelTypes,
+      });
+      continue;
+    }
+    needWpi.push({ identifier, fuelTypes });
+  }
+
+  // Resolve WPI lookups in parallel batches to stay under port-finder timeout
+  for (let i = 0; i < needWpi.length; i += WPI_LOOKUP_CONCURRENCY) {
+    const batch = needWpi.slice(i, i + WPI_LOOKUP_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async ({ identifier, fuelTypes }) => {
+        const wpiPort = looksLikeLOCODE(identifier)
+          ? await portRepo.findByCode(identifier)
+          : await portRepo.findByName(identifier);
+        return { identifier, fuelTypes, wpiPort };
+      })
+    );
+    for (const { identifier, fuelTypes, wpiPort } of results) {
+      if (wpiPort?.coordinates) {
+        const code = 'code' in wpiPort && (wpiPort as { code?: string }).code
+          ? (wpiPort as { code: string }).code
+          : identifier;
+        ports.push({
+          port_code: code,
+          name: wpiPort.name,
+          country: wpiPort.country,
+          coordinates: { lat: wpiPort.coordinates[0], lon: wpiPort.coordinates[1] },
+          fuel_capabilities: fuelTypes,
+        });
+      }
+    }
+  }
+
+  return ports;
+}
+
+/**
+ * Loads bunker-capable port data from BunkerPricing API only.
+ * Enriches with coordinates from ports.json or World Port Index.
  */
 async function loadPortsData(): Promise<Port[]> {
-  try {
-    // Get PortRepository from ServiceContainer
-    const container = ServiceContainer.getInstance();
-    const portRepo = container.getPortRepository();
-    
-    // Get all bunker-capable ports (repository handles caching automatically)
-    const repositoryPorts = await portRepo.findBunkerPorts();
-    
-    // Convert RepositoryPort format to tool Port format for backward compatibility
-    const ports: Port[] = repositoryPorts.map((repoPort: RepositoryPort) => ({
-      port_code: repoPort.code,
-      name: repoPort.name,
-      country: repoPort.country,
-      coordinates: {
-        lat: repoPort.coordinates[0],
-        lon: repoPort.coordinates[1],
-      },
-      fuel_capabilities: repoPort.fuelsAvailable as FuelType[],
-    }));
-    
-    return ports;
-  } catch (error) {
-    throw new PortFinderError(
-      `Failed to load ports data: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      'PORT_DATA_LOAD_ERROR'
-    );
+  const container = ServiceContainer.getInstance();
+  const portRepo = container.getPortRepository();
+
+  const bunkerClient = new BunkerPricingClient();
+  const allPrices = await bunkerClient.getAll();
+  if (allPrices.length === 0) {
+    console.warn('[port-finder] BunkerPricing API returned no rows');
+    return [];
   }
+
+  const portCodeToFuelTypes = new Map<string, Set<string>>();
+  for (const p of allPrices) {
+    // Use port name when port code is empty (fuelsense.bunker has port_code NULL)
+    const key = (p.portName && String(p.portName).trim()) || (p.portCode && String(p.portCode).trim());
+    if (!key) continue;
+    if (!portCodeToFuelTypes.has(key)) {
+      portCodeToFuelTypes.set(key, new Set());
+    }
+    portCodeToFuelTypes.get(key)!.add(p.fuelType);
+  }
+
+  return buildPortsFromIdentifiers(portCodeToFuelTypes, portRepo);
 }
 
 /**

@@ -1,0 +1,53 @@
+📊 COST COMPARISON – BUNKER OPTIONS
+===================================
+
+ROUTE SUMMARY
+-------------
+Origin: {{data.route.origin}}
+Destination: {{data.route.destination}}
+Distance: {{number data.route.distance_nm 0}} nm
+Estimated Duration: {{duration data.route.estimated_hours h}}
+
+RECOMMENDED BUNKER PLAN
+-----------------------
+🏆 Best Option: {{data.bunker.best_option.port_name}} ({{data.bunker.best_option.port_code}})
+
+Cost Breakdown:
+  • Fuel Cost: {{currency data.bunker.best_option.fuel_cost_usd}}
+  • Deviation Cost: {{currency data.bunker.best_option.deviation_cost_usd}}
+  • TOTAL: {{currency data.bunker.best_option.total_cost_usd}}
+
+{{#if (gt data.bunker.max_savings_usd 0)}}
+💰 Savings: {{currency data.bunker.max_savings_usd}} vs worst option
+{{/if}}
+
+{{#if (gt data.bunker.alternatives_count 1)}}
+ALTERNATIVE OPTIONS ({{data.bunker.alternatives_count}} evaluated)
+------------------------
+{{#each data.bunker.recommendations}}
+{{#unless @first}}
+{{add @index 1}}. {{port_name}} ({{port_code}})
+   Total: {{currency total_cost_usd}} | Fuel: {{currency fuel_cost_usd}} | Deviation: {{currency deviation_cost_usd}}
+{{/unless}}
+{{/each}}
+{{/if}}
+
+{{#if insights}}
+KEY INSIGHTS
+------------
+{{#each insights}}
+{{#if (eq priority "critical")}}🔴{{/if}}{{#if (eq priority "high")}}🟠{{/if}}{{#if (eq priority "medium")}}🟡{{/if}}{{#if (eq priority "low")}}🟢{{/if}} {{title}}
+   {{description}}
+{{/each}}
+{{/if}}
+
+{{#if recommendations}}
+RECOMMENDED ACTIONS
+-------------------
+{{#each recommendations}}
+{{priority}}. {{action}}
+   {{rationale}}
+{{/each}}
+{{/if}}
+
+Generated: {{date synthesizedAt long}}

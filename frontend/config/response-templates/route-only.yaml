@@ -5,6 +5,31 @@ template:
   description: "Simple response for route-only queries"
   
   sections:
+    # =========================================================
+    # TIER 0: ROUTE MAP (Always visible when route exists)
+    # =========================================================
+    
+    - id: "route_map"
+      title: "Route Map"
+      tier: 0
+      visibility: "always"
+      priority: 0
+      condition: "route_data"
+      
+      content_source:
+        component: "MapViewer"
+        props:
+          route: "route_data"
+      
+      notes: |
+        Map is PRIMARY interface for geographic context.
+        Always visible, never collapsed.
+        Port objects are constructed from route_data fields in the component.
+
+    # =========================================================
+    # TIER 1: PRIMARY RESPONSE
+    # =========================================================
+    
     - id: "route_summary"
       title: "📍 Route Summary"
       tier: 1

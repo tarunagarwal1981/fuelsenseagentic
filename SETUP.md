@@ -42,6 +42,11 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 ### Optional Variables
 
 ```bash
+# FuelSense BunkerPricing API (bunker ports and prices along routes)
+# Base URL for bunker-pricing endpoint (no trailing slash). Used by port-finder and PriceRepository.
+NEXT_PUBLIC_FUELSENSE_API_URL=https://uat.fuelsense-api.dexpertsystems.com/api
+# Alternative (server-only): BUNKER_PRICING_API_URL
+
 # External API Keys (if using premium services)
 SEA_ROUTE_API_KEY=your-sea-route-api-key
 OPEN_METEO_API_KEY=your-open-meteo-api-key
@@ -61,6 +66,7 @@ LOG_LEVEL=debug
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key | `eyJxxx` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key | `eyJxxx` |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic Claude API key | `sk-ant-xxx` |
+| `NEXT_PUBLIC_FUELSENSE_API_URL` | No | FuelSense BunkerPricing API base URL (bunker ports/prices) | `https://uat.fuelsense-api.dexpertsystems.com/api` |
 | `SEA_ROUTE_API_KEY` | No | SeaRoute API key (if using premium) | `xxx` |
 | `OPEN_METEO_API_KEY` | No | Open-Meteo API key (if using premium) | `xxx` |
 

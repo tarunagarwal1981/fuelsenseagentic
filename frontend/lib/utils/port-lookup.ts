@@ -7,14 +7,15 @@
 
 import portsData from '@/lib/data/ports.json';
 import { PortLogger, startLoggingSession } from './debug-logger';
-import { WorldPortRepositoryCSV } from '@/lib/repositories/world-port-repository';
 import type { IWorldPortRepository } from '@/lib/repositories/types';
 
 let worldPortRepoInstance: IWorldPortRepository | null = null;
 
-function getWorldPortRepository(): IWorldPortRepository {
+async function getWorldPortRepository(): Promise<IWorldPortRepository> {
   if (!worldPortRepoInstance) {
-    worldPortRepoInstance = new WorldPortRepositoryCSV();
+    // Use ServiceContainer to get the configured WorldPortRepository (API or CSV)
+    const { ServiceContainer } = await import('@/lib/repositories/service-container');
+    worldPortRepoInstance = ServiceContainer.getInstance().getWorldPortRepository();
   }
   return worldPortRepoInstance;
 }
@@ -845,7 +846,7 @@ export async function extractPortsFromQuery(query: string): Promise<{ origin: st
   // STEP 1b: Try World Port Index (Pub150) for any missing origin/destination
   if (!deterministicResult.origin || !deterministicResult.destination) {
     const { originQuery, destQuery } = getOriginDestQueries(query);
-    const worldRepo = getWorldPortRepository();
+    const worldRepo = await getWorldPortRepository();
     if (!deterministicResult.origin && originQuery) {
       try {
         const w = await worldRepo.findByName(originQuery);

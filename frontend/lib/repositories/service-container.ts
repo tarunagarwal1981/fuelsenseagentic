@@ -20,7 +20,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { PortRepository } from './port-repository';
 import { PriceRepository } from './price-repository';
 import { VesselRepository } from './vessel-repository';
-import { WorldPortRepositoryCSV } from './world-port-repository';
+import { WorldPortRepositoryAPI } from './world-port-repository-api';
 import type { IWorldPortRepository } from './types';
 import { RouteService } from '@/lib/services/route.service';
 import { BunkerService } from '@/lib/services/bunker.service';
@@ -223,10 +223,10 @@ export class ServiceContainer {
    */
   private initializeRepositories(): void {
     try {
-      this.portRepo = new PortRepository(this.cache as RedisCache, this.db);
+      this.portRepo = new PortRepository(this.cache as RedisCache);
       this.priceRepo = new PriceRepository(this.cache as RedisCache, this.db);
       this.vesselRepo = new VesselRepository(this.cache as RedisCache, this.db);
-      this.worldPortRepo = new WorldPortRepositoryCSV();
+      this.worldPortRepo = new WorldPortRepositoryAPI(this.cache as RedisCache);
 
       console.log('[SERVICE-CONTAINER] Repositories initialized');
     } catch (error) {

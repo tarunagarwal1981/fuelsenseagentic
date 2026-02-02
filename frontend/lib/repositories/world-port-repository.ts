@@ -146,15 +146,20 @@ export class WorldPortRepositoryCSV implements IWorldPortRepository {
           this.byMainName.set(word, listW);
         }
       }
-      const altNorm = normalizeName(altName);
-      if (altNorm && altNorm !== mainNorm) {
-        const list = this.byAlternateName.get(altNorm) ?? [];
-        if (!list.some((e) => e.id === entry.id)) list.push(entry);
-        this.byAlternateName.set(altNorm, list);
-        for (const word of altNorm.split(/\s+/).filter((w) => w.length >= 2)) {
-          const listW = this.byAlternateName.get(word) ?? [];
-          if (!listW.some((e) => e.id === entry.id)) listW.push(entry);
-          this.byAlternateName.set(word, listW);
+      // Split alternate names by semicolon and index each part separately
+      // e.g., "Dubai; Mina Rashid" → ["Dubai", "Mina Rashid"]
+      const altNames = altName.split(';').map(n => n.trim()).filter(n => n.length > 0);
+      for (const singleAltName of altNames) {
+        const altNorm = normalizeName(singleAltName);
+        if (altNorm && altNorm !== mainNorm) {
+          const list = this.byAlternateName.get(altNorm) ?? [];
+          if (!list.some((e) => e.id === entry.id)) list.push(entry);
+          this.byAlternateName.set(altNorm, list);
+          for (const word of altNorm.split(/\s+/).filter((w) => w.length >= 2)) {
+            const listW = this.byAlternateName.get(word) ?? [];
+            if (!listW.some((e) => e.id === entry.id)) listW.push(entry);
+            this.byAlternateName.set(word, listW);
+          }
         }
       }
     }
@@ -202,13 +207,60 @@ export class WorldPortRepositoryCSV implements IWorldPortRepository {
     await this.load();
     const norm = normalizeName(name);
     if (!norm) return null;
-    const fromMain = this.byMainName.get(norm) ?? [];
-    const fromAlt = this.byAlternateName.get(norm) ?? [];
-    const combined = [...fromMain];
-    for (const e of fromAlt) {
-      if (!combined.some((c) => c.id === e.id)) combined.push(e);
+    
+    console.log(`🔍 [WORLD-PORT-REPO] Searching for: "${name}" (normalized: "${norm}")`);
+    
+    // STEP 1: Try exact match in Main Port Name index
+    console.log(`📍 [WORLD-PORT-REPO] Step 1: Searching Main Port Name index...`);
+    let fromMain = this.byMainName.get(norm) ?? [];
+    
+    if (fromMain.length > 0) {
+      console.log(`✅ [WORLD-PORT-REPO] Found ${fromMain.length} matches in Main Port Name`);
+      const best = this.pickOne(fromMain, norm);
+      if (best) {
+        console.log(`🏆 [WORLD-PORT-REPO] Selected: ${best.id} - ${best.name}`);
+        return best;
+      }
     }
-    return this.pickOne(combined, norm) ?? null;
+    
+    // STEP 2: Try exact match in Alternate Port Name index
+    console.log(`📍 [WORLD-PORT-REPO] Step 2: Searching Alternate Port Name index...`);
+    let fromAlt = this.byAlternateName.get(norm) ?? [];
+    
+    if (fromAlt.length > 0) {
+      console.log(`✅ [WORLD-PORT-REPO] Found ${fromAlt.length} matches in Alternate Port Name`);
+      const best = this.pickOne(fromAlt, norm);
+      if (best) {
+        console.log(`🏆 [WORLD-PORT-REPO] Selected: ${best.id} - ${best.name}`);
+        return best;
+      }
+    }
+    
+    // STEP 3: Try partial match (word-based search) - combine both indexes
+    console.log(`📍 [WORLD-PORT-REPO] Step 3: Trying word-based partial matching...`);
+    const words = norm.split(/\s+/).filter(w => w.length >= 2);
+    for (const word of words) {
+      const mainMatches = this.byMainName.get(word) ?? [];
+      const altMatches = this.byAlternateName.get(word) ?? [];
+      
+      const combined = [...mainMatches];
+      for (const e of altMatches) {
+        if (!combined.some((c) => c.id === e.id)) combined.push(e);
+      }
+      
+      if (combined.length > 0) {
+        console.log(`✅ [WORLD-PORT-REPO] Found ${combined.length} matches for word "${word}"`);
+        const best = this.pickOne(combined, norm);
+        if (best) {
+          console.log(`🏆 [WORLD-PORT-REPO] Selected: ${best.id} - ${best.name}`);
+          return best;
+        }
+      }
+    }
+    
+    // STEP 4: Not found
+    console.warn(`❌ [WORLD-PORT-REPO] Port "${name}" not found in any index`);
+    return null;
   }
 
   async findByCode(code: string): Promise<WorldPortEntry | null> {

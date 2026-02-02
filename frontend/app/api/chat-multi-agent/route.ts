@@ -187,18 +187,21 @@ export async function POST(req: Request) {
     console.log(`   - Departure date: ${departure_date || 'not provided'}`);
     console.log(`   - thread_id: ${thread_id} (${isContinuation ? 'continuation' : 'new'})`);
 
-    // Build initial message with context
-    let userMessage = message;
-    if (origin || destination || vessel_speed || departure_date) {
-      const contextParts: string[] = [];
-      if (origin) contextParts.push(`Origin: ${origin}`);
-      if (destination) contextParts.push(`Destination: ${destination}`);
-      if (vessel_speed) contextParts.push(`Vessel speed: ${vessel_speed} knots`);
-      if (departure_date) contextParts.push(`Departure date: ${departure_date}`);
+    // REMOVED: Context appending logic
+    // The supervisor LLM now extracts entities directly from the natural language query
+    // No need to append parsed context which can be incorrect (e.g., "Destination: kyo")
+    // 
+    // Old code (removed):
+    // if (origin || destination || vessel_speed || departure_date) {
+    //   const contextParts: string[] = [];
+    //   if (origin) contextParts.push(`Origin: ${origin}`);
+    //   if (destination) contextParts.push(`Destination: ${destination}`);
+    //   ...
+    //   userMessage = `${message}\n\nContext:\n${contextParts.join('\n')}`;
+    // }
 
-      userMessage = `${message}\n\nContext:\n${contextParts.join('\n')}`;
-    }
-
+    // Use the clean user message without any context appending
+    const userMessage = message;
     const humanMessage = new HumanMessage(userMessage);
 
     // Start performance monitoring

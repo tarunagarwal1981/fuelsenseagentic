@@ -28,6 +28,10 @@ function getOriginDestQueries(query: string): { originQuery: string | null; dest
 export interface ResolvePortsResult {
   origin: string | null;
   destination: string | null;
+  /** Coordinates when origin was resolved (World Port or fallback + findByCode). */
+  origin_coordinates?: [number, number];
+  /** Coordinates when destination was resolved (World Port or fallback + findByCode). */
+  destination_coordinates?: [number, number];
 }
 
 export class PortResolutionService {
@@ -44,6 +48,8 @@ export class PortResolutionService {
     const { originQuery, destQuery } = getOriginDestQueries(query);
     let origin: string | null = null;
     let destination: string | null = null;
+    let origin_coordinates: [number, number] | undefined;
+    let destination_coordinates: [number, number] | undefined;
 
     // World Port first
     if (originQuery) {
@@ -51,6 +57,7 @@ export class PortResolutionService {
         const w = await this.worldPortRepo.findByName(originQuery);
         if (w?.coordinates) {
           origin = w.id;
+          origin_coordinates = w.coordinates;
           console.log(`✅ [PORT-RESOLUTION] World Port origin: ${w.id} (${w.name})`);
         }
       } catch (e) {
@@ -62,6 +69,7 @@ export class PortResolutionService {
         const w = await this.worldPortRepo.findByName(destQuery);
         if (w?.coordinates) {
           destination = w.id;
+          destination_coordinates = w.coordinates;
           console.log(`✅ [PORT-RESOLUTION] World Port destination: ${w.id} (${w.name})`);
         }
       } catch (e) {
@@ -70,10 +78,10 @@ export class PortResolutionService {
     }
 
     if (origin && destination) {
-      return { origin, destination };
+      return { origin, destination, origin_coordinates, destination_coordinates };
     }
 
-    // Optional API fallback for missing parts
+    // Optional API fallback for missing parts; enrich with coordinates via findByCode
     if (this.useApiFallback) {
       if (!origin && originQuery) {
         try {
@@ -81,6 +89,10 @@ export class PortResolutionService {
           if (code) {
             origin = code;
             console.log(`✅ [PORT-RESOLUTION] API fallback origin: ${code}`);
+            const entry = await this.worldPortRepo.findByCode(code);
+            if (entry?.coordinates && entry.coordinates.length >= 2) {
+              origin_coordinates = [entry.coordinates[0], entry.coordinates[1]];
+            }
           }
         } catch (e) {
           console.warn('[PORT-RESOLUTION] API fallback origin failed:', e instanceof Error ? e.message : e);
@@ -92,6 +104,10 @@ export class PortResolutionService {
           if (code) {
             destination = code;
             console.log(`✅ [PORT-RESOLUTION] API fallback destination: ${code}`);
+            const entry = await this.worldPortRepo.findByCode(code);
+            if (entry?.coordinates && entry.coordinates.length >= 2) {
+              destination_coordinates = [entry.coordinates[0], entry.coordinates[1]];
+            }
           }
         } catch (e) {
           console.warn('[PORT-RESOLUTION] API fallback destination failed:', e instanceof Error ? e.message : e);
@@ -99,7 +115,7 @@ export class PortResolutionService {
       }
     }
 
-    return { origin, destination };
+    return { origin, destination, origin_coordinates, destination_coordinates };
   }
 
   /**

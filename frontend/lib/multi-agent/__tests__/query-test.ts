@@ -36,19 +36,13 @@ export async function testQuery(
   }
   console.log('='.repeat(80));
   
-  // Build user message with context
+  // Build user message (clean query without context appending)
+  // The supervisor LLM now extracts entities directly from the natural language query
   let userMessage = userQuery;
-  if (options) {
-    const contextParts: string[] = [];
-    if (options.origin) contextParts.push(`Origin: ${options.origin}`);
-    if (options.destination) contextParts.push(`Destination: ${options.destination}`);
-    if (options.vessel_speed) contextParts.push(`Vessel speed: ${options.vessel_speed} knots`);
-    if (options.departure_date) contextParts.push(`Departure date: ${options.departure_date}`);
-    
-    if (contextParts.length > 0) {
-      userMessage = `${userQuery}\n\nContext:\n${contextParts.join('\n')}`;
-    }
-  }
+  
+  // REMOVED: Context appending logic
+  // The supervisor should extract entities from the natural language query itself
+  // Old code that appended "Context:\nOrigin: X\nDestination: Y" has been removed
   
   const humanMessage = new HumanMessage(userMessage);
   

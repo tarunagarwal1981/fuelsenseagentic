@@ -26,6 +26,10 @@ export interface RouteCalculatorInput {
   destination_port_code: string;
   /** Vessel speed in knots (optional, defaults to 14 knots) */
   vessel_speed_knots?: number;
+  /** Origin coordinates [latitude, longitude] - used for coordinate-based routing */
+  origin_coordinates?: [number, number];
+  /** Destination coordinates [latitude, longitude] - used for coordinate-based routing */
+  destination_coordinates?: [number, number];
 }
 
 /**
@@ -151,7 +155,10 @@ export async function calculateRoute(
       origin: origin_port_code,
       destination: destination_port_code,
       speed: vessel_speed_knots,
-      departureDate: departure_date ? new Date(departure_date) : new Date()
+      departureDate: departure_date ? new Date(departure_date) : new Date(),
+      // Pass coordinates if available for coordinate-based routing
+      origin_coordinates: input.origin_coordinates,
+      destination_coordinates: input.destination_coordinates,
     });
 
     // ===== POST-CALCULATION VALIDATION =====

@@ -15,34 +15,8 @@ import { BaseRepository } from './base-repository';
 import { RedisCache } from './cache-client';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { FuelPrice, PriceQuery } from './types';
-import * as fs from 'fs/promises';
+import { BunkerPricingClient } from '@/lib/clients/bunker-pricing-client';
 import * as path from 'path';
-
-/**
- * JSON format price (from prices.json)
- */
-interface JsonPrice {
-  port_code: string;
-  fuel_type: string;
-  price_per_mt: number;
-  currency: string;
-  last_updated: string;
-}
-
-/**
- * Convert JSON price format to repository FuelPrice format
- */
-function mapJsonToPrice(jsonPrice: JsonPrice): FuelPrice {
-  return {
-    id: undefined,
-    portCode: jsonPrice.port_code,
-    fuelType: jsonPrice.fuel_type as FuelPrice['fuelType'],
-    priceUSD: jsonPrice.price_per_mt,
-    date: new Date(jsonPrice.last_updated).toISOString().split('T')[0],
-    source: 'manual',
-    updatedAt: new Date(jsonPrice.last_updated),
-  };
-}
 
 /**
  * Convert repository FuelPrice format to JSON format (for database storage)
@@ -83,15 +57,15 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
    * @returns Record mapping fuel types to prices
    */
   async getLatestPrices(query: PriceQuery): Promise<Record<string, number>> {
-    const { portCode, fuelTypes } = query;
-    const cacheKey = `fuelsense:prices:${portCode}:latest`;
+    const { portCode, portName, fuelTypes } = query;
+    const cacheKey = `fuelsense:prices:${portCode ?? portName ?? ''}:latest`;
+    const label = portCode ?? portName ?? 'unknown';
 
     // Step 1: Try cache
     try {
       const cached = await this.cache.get<Record<string, number>>(cacheKey);
       if (cached) {
-        console.log(`[CACHE HIT] prices:${portCode}:latest`);
-        // Filter to only requested fuel types
+        console.log(`[CACHE HIT] prices:${label}:latest`);
         const filtered: Record<string, number> = {};
         for (const fuelType of fuelTypes) {
           if (cached[fuelType] !== undefined) {
@@ -101,93 +75,40 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
         return filtered;
       }
     } catch (error) {
-      console.error(`[PriceRepository] Cache read error for ${portCode}:`, error);
+      console.error(`[PriceRepository] Cache read error for ${label}:`, error);
     }
 
-    // Step 2: Try database
-    try {
-      // Query for latest price of each fuel type
-      const { data, error } = await this.db
-        .from(this.tableName)
-        .select('*')
-        .eq('portCode', portCode)
-        .in('fuelType', fuelTypes)
-        .order('date', { ascending: false })
-        .order('updatedAt', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      if (data && data.length > 0) {
-        // Group by fuelType and take the latest for each
-        const pricesByType = new Map<string, FuelPrice & { id: string }>();
-        for (const price of data as (FuelPrice & { id: string })[]) {
-          if (!pricesByType.has(price.fuelType)) {
-            pricesByType.set(price.fuelType, price);
-          } else {
-            const existing = pricesByType.get(price.fuelType)!;
-            const existingDate = new Date(existing.date);
-            const currentDate = new Date(price.date);
-            if (currentDate > existingDate) {
-              pricesByType.set(price.fuelType, price);
+    // Step 2: Try BunkerPricing API by port name only (API has no port_code; cache is Redis only, no Supabase)
+    const hasPortName = portName != null && String(portName).trim() !== '';
+    if (hasPortName) {
+      try {
+        const bunkerClient = new BunkerPricingClient();
+        const apiPrices = await bunkerClient.getByPortName(String(portName).trim());
+        if (apiPrices.length > 0) {
+          const latestByFuel = new Map<string, { priceUSD: number; updatedAt: Date }>();
+          for (const p of apiPrices) {
+            if (!fuelTypes.includes(p.fuelType)) continue;
+            const existing = latestByFuel.get(p.fuelType);
+            if (!existing || p.updatedAt.getTime() > existing.updatedAt.getTime()) {
+              latestByFuel.set(p.fuelType, { priceUSD: p.priceUSD, updatedAt: p.updatedAt });
             }
           }
-        }
-
-        // Convert to record format
-        const result: Record<string, number> = {};
-        Array.from(pricesByType.entries()).forEach(([fuelType, price]) => {
-          result[fuelType] = price.priceUSD;
-        });
-
-        // Cache the result
-        await this.cache.set(cacheKey, result, this.getCacheTTL());
-        console.log(`[DB HIT] prices:${portCode}:latest`);
-        return result;
-      }
-    } catch (error) {
-      console.error(`[PriceRepository] Database read error for ${portCode}:`, error);
-    }
-
-    // Step 3: Try JSON fallback
-    try {
-      const allPrices = await this.loadAllPricesFromFallback();
-      const portPrices = allPrices.filter((p) => p.portCode === portCode);
-
-      if (portPrices.length > 0) {
-        // Group by fuelType and take the latest for each
-        const pricesByType = new Map<string, FuelPrice & { id: string }>();
-        for (const price of portPrices) {
-          if (fuelTypes.includes(price.fuelType)) {
-            if (!pricesByType.has(price.fuelType)) {
-              pricesByType.set(price.fuelType, price as FuelPrice & { id: string });
-            } else {
-              const existing = pricesByType.get(price.fuelType)!;
-              const existingDate = new Date(existing.date);
-              const currentDate = new Date(price.date);
-              if (currentDate > existingDate) {
-                pricesByType.set(price.fuelType, price as FuelPrice & { id: string });
-              }
-            }
+          const result: Record<string, number> = {};
+          latestByFuel.forEach(({ priceUSD }, fuelType) => {
+            result[fuelType] = priceUSD;
+          });
+          if (Object.keys(result).length > 0) {
+            await this.cache.set(cacheKey, result, this.getCacheTTL());
+            console.log(`[API HIT] prices:${label}:latest`);
+            return result;
           }
         }
-
-        const result: Record<string, number> = {};
-        Array.from(pricesByType.entries()).forEach(([fuelType, price]) => {
-          result[fuelType] = price.priceUSD;
-        });
-
-        // Cache the result
-        await this.cache.set(cacheKey, result, this.getCacheTTL());
-        console.log(`[FALLBACK HIT] prices:${portCode}:latest`);
-        return result;
+      } catch (error) {
+        console.error(`[PriceRepository] API read error for ${label}:`, error instanceof Error ? error.message : String(error));
       }
-    } catch (error) {
-      console.error(`[PriceRepository] Fallback read error for ${portCode}:`, error);
     }
 
-    console.log(`[NOT FOUND] prices:${portCode}:latest`);
+    console.log(`[NOT FOUND] prices:${label}:latest`);
     return {};
   }
 
@@ -227,25 +148,7 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
         return data as FuelPrice[];
       }
 
-      // Fallback to JSON if no database results
-      const allPrices = await this.loadAllPricesFromFallback();
-      const portPrices = allPrices.filter(
-        (p) => p.portCode === portCode && p.fuelType === fuelType
-      );
-
-      // Filter by date and sort
-      const filtered = portPrices
-        .filter((p) => {
-          const priceDate = new Date(p.date);
-          return priceDate >= cutoffDate;
-        })
-        .sort((a, b) => {
-          const dateA = new Date(a.date);
-          const dateB = new Date(b.date);
-          return dateB.getTime() - dateA.getTime();
-        });
-
-      return filtered;
+      return [];
     } catch (error) {
       console.error(
         `[PriceRepository] Error getting price history for ${portCode}/${fuelType}:`,
@@ -318,31 +221,7 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
         return result;
       }
 
-      // Fallback to JSON
-      const allPrices = await this.loadAllPricesFromFallback();
-      const portPrices = allPrices.filter((p) => {
-        const priceDate = new Date(p.date);
-        return p.portCode === portCode && priceDate >= cutoffDate;
-      });
-
-      // Group by fuelType and calculate average
-      const pricesByType = new Map<string, number[]>();
-      for (const price of portPrices) {
-        if (!pricesByType.has(price.fuelType)) {
-          pricesByType.set(price.fuelType, []);
-        }
-        pricesByType.get(price.fuelType)!.push(price.priceUSD);
-      }
-
-      const result: Record<string, number> = {};
-      Array.from(pricesByType.entries()).forEach(([fuelType, prices]) => {
-        const sum = prices.reduce((a, b) => a + b, 0);
-        result[fuelType] = sum / prices.length;
-      });
-
-      await this.cache.set(cacheKey, result, avgCacheTTL);
-      console.log(`[FALLBACK HIT] prices:${portCode}:avg:${days}`);
-      return result;
+      return {};
     } catch (error) {
       console.error(`[PriceRepository] Error getting average prices:`, error);
       return {};
@@ -436,41 +315,6 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
   }
 
   /**
-   * Load all prices from JSON fallback file
-   */
-  private async loadAllPricesFromFallback(): Promise<FuelPrice[]> {
-    if (!this.fallbackPath) {
-      console.log('[PriceRepository] No fallback path configured');
-      return [];
-    }
-
-    try {
-      // Use 'prices.json' instead of 'fuel_prices.json' (actual filename)
-      const filePath = path.join(this.fallbackPath, 'prices.json');
-      console.log(`[PriceRepository] Loading prices from fallback: ${filePath}`);
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      const jsonPrices: JsonPrice[] = JSON.parse(fileContent);
-
-      if (!Array.isArray(jsonPrices)) {
-        console.log('[PriceRepository] JSON file is not an array');
-        return [];
-      }
-
-      const prices = jsonPrices.map(mapJsonToPrice);
-      console.log(`[PriceRepository] Loaded ${prices.length} prices from JSON fallback`);
-      return prices;
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code !== 'ENOENT') {
-        console.error(`[PriceRepository] Error loading fallback:`, err.message || error);
-      } else {
-        console.log(`[PriceRepository] Fallback file not found: ${path.join(this.fallbackPath, 'prices.json')}`);
-      }
-      return [];
-    }
-  }
-
-  /**
    * Override findById - prices use composite key (portCode + fuelType + date)
    * This method is not typically used for prices
    */
@@ -484,4 +328,13 @@ export class PriceRepository extends BaseRepository<FuelPrice & { id: string }> 
     }
     return result;
   }
+}
+
+/** JSON shape used for database storage (mapPriceToJson) */
+interface JsonPrice {
+  port_code: string;
+  fuel_type: string;
+  price_per_mt: number;
+  currency: string;
+  last_updated: string;
 }

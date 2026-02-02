@@ -63,6 +63,10 @@ export interface RenderedSection {
   content: string;
   word_count: number;
   truncated: boolean;
+  metadata?: {
+    component?: string;
+    props?: Record<string, any>;
+  };
 }
 
 // ============================================================================
@@ -701,6 +705,28 @@ function renderSectionsByTier(
     
     // Tier 0 sections (map components) don't have text content
     if (section.tier === 0) {
+      // Extract component metadata from content_source
+      const componentName = section.content_source?.component;
+      const componentProps = section.content_source?.props || {};
+      
+      console.log(`🔍 [TIER-0] Resolving props for ${section.id}:`, componentProps);
+      
+      // Resolve props from state
+      const resolvedProps: Record<string, any> = {};
+      for (const [key, value] of Object.entries(componentProps)) {
+        if (typeof value === 'string') {
+          // It's a state path like "route_data" or "origin_port" or "route_data.waypoints"
+          const resolvedValue = getNestedValue(state, value);
+          resolvedProps[key] = resolvedValue;
+          console.log(`  📊 [TIER-0] ${key}: "${value}" → ${resolvedValue ? '✅ resolved' : '❌ null/undefined'}`);
+        } else {
+          resolvedProps[key] = value;
+          console.log(`  📊 [TIER-0] ${key}: direct value`);
+        }
+      }
+      
+      console.log(`✅ [TIER-0] Final props for ${componentName}:`, Object.keys(resolvedProps));
+      
       const renderedSection: RenderedSection = {
         id: section.id,
         title: section.title || 'Map',
@@ -711,9 +737,13 @@ function renderSectionsByTier(
         content: '[Map Component]',  // Placeholder - actual map rendered by React
         word_count: 0,
         truncated: false,
+        metadata: {
+          component: componentName,
+          props: resolvedProps,
+        },
       };
       result.tier_0_map.push(renderedSection);
-      console.log(`✅ [SECTION] Rendered tier 0: ${section.id}`);
+      console.log(`✅ [SECTION] Rendered tier 0: ${section.id} (${componentName})`);
       continue;
     }
     

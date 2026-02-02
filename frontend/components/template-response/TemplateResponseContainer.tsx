@@ -2,6 +2,7 @@
  * Template Response Container
  * 
  * Renders responses with progressive disclosure.
+ * - Tier 0: Map/component (always visible)
  * - Tier 1: Always visible (primary content)
  * - Tier 2: Expandable (key insights)
  * - Tier 3: Technical details (collapsed by default)
@@ -14,6 +15,7 @@ import ReactMarkdown from 'react-markdown';
 import type { TemplateFormattedResponse, RenderedSection } from '@/lib/formatters/template-aware-formatter';
 import type { ExtractedInsight } from '@/lib/formatters/insight-extractor';
 import { getSectionIcon, stripEmojiPrefix, TIER_STYLES } from './section-icons';
+import { MapViewer } from '@/components/map-viewer';
 
 interface Props {
   response: TemplateFormattedResponse;
@@ -42,6 +44,15 @@ export default function TemplateResponseContainer({ response }: Props) {
       {/* Critical insights first */}
       {response.insights && response.insights.filter(i => i.priority === 'critical').length > 0 && (
         <CriticalInsightsAlert insights={response.insights.filter(i => i.priority === 'critical')} />
+      )}
+      
+      {/* Tier 0: Map/Components (always visible) */}
+      {response.sections_by_tier.tier_0_map && response.sections_by_tier.tier_0_map.length > 0 && (
+        <div className="space-y-4">
+          {response.sections_by_tier.tier_0_map.map((section) => (
+            <Tier0MapSection key={section.id} section={section} />
+          ))}
+        </div>
       )}
       
       {/* Tier 1: Always visible */}
@@ -220,6 +231,72 @@ function InsightsPanel({ insights }: { insights: ExtractedInsight[] }) {
           )}
         </div>
       </details>
+    </div>
+  );
+}
+
+/**
+ * Tier 0: Map/Component rendering
+ * Handles MapViewer and other components
+ */
+function Tier0MapSection({ section }: { section: RenderedSection }) {
+  // Check if this is a MapViewer component
+  if (section.metadata?.component === 'MapViewer') {
+    const props = section.metadata?.props || {};
+    const route = props.route;
+    
+    // Construct port objects from route_data if they don't exist
+    // MapViewer expects: { port_code, name, coordinates, country }
+    let originPort = props.originPort;
+    let destinationPort = props.destinationPort;
+    
+    if (!originPort && route) {
+      // Build originPort from route_data fields
+      originPort = {
+        port_code: route.origin_port_code,
+        name: route.origin_port_name || route.origin_port_code,
+        coordinates: route.origin_coordinates,
+        country: '', // Not available in route_data
+      };
+    }
+    
+    if (!destinationPort && route) {
+      // Build destinationPort from route_data fields
+      destinationPort = {
+        port_code: route.destination_port_code,
+        name: route.destination_port_name || route.destination_port_code,
+        coordinates: route.destination_coordinates,
+        country: '', // Not available in route_data
+      };
+    }
+    
+    // Only render if we have all required data
+    if (!route || !originPort || !destinationPort) {
+      console.warn('[Tier0MapSection] Missing required data:', { 
+        hasRoute: !!route, 
+        hasOrigin: !!originPort, 
+        hasDest: !!destinationPort 
+      });
+      return null;
+    }
+    
+    return (
+      <div className="w-full">
+        <MapViewer
+          route={route}
+          originPort={originPort}
+          destinationPort={destinationPort}
+          bunkerPorts={props.bunkerPorts || []}
+          mapOverlays={props.mapOverlays}
+        />
+      </div>
+    );
+  }
+  
+  // Fallback for other tier 0 sections (render as text)
+  return (
+    <div className="prose prose-sm max-w-none dark:prose-invert font-sans text-xs [&_*]:font-sans [&_p]:text-xs [&_ul]:text-xs [&_li]:text-xs">
+      <ReactMarkdown>{section.content}</ReactMarkdown>
     </div>
   );
 }

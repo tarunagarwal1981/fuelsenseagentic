@@ -61,8 +61,10 @@ export interface FuelPrice {
  * Query parameters for price lookups
  */
 export interface PriceQuery {
-  /** Port code to query */
-  portCode: string;
+  /** Port code to query (optional when portName is used; fuelsense.bunker has port_code NULL) */
+  portCode?: string;
+  /** Port name to query (for BunkerPricing API keyed by port name) */
+  portName?: string;
   /** Array of fuel types to fetch */
   fuelTypes: string[];
   /** Optional date to query prices at (defaults to latest) */

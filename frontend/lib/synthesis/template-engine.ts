@@ -118,6 +118,9 @@ function registerHandlebarsHelpers(): void {
   Handlebars.registerHelper('lowercase', function (value: unknown) {
     return String(value ?? '').toLowerCase();
   });
+  Handlebars.registerHelper('add', function (a: unknown, b: unknown) {
+    return Number(a ?? 0) + Number(b ?? 0);
+  });
 }
 
 // ============================================================================
@@ -268,18 +271,21 @@ export class TemplateEngine {
 
     const recs = (bunkerData?.recommendations ?? []) as unknown[];
     const best = (bunkerData?.best_option ?? recs[0]) as Record<string, unknown> | undefined;
+    const mapRec = (r: unknown) => {
+      const rec = r as Record<string, unknown>;
+      return {
+        port_name: (rec?.port_name as string) ?? (rec?.name as string) ?? '',
+        port_code: (rec?.port_code as string) ?? (rec?.code as string) ?? '',
+        fuel_cost_usd: (rec?.fuel_cost_usd as number) ?? (rec?.total_cost as number) ?? 0,
+        deviation_cost_usd: (rec?.deviation_cost_usd as number) ?? (rec?.deviation_fuel_cost as number) ?? 0,
+        total_cost_usd: (rec?.total_cost_usd as number) ?? (rec?.total_cost as number) ?? 0,
+      };
+    };
     const bunker = {
-      best_option: best
-        ? {
-            port_name: (best as { port_name?: string }).port_name ?? (best as { name?: string }).name ?? '',
-            port_code: (best as { port_code?: string }).port_code ?? (best as { code?: string }).code ?? '',
-            fuel_cost_usd: (best as { fuel_cost_usd?: number }).fuel_cost_usd ?? (best as { total_cost?: number }).total_cost ?? 0,
-            deviation_cost_usd: (best as { deviation_cost_usd?: number }).deviation_cost_usd ?? (best as { deviation_fuel_cost?: number }).deviation_fuel_cost ?? 0,
-            total_cost_usd: (best as { total_cost_usd?: number }).total_cost_usd ?? (best as { total_cost?: number }).total_cost ?? 0,
-          }
-        : undefined,
+      best_option: best ? mapRec(best) : undefined,
       max_savings_usd: (bunkerData?.max_savings_usd as number) ?? (bunkerData?.savings as number) ?? 0,
       alternatives_count: Array.isArray(recs) ? recs.length : 0,
+      recommendations: Array.isArray(recs) ? recs.map(mapRec) : [],
     };
 
     return { route, bunker };

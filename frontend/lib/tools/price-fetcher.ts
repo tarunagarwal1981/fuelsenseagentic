@@ -20,8 +20,10 @@ import { ServiceContainer } from '@/lib/repositories/service-container';
  * Input parameters for price fetcher
  */
 export interface PriceFetcherInput {
-  /** Array of port codes to fetch prices for */
+  /** Array of port codes (or port names when code is empty) to fetch prices for */
   port_codes: string[];
+  /** Optional parallel array of port names for name-based API lookup (fuelsense.bunker has port_code NULL) */
+  port_names?: string[];
   /** Optional filter for specific fuel types */
   fuel_types?: FuelType[];
 }
@@ -69,10 +71,15 @@ export interface PriceFetcherOutput {
  */
 export const priceFetcherInputSchema = z.object({
   port_codes: z
-    .array(z.string().min(1, 'Port code cannot be empty'))
-    .min(1, 'At least one port code is required')
+    .array(z.string().min(1, 'Port code or identifier cannot be empty'))
+    .min(1, 'At least one port code or name is required')
     .max(50, 'Cannot fetch prices for more than 50 ports at once')
-    .describe('Array of port codes (UNLOCODE format) to fetch prices for'),
+    .describe('Array of port codes (UNLOCODE) or port names to fetch prices for'),
+
+  port_names: z
+    .array(z.string())
+    .optional()
+    .describe('Optional parallel array of port names for name-based API lookup when port_code is empty'),
 
   fuel_types: z
     .array(z.enum(['VLSFO', 'LSGO', 'MGO']))
@@ -168,7 +175,7 @@ export async function fetchPrices(
     // Validate input using Zod schema
     const validatedInput = priceFetcherInputSchema.parse(input);
 
-    const { port_codes, fuel_types } = validatedInput;
+    const { port_codes, port_names, fuel_types } = validatedInput;
 
     console.log(`\n💰 Fetching prices for ${port_codes.length} port(s)...`);
     if (fuel_types && fuel_types.length > 0) {
@@ -179,7 +186,7 @@ export async function fetchPrices(
     const container = ServiceContainer.getInstance();
     const priceRepo = container.getPriceRepository();
 
-    // Organize prices by port code
+    // Organize prices by port identifier (code or name)
     const pricesByPort: Record<string, PriceData[]> = {};
     const portsNotFound = new Set<string>(port_codes);
     const stalePriceWarnings: Array<{
@@ -188,51 +195,34 @@ export async function fetchPrices(
       hours_old: number;
     }> = [];
 
-    // Fetch prices for each port
-    for (const portCode of port_codes) {
+    // Fetch prices for each port (use portName when port code is empty for name-keyed API)
+    for (let i = 0; i < port_codes.length; i++) {
+      const portCode = port_codes[i];
+      const portName = port_names?.[i];
+      const identifier = portCode || portName || '';
       try {
-        // Get latest prices for this port
         const fuelTypesToFetch = fuel_types || ['VLSFO', 'LSGO', 'MGO'];
         const prices = await priceRepo.getLatestPrices({
-          portCode,
+          portCode: portCode || undefined,
+          portName: portName || undefined,
           fuelTypes: fuelTypesToFetch,
         });
 
         if (Object.keys(prices).length === 0) {
-          portsNotFound.add(portCode);
+          portsNotFound.add(identifier);
           continue;
         }
 
         // Mark port as found
-        portsNotFound.delete(portCode);
+        portsNotFound.delete(identifier);
 
-        // Convert prices to PriceData format
-        // Get price history (1 day) to check freshness
+        // Convert prices to PriceData format. No Supabase - Bunker API returns latest date; treat as fresh.
         const priceDataArray: PriceData[] = [];
         for (const fuelType of fuelTypesToFetch) {
           if (!prices[fuelType]) {
             continue;
           }
 
-          // Get latest price record with timestamp for freshness check
-          const priceHistory = await priceRepo.getPriceHistory(portCode, fuelType, 1);
-          const latestPrice = priceHistory[0];
-          
-          const now = new Date();
-          const hoursOld = latestPrice
-            ? hoursSinceUpdate(latestPrice.updatedAt.toISOString())
-            : 0;
-          const isFresh = isPriceFresh(latestPrice?.updatedAt.toISOString() || now.toISOString());
-
-          if (!isFresh && latestPrice) {
-            stalePriceWarnings.push({
-              port_code: portCode,
-              fuel_type: fuelType as FuelType,
-              hours_old: Math.round(hoursOld * 10) / 10,
-            });
-          }
-
-          // Format price
           const formattedPrice = formatCurrency(prices[fuelType], 'USD');
 
           priceDataArray.push({
@@ -241,8 +231,8 @@ export async function fetchPrices(
               price_per_mt: prices[fuelType],
               currency: 'USD',
             },
-            is_fresh: isFresh,
-            hours_since_update: Math.round(hoursOld * 10) / 10,
+            is_fresh: true,
+            hours_since_update: 0,
             formatted_price: formattedPrice,
           });
         }
@@ -252,10 +242,10 @@ export async function fetchPrices(
           a.price.fuel_type.localeCompare(b.price.fuel_type)
         );
 
-        pricesByPort[portCode] = priceDataArray;
+        pricesByPort[identifier] = priceDataArray;
       } catch (error) {
-        console.error(`Error fetching prices for ${portCode}:`, error);
-        portsNotFound.add(portCode);
+        console.error(`Error fetching prices for ${identifier}:`, error);
+        portsNotFound.add(identifier);
       }
     }
 

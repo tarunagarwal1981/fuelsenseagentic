@@ -7,14 +7,15 @@
 
 import portsData from '@/lib/data/ports.json';
 import { PortLogger } from './debug-logger';
-import { WorldPortRepositoryCSV } from '@/lib/repositories/world-port-repository';
 import type { IWorldPortRepository } from '@/lib/repositories/types';
 
 let worldPortRepoInstance: IWorldPortRepository | null = null;
 
-function getWorldPortRepository(): IWorldPortRepository {
+async function getWorldPortRepository(): Promise<IWorldPortRepository> {
   if (!worldPortRepoInstance) {
-    worldPortRepoInstance = new WorldPortRepositoryCSV();
+    // Use ServiceContainer to get the configured WorldPortRepository (API or CSV)
+    const { ServiceContainer } = await import('@/lib/repositories/service-container');
+    worldPortRepoInstance = ServiceContainer.getInstance().getWorldPortRepository();
   }
   return worldPortRepoInstance;
 }
@@ -352,7 +353,7 @@ export async function resolvePortCode(
 
   // Try World Port Index (Pub150)
   try {
-    const worldRepo = getWorldPortRepository();
+    const worldRepo = await getWorldPortRepository();
     const entry = await worldRepo.findByName(query);
     if (entry?.coordinates) {
       console.log(`✅ [PORT-RESOLVE] World Port (Pub150) match: ${entry.id} (${entry.name})`);

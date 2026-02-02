@@ -1,0 +1,67 @@
+# Insight Extraction Rules
+# Used by InsightExtractor to auto-identify actionable insights from MultiAgentState.
+# Each rule has: id, category, priority, condition (evaluated against state), template (message with placeholders).
+
+insights:
+  # Cost optimization - significant savings at best port
+  - id: bunker_savings_significant
+    category: cost_optimization
+    priority: high
+    condition: bunker_analysis.max_savings_usd > 5000
+    template: "Choosing {port_name} saves ${savings:,.0f} vs worst option."
+
+  # Cost optimization - low deviation cost
+  - id: bunker_low_deviation
+    category: cost_optimization
+    priority: medium
+    condition: bunker_analysis.best_option.deviation_cost_usd < 5000
+    template: "Low deviation cost (${deviation:,.0f}) at {port_name} - minimal route impact."
+
+  # ROB safety - margin low
+  - id: rob_margin_low
+    category: safety_warning
+    priority: high
+    condition: rob_safety_status.minimum_rob_days >= 0 && rob_safety_status.minimum_rob_days < 3
+    template: "ROB margin: {margin:.1f} days - monitor closely."
+
+  # ROB safety - violations
+  - id: rob_violations
+    category: safety_critical
+    priority: critical
+    condition: rob_safety_status.violations.length > 0
+    template: "ROB violations detected: {violation_count} - review voyage plan."
+
+  # ECA compliance
+  - id: eca_zones_crossed
+    category: compliance_info
+    priority: medium
+    condition: compliance_data.eca_zones.has_eca_zones
+    template: "Route crosses {zone_count} ECA zone(s). MGO required: {mgo_qty:.0f} MT."
+
+  # Weather impact
+  - id: weather_extra_fuel
+    category: operational_warning
+    priority: high
+    condition: weather_consumption.additional_fuel_needed_mt > 10
+    template: "Weather may require {extra_fuel:.0f} MT additional fuel."
+
+  # Port weather - unsafe ports
+  - id: port_weather_unsafe
+    category: operational_warning
+    priority: high
+    condition: port_weather_status.unsafe_count > 0
+    template: "{unsafe_count} bunker port(s) have unsafe weather conditions."
+
+  # Long route
+  - id: route_long
+    category: operational_info
+    priority: low
+    condition: route_data.estimated_hours > 500
+    template: "Voyage duration: ~{days:.0f} days."
+
+  # Multiple bunker options
+  - id: bunker_options_available
+    category: cost_optimization
+    priority: low
+    condition: bunker_ports.length > 3
+    template: "{port_count} bunker ports evaluated along route."

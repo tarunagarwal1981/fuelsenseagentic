@@ -241,6 +241,7 @@ export const TIMEOUTS = {
   WEATHER_AGENT: 90000, // 90 seconds for weather agent (handles many positions)
   TOTAL: 120000, // 120 seconds total (2 minutes)
   ROUTE_CALCULATION: 15000, // 15 seconds for route calculation
+  PORT_FINDER: 25000, // 25 seconds (BunkerPricing + WPI lookups in parallel batches)
   WEATHER_API: 30000, // 30 seconds for weather API
   PRICE_FETCH: 10000, // 10 seconds for price fetch
 } as const;

@@ -316,39 +316,33 @@ export async function analyzeBunkerOptions(
       console.log(`   Fetching price data from repository...`);
       for (const portWithDistance of bunker_ports as any[]) {
         const port = portWithDistance.port || portWithDistance;
-        if (!port || !port.port_code) continue;
-        
+        const hasCode = port?.port_code && String(port.port_code).trim();
+        const hasName = port?.name && String(port.name).trim();
+        if (!port || (!hasCode && !hasName)) continue;
+
         try {
           const latestPrices = await priceRepo.getLatestPrices({
-            portCode: port.port_code,
+            portCode: hasCode ? port.port_code : undefined,
+            portName: hasName ? port.name : undefined,
             fuelTypes: [fuel_type, 'LSGO', 'MGO'],
           });
-          
-          const priceHistory = await priceRepo.getPriceHistory(
-            port.port_code,
-            fuel_type,
-            30 // days
-          );
-          
-          if (priceHistory.length > 0) {
-            const record = priceHistory[0]!;
-            const hoursSinceUpdate = record.updatedAt
-              ? (Date.now() - new Date(record.updatedAt).getTime()) / (1000 * 60 * 60)
-              : 999;
-            
-            pricesByPort[port.port_code] = [{
+
+          // Use API data only (no Supabase). Bunker API returns latest date; treat as fresh.
+          if (latestPrices && (latestPrices[fuel_type] ?? 0) > 0) {
+            const portKey = hasCode ? port.port_code : port.name;
+            pricesByPort[portKey] = [{
               price: {
                 fuel_type: fuel_type,
                 price_per_mt: latestPrices[fuel_type] || 0,
                 currency: 'USD',
               },
-              hours_since_update: hoursSinceUpdate,
-              is_fresh: hoursSinceUpdate < 24,
+              hours_since_update: 0,
+              is_fresh: true,
               formatted_price: `$${(latestPrices[fuel_type] || 0).toFixed(0)}/MT`,
             }];
           }
         } catch (error) {
-          console.warn(`   ⚠️  Failed to fetch prices for ${port.port_code}:`, error);
+          console.warn(`   ⚠️  Failed to fetch prices for ${hasCode ? port.port_code : port.name}:`, error);
         }
       }
       console.log(`   Fetched price data for ${Object.keys(pricesByPort).length} port(s)`);

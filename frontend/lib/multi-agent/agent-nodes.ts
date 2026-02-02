@@ -659,7 +659,19 @@ export async function supervisorAgentNode(
         needs_port_info: intent.needs_bunker,
         required_tools: executionPlan.agent_tool_assignments['route_agent'] || [],
         task_description: executionPlan.reasoning,
-        priority: 'critical' as const
+        priority: 'critical' as const,
+        // Pass resolved UN/LOCODE codes AND coordinates (if available) or extracted names (as fallback)
+        port_overrides: executionPlan.resolved_codes?.origin || executionPlan.resolved_codes?.destination ? {
+          origin: executionPlan.resolved_codes.origin,
+          destination: executionPlan.resolved_codes.destination,
+          origin_coordinates: executionPlan.resolved_codes.origin_coordinates,
+          destination_coordinates: executionPlan.resolved_codes.destination_coordinates,
+        } : executionPlan.extracted_entities ? {
+          origin: executionPlan.extracted_entities.origin,
+          destination: executionPlan.extracted_entities.destination,
+        } : undefined,
+        vessel_speed: executionPlan.extracted_entities?.vessel_speed,
+        departure_date: executionPlan.extracted_entities?.departure_date,
       } : undefined,
       weather_agent: executionPlan.execution_order.includes('weather_agent') ? {
         needs_consumption: intent.needs_bunker,
@@ -690,7 +702,9 @@ export async function supervisorAgentNode(
         needs_port_weather: intent.needs_bunker,
         required_tools: executionPlan.agent_tool_assignments['bunker_agent'] || [],
         task_description: executionPlan.reasoning,
-        priority: 'critical' as const
+        priority: 'critical' as const,
+        fuel_types: executionPlan.extracted_entities?.fuel_types,
+        bunker_ports: executionPlan.resolved_codes?.bunker_ports || executionPlan.extracted_entities?.bunker_ports,
       } : undefined,
       finalize: {
         complexity: intent.complexity,
@@ -698,6 +712,24 @@ export async function supervisorAgentNode(
         needs_bunker_analysis: intent.needs_bunker,
       }
     };
+    
+    // Log extracted entities and resolved codes if available
+    if (executionPlan.extracted_entities) {
+      console.log('🎯 [SUPERVISOR] Using extracted entities:', {
+        query_type: executionPlan.extracted_entities.query_type,
+        origin: executionPlan.extracted_entities.origin,
+        destination: executionPlan.extracted_entities.destination,
+        vessel_speed: executionPlan.extracted_entities.vessel_speed,
+        fuel_types: executionPlan.extracted_entities.fuel_types?.length || 0,
+      });
+    }
+    
+    if (executionPlan.resolved_codes && (executionPlan.resolved_codes.origin || executionPlan.resolved_codes.destination)) {
+      console.log('✅ [SUPERVISOR] Using resolved port codes (UN/LOCODE):', {
+        origin: executionPlan.resolved_codes.origin,
+        destination: executionPlan.resolved_codes.destination,
+      });
+    }
   } else {
     // Legacy path: use existing generateAgentContext
     const legacyContext = generateAgentContext(intent, state);
@@ -1092,11 +1124,27 @@ export async function supervisorAgentNode(
       
       if (!agentDone) {
         console.log(`🎯 [SUPERVISOR] Using execution plan: routing to ${agentName} (prerequisites validated)`);
-        return {
+        
+        // Prepare state update
+        const stateUpdate: any = {
           next_agent: agentName,
           agent_context: agentContext,
           messages: [],
         };
+        
+        // If we have resolved port codes and routing to route_agent, set port_overrides in state
+        if (agentName === 'route_agent' && executionPlan.resolved_codes && 
+            (executionPlan.resolved_codes.origin || executionPlan.resolved_codes.destination)) {
+          stateUpdate.port_overrides = {
+            origin: executionPlan.resolved_codes.origin,
+            destination: executionPlan.resolved_codes.destination,
+            origin_coordinates: executionPlan.resolved_codes.origin_coordinates,
+            destination_coordinates: executionPlan.resolved_codes.destination_coordinates,
+          };
+          console.log('🎯 [SUPERVISOR] Setting state.port_overrides:', stateUpdate.port_overrides);
+        }
+        
+        return stateUpdate;
       }
     }
     
@@ -1596,46 +1644,92 @@ export async function routeAgentNode(
     if (!state.route_data) {
       console.log('📍 [ROUTE-WORKFLOW] Route data missing - calculating route...');
       
-      let origin: string;
-      let destination: string;
+      let origin: string | undefined;
+      let destination: string | undefined;
+      /** Coordinates from PortResolutionService when ports were extracted from query (fallback path). */
+      let extractedOriginCoords: [number, number] | undefined;
+      let extractedDestCoords: [number, number] | undefined;
       
       // Get user query (needed for validation logging)
       const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
       const userQuery = userMessage?.content?.toString() || '';
       
       // ======================================================================
-      // PRIORITY 1: Check for supervisor-provided port overrides (from error recovery)
-      // These bypass extraction logic entirely - supervisor has already validated them
+      // PRIORITY 1: Check for agent context port overrides (from supervisor entity extraction)
+      // These come from LLM entity extraction and should be used first
+      // Accept partial overrides - use what's provided, extract the rest
       // ======================================================================
-      if (state.port_overrides?.origin && state.port_overrides?.destination) {
-        console.log('🎯 [ROUTE-WORKFLOW] Using supervisor-provided port overrides (bypass extraction):');
-        console.log(`   Origin: ${state.port_overrides.origin}`);
-        console.log(`   Destination: ${state.port_overrides.destination}`);
+      const agentContext = state.agent_context?.route_agent;
+      if (agentContext?.port_overrides) {
+        console.log('🎯 [ROUTE-WORKFLOW] Found supervisor-extracted ports in agent context');
         
-        origin = state.port_overrides.origin;
-        destination = state.port_overrides.destination;
+        if (agentContext.port_overrides.origin) {
+          origin = agentContext.port_overrides.origin;
+          console.log(`   ✅ Origin: ${origin}`);
+        }
         
-      } else {
-        // ======================================================================
-        // PRIORITY 2: Standard flow - extract ports via PortResolutionService (Agent → Service → Repository; no ports.json)
-        // ======================================================================
-        console.log('📍 [ROUTE-WORKFLOW] No overrides found, extracting ports from query...');
+        if (agentContext.port_overrides.destination) {
+          destination = agentContext.port_overrides.destination;
+          console.log(`   ✅ Destination: ${destination}`);
+        }
+      } 
+      
+      // ======================================================================
+      // PRIORITY 2: Check for state port overrides (from error recovery/agentic supervisor)
+      // These bypass extraction logic entirely - supervisor has already validated them
+      // Accept partial overrides - use what's provided, extract the rest
+      // ======================================================================
+      if (state.port_overrides) {
+        console.log('🎯 [ROUTE-WORKFLOW] Found supervisor-provided port overrides in state');
+        
+        if (state.port_overrides.origin && !origin) {
+          origin = state.port_overrides.origin;
+          console.log(`   ✅ Origin: ${origin}`);
+        }
+        
+        if (state.port_overrides.destination && !destination) {
+          destination = state.port_overrides.destination;
+          console.log(`   ✅ Destination: ${destination}`);
+        }
+      }
+      
+      // ======================================================================
+      // PRIORITY 3: Standard flow - extract ports via PortResolutionService (Agent → Service → Repository; no ports.json)
+      // Only extract if we're still missing ports
+      // ======================================================================
+      if (!origin || !destination) {
+        console.log('📍 [ROUTE-WORKFLOW] Some ports still missing, extracting from query...');
+        if (!origin) console.log('   ❓ Missing: origin');
+        if (!destination) console.log('   ❓ Missing: destination');
+        
         const { ServiceContainer } = await import('@/lib/repositories/service-container');
         const portResolutionService = ServiceContainer.getInstance().getPortResolutionService();
         const resolved = await portResolutionService.resolvePortsFromQuery(userQuery);
-        if (resolved.origin && resolved.destination) {
+        
+        // Merge resolved ports with what we already have from overrides
+        if (resolved.origin && !origin) {
           origin = resolved.origin;
+          extractedOriginCoords = resolved.origin_coordinates;
+          console.log(`✅ [PORT-EXTRACTION] Extracted origin: ${origin}`);
+        }
+        if (resolved.destination && !destination) {
           destination = resolved.destination;
-          console.log(`✅ [PORT-EXTRACTION] Success: ${origin} → ${destination}`);
+          extractedDestCoords = resolved.destination_coordinates;
+          console.log(`✅ [PORT-EXTRACTION] Extracted destination: ${destination}`);
+        }
+        
+        // Check if we now have both ports
+        if (origin && destination) {
+          console.log(`✅ [PORT-RESOLUTION] Success: ${origin} → ${destination}`);
         } else {
-          // Same error semantics as before: throw with helpful message if missing
-          if (!resolved.origin && resolved.destination) {
-            const errorMsg = `Could not identify origin port from query: "${userQuery}". Destination found: ${resolved.destination}. Please specify origin (e.g. "from Singapore to ${resolved.destination}").`;
+          // Still missing ports - throw error with helpful message
+          if (!origin && destination) {
+            const errorMsg = `Could not identify origin port from query: "${userQuery}". Destination found: ${destination}. Please specify origin (e.g. "from Singapore to ${destination}").`;
             console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
             throw new Error(errorMsg);
           }
-          if (resolved.origin && !resolved.destination) {
-            const errorMsg = `Could not identify destination port from query: "${userQuery}". Origin found: ${resolved.origin}. Please specify destination (e.g. "${resolved.origin} to Singapore").`;
+          if (origin && !destination) {
+            const errorMsg = `Could not identify destination port from query: "${userQuery}". Origin found: ${origin}. Please specify destination (e.g. "${origin} to Singapore").`;
             console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
             throw new Error(errorMsg);
           }
@@ -1643,6 +1737,12 @@ export async function routeAgentNode(
           console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
           throw new Error(errorMsg);
         }
+      } else {
+        console.log(`✅ [PORT-RESOLUTION] Using supervisor overrides: ${origin} → ${destination}`);
+      }
+      
+      if (typeof origin !== 'string' || typeof destination !== 'string') {
+        throw new Error('Port resolution failed: origin and destination must be set');
       }
       
       console.log(`📍 [ROUTE-WORKFLOW] Calculating route: ${origin} → ${destination}`);
@@ -1671,7 +1771,22 @@ export async function routeAgentNode(
       }
       
       // Try primary API, with fallback to cached routes
-      const routeInput = { origin_port_code: origin, destination_port_code: destination, vessel_speed_knots: 14 };
+      const routeInput = { 
+        origin_port_code: origin, 
+        destination_port_code: destination, 
+        vessel_speed_knots: 14,
+        // Pass coordinates: supervisor overrides first, then from PortResolutionService (fallback path)
+        origin_coordinates: state.port_overrides?.origin_coordinates ?? agentContext?.port_overrides?.origin_coordinates ?? extractedOriginCoords,
+        destination_coordinates: state.port_overrides?.destination_coordinates ?? agentContext?.port_overrides?.destination_coordinates ?? extractedDestCoords,
+      };
+      
+      // Log coordinate availability
+      if (routeInput.origin_coordinates && routeInput.destination_coordinates) {
+        console.log(`🌐 [ROUTE-WORKFLOW] Coordinates available for route calculation`);
+        console.log(`   Origin: [${routeInput.origin_coordinates[0]}, ${routeInput.origin_coordinates[1]}]`);
+        console.log(`   Destination: [${routeInput.destination_coordinates[0]}, ${routeInput.destination_coordinates[1]}]`);
+      }
+      
       const t0Route = Date.now();
       logToolCall('calculate_route', extractCorrelationId(state), sanitizeToolInput(routeInput), undefined, 0, 'started');
       try {
@@ -2852,7 +2967,7 @@ export async function bunkerAgentNode(
         logToolCall('find_bunker_ports', extractCorrelationId(state), sanitizeToolInput(portFinderInput), undefined, 0, 'started');
         bunkerPorts = await withTimeout(
           executePortFinderTool(portFinderInput),
-          TIMEOUTS.ROUTE_CALCULATION,
+          TIMEOUTS.PORT_FINDER,
           'Port finder timed out'
         );
         logToolCall('find_bunker_ports', extractCorrelationId(state), sanitizeToolInput(portFinderInput), sanitizeToolOutput(bunkerPorts), Date.now() - t0Pf, 'success');
@@ -2868,7 +2983,7 @@ export async function bunkerAgentNode(
             noPortsMessage.warning = vesselNotFoundWarning;
           }
           return {
-            bunker_ports: bunkerPorts,
+            bunker_ports: bunkerPorts.ports,
             rob_tracking: robTrackingResult ?? null,
             rob_waypoints: robTrackingResult?.waypoints ?? null,
             rob_safety_status: robSafetyStatus ?? null,
@@ -2900,6 +3015,9 @@ export async function bunkerAgentNode(
       console.log('✅ [BUNKER-WORKFLOW] Using existing bunker ports from state');
       bunkerPorts = state.bunker_ports;
     }
+
+    // Normalize: state may store bunker_ports as array or as { ports: [...] }
+    const portsArray = Array.isArray(bunkerPorts) ? bunkerPorts : (bunkerPorts?.ports ?? []);
     
     // ========================================================================
     // STEP 2: Check Port Weather Safety (if requested)
@@ -2912,7 +3030,7 @@ export async function bunkerAgentNode(
       const t0Pw = Date.now();
       try {
         // Calculate estimated arrival times for each port
-        const bunkerPortsWithArrival = bunkerPorts.ports.map((port: any) => {
+        const bunkerPortsWithArrival = portsArray.map((port: any) => {
           // Find the waypoint nearest to this port
           const nearestWaypoint = state.vessel_timeline?.[port.nearest_waypoint_index];
           
@@ -2936,6 +3054,7 @@ export async function bunkerAgentNode(
           'Port weather check timed out'
         );
         logToolCall('check_bunker_port_weather', extractCorrelationId(state), sanitizeToolInput(portWeatherInput), sanitizeToolOutput(portWeather), Date.now() - t0Pw, 'success');
+        portWeather = Array.isArray(portWeather) ? portWeather : [];
         const safePortsCount = portWeather.filter((p: any) => p.bunkering_feasible).length;
         console.log(`✅ [BUNKER-WORKFLOW] Weather checked: ${safePortsCount}/${portWeather.length} ports have safe conditions`);
         
@@ -2948,9 +3067,10 @@ export async function bunkerAgentNode(
       }
     } else if (state.port_weather_status) {
       console.log('✅ [BUNKER-WORKFLOW] Using existing port weather from state');
-      portWeather = state.port_weather_status;
+      portWeather = Array.isArray(state.port_weather_status) ? state.port_weather_status : [];
     } else {
       console.log('⏭️ [BUNKER-WORKFLOW] Skipping weather safety check (not requested)');
+      portWeather = [];
     }
     
     // ========================================================================
@@ -2958,8 +3078,8 @@ export async function bunkerAgentNode(
     // ========================================================================
     
     let portPrices: any = null;
-    
-    if (!state.port_prices) {
+    const hasExistingPrices = state.port_prices?.prices_by_port && Object.keys(state.port_prices.prices_by_port).length > 0;
+    if (!hasExistingPrices) {
       console.log('💰 [BUNKER-WORKFLOW] Fetching fuel prices for candidate ports...');
       const t0Price = Date.now();
       try {
@@ -2973,12 +3093,20 @@ export async function bunkerAgentNode(
           console.log(`💰 [BUNKER-WORKFLOW] Adding MGO to fuel types for ECA compliance`);
         }
         
-        // Determine which ports to fetch prices for
-        let portsToFetch: string[] = [];
+        // Determine which ports to fetch prices for (port codes and/or names for name-keyed API)
+        let portsToFetchCodes: string[] = [];
+        let portsToFetchNames: string[] = [];
         
-        // If we have bunker ports from route, use those
-        if (bunkerPorts && bunkerPorts.ports && bunkerPorts.ports.length > 0) {
-          portsToFetch = bunkerPorts.ports.map((p: any) => p.port.port_code);
+        // If we have bunker ports from route, use those (pass both code and name for name-keyed API)
+        if (portsArray.length > 0) {
+          const entries = portsArray
+            .map((p: any) => ({
+              code: (p.port?.port_code && String(p.port.port_code).trim()) || '',
+              name: (p.port?.name && String(p.port.name).trim()) || '',
+            }))
+            .filter((e: { code: string; name: string }) => e.code || e.name);
+          portsToFetchCodes = entries.map((e: { code: string; name: string }) => e.code || e.name);
+          portsToFetchNames = entries.map((e: { code: string; name: string }) => e.name);
         } else {
           // No ports found along route - check if query mentions a specific port for price lookup
           const queryLower = userQuery.toLowerCase();
@@ -3019,17 +3147,20 @@ export async function bunkerAgentNode(
             }
             
             if (extractedPortCode) {
-              portsToFetch = [extractedPortCode];
+              portsToFetchCodes = [extractedPortCode];
+              portsToFetchNames = [];
             } else {
               console.warn('⚠️ [BUNKER-WORKFLOW] Could not extract port from query for price lookup');
-              portsToFetch = [];
+              portsToFetchCodes = [];
+              portsToFetchNames = [];
             }
           } else {
-            portsToFetch = [];
+            portsToFetchCodes = [];
+            portsToFetchNames = [];
           }
         }
-        
-        if (portsToFetch.length === 0) {
+
+        if (portsToFetchCodes.length === 0 && portsToFetchNames.length === 0) {
           console.warn('⚠️ [BUNKER-WORKFLOW] No ports available for price fetching');
           portPrices = { 
             prices_by_port: {},
@@ -3040,7 +3171,8 @@ export async function bunkerAgentNode(
           };
         } else {
           const priceFetcherInput = {
-            port_codes: portsToFetch,
+            port_codes: portsToFetchCodes,
+            port_names: portsToFetchNames.length > 0 ? portsToFetchNames : undefined,
             fuel_types: fuelTypes,
           };
           logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput(priceFetcherInput), undefined, 0, 'started');
@@ -3056,7 +3188,7 @@ export async function bunkerAgentNode(
         }
         
       } catch (error: any) {
-        logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput({ port_codes: bunkerPorts?.ports?.map((p: any) => p.port?.port_code) }), { error: error.message }, Date.now() - t0Price, 'failed');
+        logToolCall('get_fuel_prices', extractCorrelationId(state), sanitizeToolInput({ port_codes: portsArray?.map((p: any) => p.port?.port_code), port_names: portsArray?.map((p: any) => p.port?.name) }), { error: error.message }, Date.now() - t0Price, 'failed');
         logError(extractCorrelationId(state), error, { agent: 'bunker_agent', tool: 'executePriceFetcherTool' });
         console.warn('⚠️ [BUNKER-WORKFLOW] Price fetcher error (continuing with empty prices):', error.message);
         // Don't throw - continue with empty prices, return partial outputs
@@ -3087,7 +3219,7 @@ export async function bunkerAgentNode(
         // Use vlsfoRequired/lsmgoRequired from outer scope (calculated from voyage consumption)
         // Match manual implementation parameter structure exactly
         const analyzerInput = {
-          bunker_ports: bunkerPorts.ports,
+          bunker_ports: portsArray,
           port_prices: portPrices,
           fuel_quantity_mt: vlsfoRequired,  // Use calculated VLSFO requirement
           fuel_type: 'VLSFO',
@@ -3098,7 +3230,7 @@ export async function bunkerAgentNode(
         };
         logToolCall('analyze_bunker_options', extractCorrelationId(state), sanitizeToolInput(analyzerInput), undefined, 0, 'started');
         console.log('📊 [BUNKER-WORKFLOW] Analyzer input:', {
-          ports_count: bunkerPorts.ports.length,
+          ports_count: portsArray.length,
           prices_count: portPrices?.prices_by_port ? Object.keys(portPrices.prices_by_port).length : 0,
           fuel_quantity_mt: vlsfoRequired,
           fuel_type: 'VLSFO',
@@ -3147,8 +3279,7 @@ export async function bunkerAgentNode(
     // State expects specific types, not the raw tool outputs
     // ========================================================================
     
-    // Extract ports array from FoundPortsResult
-    const portsArray = bunkerPorts?.ports || null;
+    // portsArray already defined above (normalized from bunkerPorts)
     const portsCount = portsArray?.length || 0;
     
     // port_prices is already in correct format (PriceFetcherOutput)
@@ -3295,7 +3426,7 @@ export async function bunkerAgentNode(
           route_data: state.route_data,
           vessel_profile: vp,  // Use full VesselProfile (vp), not VesselROBProfile
           voyage_consumption: voyageConsumption,
-          candidate_ports: bunkerPorts.ports,
+          candidate_ports: portsArray,
           port_prices: priceData,
           weather_factor: state.weather_consumption?.consumption_increase_percent 
             ? 1 + (state.weather_consumption.consumption_increase_percent / 100) 
@@ -3395,7 +3526,7 @@ export async function bunkerAgentNode(
     
     // Include any outputs that were successfully generated before the error
     if (bunkerPorts) {
-      partialOutputs.bunker_ports = bunkerPorts.ports || bunkerPorts;
+      partialOutputs.bunker_ports = Array.isArray(bunkerPorts) ? bunkerPorts : (bunkerPorts?.ports ?? []);
     }
     if (portPrices) {
       partialOutputs.port_prices = portPrices;
