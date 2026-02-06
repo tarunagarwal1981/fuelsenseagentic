@@ -34,7 +34,7 @@ export interface ExtractedEntities {
   /** Bunker ports if specifically mentioned */
   bunker_ports?: string[];
   /** Query type classification */
-  query_type?: 'route_calculation' | 'bunker_planning' | 'weather_analysis' | 'compliance_check' | 'informational' | 'multi_objective';
+  query_type?: 'route_calculation' | 'bunker_planning' | 'weather_analysis' | 'compliance_check' | 'vessel_information' | 'informational' | 'multi_objective';
 }
 
 /**
@@ -317,6 +317,7 @@ Extract the following entities from the user's query:
    - bunker_planning: User wants bunker recommendations (ports, prices, quantities)
    - weather_analysis: User wants weather forecasts or conditions
    - compliance_check: User asks about ECA zones, regulations
+   - vessel_information: User asks about vessel position, ROB, noon reports, vessel status
    - informational: General questions about ports, vessels, etc.
    - multi_objective: Combines multiple objectives
 
@@ -416,6 +417,18 @@ Extract: {
 }
 Note: Missing origin - extraction is still valid, downstream will handle error.
 
+**Vessel Information Queries** (Foundation - entities extracted, detailed analysis coming soon):
+Examples:
+- "What's the current position of OCEAN PRIDE?"
+- "Show me the noon report for IMO 9876543"
+- "How much fuel does TITAN have on board?"
+- "What's the fuel status of vessel 9234567?"
+- "Compare ROB levels between ATLAS and ZEUS"
+
+→ Route to: entity_extractor
+→ Response: Extract vessel identifiers, confirm vessel found, inform user that
+   detailed performance analysis (Hull & Machinery agents) is coming in next phase.
+
 CRITICAL EXTRACTION RULES:
 - NEVER split city names (Tokyo, Boston, Toronto, Togo - keep intact!)
 - Extract port names/codes AS THEY APPEAR in the query
@@ -425,6 +438,43 @@ CRITICAL EXTRACTION RULES:
 
 Available Agents and Tools:
 ${registryJSON}
+
+**Entity Extractor Agent:**
+- Use when: User mentions specific vessel names or IMO numbers
+- Purpose: Extracts and validates vessel identifiers from query
+- Outputs: vessel_identifiers (names and IMOs) added to state
+- Current phase: Foundation only - extracts entities but detailed performance
+  analysis (Hull Performance, Machinery Performance) coming in Phase 2
+- After extraction: Confirm vessel found and inform user about upcoming features
+
+**Example Response After Entity Extraction:**
+"I've identified the vessel OCEAN PRIDE (IMO 9876543) in our system.
+Currently, I can confirm the vessel exists and extract its identifiers.
+Our Hull Performance and Machinery Performance agents (with detailed noon report
+analysis, consumption tracking, and performance monitoring) are coming in the
+next development phase."
+
+**Routing Decision Tree:**
+
+1. **Vessel Information Queries** (position, ROB, noon reports, vessel status):
+   - Route to: entity_extractor
+   - Phase: Foundation (Phase 1)
+   - Next phase: Will route to hull_performance or machinery_performance
+
+2. **Bunker Planning** (port comparison, costs, availability):
+   - Route to: route_agent → bunker_agent → finalize
+   - Can also use entity_extractor if specific vessel mentioned
+
+3. **Route Optimization** (distance, ETA, waypoints):
+   - Route to: route_agent → weather_agent → finalize
+
+4. **Compliance Queries** (CII, EU ETS, emissions):
+   - Route to: compliance_agent → finalize
+
+**Parallel Execution:**
+- entity_extractor can run in parallel with route_agent, weather_agent if needed
+- Example: "Get route from Singapore to Rotterdam for OCEAN PRIDE and check bunker options"
+  → Run entity_extractor + route_agent in parallel, then bunker_agent, then finalize
 
 Current State:
 - Route data: ${stateAnalysis.has_route_data ? '✅ Available' : '❌ Missing'}
@@ -514,7 +564,30 @@ Return a JSON object with this EXACT structure:
   "critical_path": ["route_agent", "weather_agent"]
 }
 
-IMPORTANT: The extracted_entities field is MANDATORY. Always extract port names, query type, and other entities from the user's natural language query.`;
+Example for vessel-only query ("What's the position of OCEAN PRIDE?"):
+{
+  "extracted_entities": {
+    "query_type": "vessel_information",
+    "origin": null,
+    "destination": null,
+    "vessel_name": "OCEAN PRIDE",
+    "vessel_speed": null,
+    "fuel_types": [],
+    "departure_date": null,
+    "bunker_ports": []
+  },
+  "execution_order": ["entity_extractor", "finalize"],
+  "agent_tool_assignments": {
+    "entity_extractor": [],
+    "finalize": []
+  },
+  "reasoning": "Vessel information query - extract OCEAN PRIDE, confirm vessel found, inform user Phase 2 features coming",
+  "estimated_total_time": 5,
+  "critical_path": ["entity_extractor"]
+}
+
+IMPORTANT: The extracted_entities field is MANDATORY. Always extract port names, query type, and other entities from the user's natural language query.
+For vessel-only queries (position, ROB, noon reports, vessel status), use execution_order: ["entity_extractor", "finalize"].`;
 
   try {
     // Call LLM with structured output

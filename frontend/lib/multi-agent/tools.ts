@@ -69,6 +69,16 @@ import {
   bunkerAnalyzerInputSchema,
 } from '@/lib/tools/bunker-analyzer';
 
+// Vessel Performance Tools
+import {
+  executeNoonReportFetcherTool,
+  noonReportFetcherInputSchema,
+  executeVesselSpecFetcherTool,
+  vesselSpecFetcherInputSchema,
+  executeConsumptionProfileFetcherTool,
+  consumptionProfileFetcherInputSchema,
+} from '@/lib/tools/vessel-performance';
+
 // ============================================================================
 // Circuit breakers (wrap external API calls)
 // ============================================================================
@@ -81,6 +91,9 @@ const checkPortWeatherBreaker = createToolCircuitBreaker('check_bunker_port_weat
 const findBunkerPortsBreaker = createToolCircuitBreaker('find_bunker_ports', (i) => executePortFinderTool(i), 'analysis');
 const getFuelPricesBreaker = createToolCircuitBreaker('get_fuel_prices', (i) => executePriceFetcherTool(i), 'price');
 const analyzeBunkerOptionsBreaker = createToolCircuitBreaker('analyze_bunker_options', (i) => executeBunkerAnalyzerTool(i), 'analysis');
+const fetchNoonReportBreaker = createToolCircuitBreaker('fetch_noon_report', (i) => executeNoonReportFetcherTool(i), 'vessel');
+const fetchVesselSpecsBreaker = createToolCircuitBreaker('fetch_vessel_specs', (i) => executeVesselSpecFetcherTool(i), 'vessel');
+const fetchConsumptionProfileBreaker = createToolCircuitBreaker('fetch_consumption_profile', (i) => executeConsumptionProfileFetcherTool(i), 'vessel');
 
 // ============================================================================
 // Route Agent Tools
@@ -674,6 +687,160 @@ Use this tool with ports from find_bunker_ports and prices from get_fuel_prices 
 );
 
 // ============================================================================
+// Vessel Performance Tools (Machinery Performance Agent)
+// ============================================================================
+
+/**
+ * Fetch Noon Report Tool
+ *
+ * Fetches latest noon report data including position, ROB, and vessel status.
+ */
+export const fetchNoonReportTool = tool(
+  async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('fetch_noon_report', cid, sanitizeToolInput(input), undefined, 0, 'started');
+    console.log('📋 [VESSEL-AGENT] Executing fetch_noon_report');
+    try {
+      const result = await fetchNoonReportBreaker.fire(input);
+      logToolCall('fetch_noon_report', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
+      return JSON.stringify(result);
+    } catch (error: any) {
+      logToolCall('fetch_noon_report', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
+      console.error('❌ [VESSEL-AGENT] Noon report fetch error:', error.message);
+      return JSON.stringify({
+        success: false,
+        error: error.message,
+        vessel_identifiers: (input as any)?.vessel_identifiers,
+        message: 'Failed to fetch noon report. API may be unavailable.',
+      });
+    }
+  },
+  {
+    name: 'fetch_noon_report',
+    description: `Fetch the latest noon report for a vessel by IMO number or vessel name.
+
+Returns comprehensive vessel status including:
+- Current position (latitude/longitude)
+- Next port of call and ETA
+- Remaining on Board (ROB) fuel quantities (VLSFO, LSMGO, etc.)
+- Current speed in knots
+- Weather conditions (if available)
+- Distance to next port
+
+Use this tool when you need:
+- Real-time vessel position
+- Current fuel levels (ROB)
+- Vessel route/destination information
+- Recent operational data
+
+Input: Vessel IMO number OR vessel name (at least one required)
+Output: Noon report data with quality metrics, or error if vessel not found`,
+    schema: noonReportFetcherInputSchema,
+  }
+);
+
+/**
+ * Fetch Vessel Specs Tool
+ *
+ * Fetches vessel master data including type, DWT, flag, and build information.
+ */
+export const fetchVesselSpecsTool = tool(
+  async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('fetch_vessel_specs', cid, sanitizeToolInput(input), undefined, 0, 'started');
+    console.log('📋 [VESSEL-AGENT] Executing fetch_vessel_specs');
+    try {
+      const result = await fetchVesselSpecsBreaker.fire(input);
+      logToolCall('fetch_vessel_specs', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
+      return JSON.stringify(result);
+    } catch (error: any) {
+      logToolCall('fetch_vessel_specs', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
+      console.error('❌ [VESSEL-AGENT] Vessel spec fetch error:', error.message);
+      return JSON.stringify({
+        success: false,
+        error: error.message,
+        vessel_identifier: (input as any)?.vessel_identifier,
+        message: 'Failed to fetch vessel specifications. API may be unavailable.',
+      });
+    }
+  },
+  {
+    name: 'fetch_vessel_specs',
+    description: `Fetch vessel master data and specifications by IMO or vessel name.
+
+Returns vessel information including:
+- Vessel name and IMO number
+- Vessel type (e.g., Bulk Carrier, Container Ship, Tanker)
+- Deadweight tonnage (DWT)
+- Flag state
+- Build year
+- Operator/manager company (if available)
+
+Use this tool when you need:
+- Basic vessel identification information
+- Vessel type and size specifications
+- Vessel age and flag information
+- Context about the vessel for analysis
+
+Input: Vessel IMO number OR vessel name (at least one required)
+Output: Vessel specification data, or error if vessel not found`,
+    schema: vesselSpecFetcherInputSchema,
+  }
+);
+
+/**
+ * Fetch Consumption Profile Tool
+ *
+ * Fetches vessel fuel consumption profiles at different speeds and weather conditions.
+ */
+export const fetchConsumptionProfileTool = tool(
+  async (input) => {
+    const cid = getCorrelationId() || generateCorrelationId();
+    const t0 = Date.now();
+    logToolCall('fetch_consumption_profile', cid, sanitizeToolInput(input), undefined, 0, 'started');
+    console.log('⛽ [VESSEL-AGENT] Executing fetch_consumption_profile');
+    try {
+      const result = await fetchConsumptionProfileBreaker.fire(input);
+      logToolCall('fetch_consumption_profile', cid, sanitizeToolInput(input), sanitizeToolOutput(result), Date.now() - t0, 'success');
+      return JSON.stringify(result);
+    } catch (error: any) {
+      logToolCall('fetch_consumption_profile', cid, sanitizeToolInput(input), { error: error.message }, Date.now() - t0, 'failed');
+      console.error('❌ [VESSEL-AGENT] Consumption profile fetch error:', error.message);
+      return JSON.stringify({
+        success: false,
+        error: error.message,
+        imo: (input as any)?.imo,
+        message: 'Failed to fetch consumption profiles. API may be unavailable.',
+      });
+    }
+  },
+  {
+    name: 'fetch_consumption_profile',
+    description: `Fetch vessel fuel consumption profiles showing consumption rates at different operating conditions.
+
+Returns consumption data including:
+- Main engine consumption (MT/day) by fuel grade
+- Auxiliary engine consumption (MT/day) by fuel grade
+- Consumption at specific speeds
+- Consumption under different weather conditions (calm, moderate, rough, very rough)
+- Ballast vs laden consumption differences
+
+Use this tool when you need to:
+- Predict fuel consumption for a voyage
+- Calculate fuel endurance (how long current ROB will last)
+- Compare actual vs expected consumption
+- Optimize vessel speed for fuel efficiency
+- Identify consumption anomalies
+
+Input: Vessel IMO (required), optional filters for speed, weather, and load condition
+Output: Array of consumption profiles matching the criteria`,
+    schema: consumptionProfileFetcherInputSchema,
+  }
+);
+
+// ============================================================================
 // Tool Exports by Agent
 // ============================================================================
 
@@ -697,10 +864,10 @@ export const weatherAgentTools = [
 
 /**
  * Bunker Agent Tools - DEPRECATED
- * 
+ *
  * Bunker agent is now deterministic and calls these functions directly.
  * Keeping exports for backward compatibility and reference.
- * 
+ *
  * The bunker agent workflow now uses:
  * - executePortFinderTool() directly
  * - executePortWeatherTool() directly
@@ -710,13 +877,23 @@ export const weatherAgentTools = [
 export const bunkerAgentTools: any[] = []; // Empty - bunker agent doesn't use tool binding
 
 /**
+ * Vessel Performance Tools (Machinery Performance Agent, Hull Performance Agent)
+ */
+export const vesselPerformanceAgentTools = [
+  fetchNoonReportTool,
+  fetchVesselSpecsTool,
+  fetchConsumptionProfileTool,
+];
+
+/**
  * All Tools (for reference)
- * 
+ *
  * Combined array of all tools across all agents.
  */
 export const allTools = [
   ...routeAgentTools,
   ...weatherAgentTools,
   ...bunkerAgentTools,
+  ...vesselPerformanceAgentTools,
 ];
 

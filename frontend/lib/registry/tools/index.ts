@@ -25,6 +25,12 @@ import {
   analyzeBunkerOptionsTool,
 } from './bunker-tools';
 
+import {
+  fetchNoonReportTool,
+  fetchVesselSpecsTool,
+  fetchConsumptionProfileTool,
+} from './vessel-performance-tools';
+
 /**
  * Register all tools with the Tool Registry
  * 
@@ -53,6 +59,11 @@ export function registerAllTools(): void {
     findBunkerPortsTool,
     getFuelPricesTool,
     analyzeBunkerOptionsTool,
+
+    // Vessel performance tools
+    fetchNoonReportTool,
+    fetchVesselSpecsTool,
+    fetchConsumptionProfileTool,
   ];
   
   let registeredCount = 0;
@@ -79,6 +90,7 @@ export function registerAllTools(): void {
   console.log(`   Routing: 2 tools`);
   console.log(`   Weather: 3 tools`);
   console.log(`   Bunker: 3 tools`);
+  console.log(`   Vessel Performance: 3 tools`);
 }
 
 /**
@@ -113,6 +125,9 @@ export function verifyToolRegistration(): {
     'find_bunker_ports',
     'get_fuel_prices',
     'analyze_bunker_options',
+    'fetch_noon_report',
+    'fetch_vessel_specs',
+    'fetch_consumption_profile',
   ];
   
   const expectedSet = new Set(expectedTools);
@@ -136,4 +151,7 @@ export {
   findBunkerPortsTool,
   getFuelPricesTool,
   analyzeBunkerOptionsTool,
+  fetchNoonReportTool,
+  fetchVesselSpecsTool,
+  fetchConsumptionProfileTool,
 };

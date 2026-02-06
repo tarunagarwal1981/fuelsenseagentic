@@ -42,6 +42,7 @@
     "test:integration:services": "tsx tests/integration/service-integration.test.ts",
     "test:integration:tools": "tsx tests/integration/tools-integration.test.ts",
     "test:performance": "tsx tests/integration/performance-benchmark.test.ts",
+    "test:vessel-foundation": "tsx tests/vessel-performance-foundation.test.ts",
     "test:all": "npm run type-check && npm run test:synthesis && npm run test:template-formatter && npm run test:components",
     "type-check": "tsc --noEmit"
   },

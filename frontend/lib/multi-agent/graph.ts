@@ -19,6 +19,7 @@ import {
 } from './state';
 // Import agent-nodes to trigger agent registrations
 import './agent-nodes';
+import { entityExtractorAgentNode } from './agents/entity-extractor-agent';
 import {
   supervisorAgentNode,
   routeAgentNode,
@@ -96,6 +97,12 @@ function supervisorRouter(state: MultiAgentState): string | typeof END {
   if (nextAgent === 'supervisor') {
     console.log('🔄 [SUPERVISOR-ROUTER] Supervisor self-loop for continued reasoning');
     return 'supervisor';
+  }
+
+  // Entity extractor (runs early, can parallel with other agents)
+  if (nextAgent === 'entity_extractor') {
+    console.log('🔀 [SUPERVISOR-ROUTER] Routing to: entity_extractor');
+    return 'entity_extractor';
   }
 
   // Validate next agent value
@@ -295,6 +302,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // Agent Nodes
   // ========================================================================
   .addNode('supervisor', supervisorAgentNode)
+  .addNode('entity_extractor', entityExtractorAgentNode)  // Extracts vessel names/IMOs from query
   .addNode('route_agent', routeAgentNode)      // Now deterministic workflow
   .addNode('compliance_agent', complianceAgentNode)  // Deterministic workflow
   .addNode('weather_agent', weatherAgentNode)  // Now deterministic workflow
@@ -316,6 +324,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // Includes supervisor self-loop for agentic ReAct pattern
   // ========================================================================
   .addConditionalEdges('supervisor', supervisorRouter, {
+    entity_extractor: 'entity_extractor',
     route_agent: 'route_agent',
     compliance_agent: 'compliance_agent',
     weather_agent: 'weather_agent',
@@ -324,6 +333,11 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
     supervisor: 'supervisor',  // AGENTIC: Allow supervisor self-loop for continued reasoning
     [END]: END,
   })
+
+  // ========================================================================
+  // Entity Extractor Workflow (runs back to supervisor after extraction)
+  // ========================================================================
+  .addEdge('entity_extractor', 'supervisor')
 
   // ========================================================================
   // Route Agent Workflow (deterministic - goes straight back to supervisor)
@@ -403,7 +417,7 @@ export async function getMultiAgentApp() {
 console.log('✅ Multi-Agent LangGraph compiled successfully');
 console.log('📊 Graph structure:');
 console.log('   - Entry: supervisor');
-console.log('   - Agents: route_agent (deterministic), weather_agent (deterministic), bunker_agent (LLM)');
+console.log('   - Agents: entity_extractor, route_agent (deterministic), weather_agent (deterministic), bunker_agent (LLM)');
 console.log('   - Tools: None (all agents are now deterministic workflows)');
 console.log('   - Final: finalize (LLM) → END');
 

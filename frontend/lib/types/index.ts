@@ -2,6 +2,20 @@
  * Core types for the FuelSense 360 Maritime Bunker Port Optimization Agent
  */
 
+export type {
+  VesselBasicInfo,
+  NoonReportData,
+  ConsumptionProfile,
+  WeatherCondition,
+  FuelEndurance,
+  VesselIdentifiers,
+  Position,
+  ROBQuantities,
+  WeatherConditions,
+  DraftInfo,
+  FuelConsumptionByGrade,
+} from './vessel-performance';
+
 /**
  * Geographic coordinates for a location
  */

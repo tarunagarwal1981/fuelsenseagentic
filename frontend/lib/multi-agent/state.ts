@@ -16,6 +16,12 @@ import type { FormattedResponse } from '../formatters/response-formatter';
 import type { ROBTrackingOutput, ROBWaypoint } from '@/lib/engines/rob-tracking-engine';
 import type { ECAConsumptionOutput } from '@/lib/engines/eca-consumption-engine';
 import type { VesselProfile } from '@/lib/services/vessel-service';
+import type {
+  VesselBasicInfo,
+  NoonReportData,
+  ConsumptionProfile,
+  VesselIdentifiers,
+} from '@/lib/types/vessel-performance';
 
 // ============================================================================
 // Reasoning Types (Agentic Supervisor)
@@ -840,6 +846,46 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   vessel_profile: Annotation<VesselProfile | null>({
     reducer: (x, y) => (y != null ? y : x),
     default: () => null,
+  }),
+
+  // ========================================================================
+  // Vessel Performance (Hull Performance & Machinery Performance Agents)
+  // ========================================================================
+
+  /**
+   * Extracted vessel identifiers from user query
+   * Populated by Entity Extractor Agent
+   */
+  vessel_identifiers: Annotation<VesselIdentifiers | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Fetched noon report data
+   * Populated by tools or Machinery Performance Agent
+   */
+  noon_reports: Annotation<NoonReportData[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Vessel consumption profiles
+   * Populated by tools or Machinery Performance Agent
+   */
+  consumption_profiles: Annotation<ConsumptionProfile[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Basic vessel information
+   * Populated by vessel spec fetcher tool
+   */
+  vessel_specs: Annotation<VesselBasicInfo[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
   }),
 
   // ========================================================================

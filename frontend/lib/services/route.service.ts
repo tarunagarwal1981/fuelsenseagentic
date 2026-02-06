@@ -437,7 +437,11 @@ export class RouteService {
     let cumulativeDistance = 0;
 
     for (let i = 0; i < geometry.length; i++) {
-      const [lon, lat] = geometry[i];
+      let [lon, lat] = geometry[i];
+
+      // Normalize longitude from 0-360 to -180..180 (API may return 0-360 for routes crossing date line)
+      if (lon > 180) lon = lon - 360;
+      else if (lon < -180) lon = lon + 360;
 
       if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
         console.error('❌ [ROUTE-SERVICE] Invalid coordinates in geometry!');

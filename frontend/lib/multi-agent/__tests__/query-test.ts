@@ -81,6 +81,11 @@ export async function testQuery(
     // Vessel fields
     vessel_name: null,
     vessel_profile: null,
+    // Vessel performance (Hull/Machinery agents)
+    vessel_identifiers: undefined,
+    noon_reports: undefined,
+    consumption_profiles: undefined,
+    vessel_specs: undefined,
     agent_call_counts: {
       route_agent: 0,
       weather_agent: 0,

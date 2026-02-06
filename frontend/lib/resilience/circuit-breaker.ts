@@ -9,7 +9,7 @@ import { getCorrelationId } from '@/lib/monitoring/correlation-context';
 import { logError } from '@/lib/monitoring/axiom-logger';
 import { retryWithBackoff } from './retry';
 
-export type ToolType = 'route' | 'weather' | 'price' | 'analysis';
+export type ToolType = 'route' | 'weather' | 'price' | 'analysis' | 'vessel';
 
 const DEFAULT_OPTIONS = {
   timeout: 30_000, // 30s
@@ -50,6 +50,31 @@ function makeFallback(toolName: string, toolType: ToolType): (input: any) => any
       return () => ({
         error: 'Analysis unavailable. Circuit open. External analysis API is temporarily down.',
       });
+    }
+    case 'vessel': {
+      return (input: any) => {
+        const isNoonReport = toolName === 'fetch_noon_report';
+        const isConsumptionProfile = toolName === 'fetch_consumption_profile';
+
+        if (isConsumptionProfile) {
+          return {
+            success: false,
+            error: 'Consumption profile API unavailable. Circuit open.',
+            imo: input?.imo ?? '',
+            message: 'Vessel consumption profile service is temporarily unavailable.',
+          };
+        }
+
+        const vesselIdentifiers = input?.vessel_identifiers ?? input?.vessel_identifier ?? {};
+        return {
+          success: false,
+          error: isNoonReport
+            ? 'Noon report API unavailable. Circuit open.'
+            : 'Vessel specification API unavailable. Circuit open.',
+          ...(isNoonReport ? { vessel_identifiers: vesselIdentifiers } : { vessel_identifier: vesselIdentifiers }),
+          message: 'Vessel service is temporarily unavailable.',
+        };
+      };
     }
     default:
       return () => ({ error: `Service unavailable. Circuit open for ${toolName}.` });

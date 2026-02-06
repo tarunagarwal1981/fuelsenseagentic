@@ -117,6 +117,7 @@ function applyCircuitBreaker(
     route_agent: 0,
     weather_agent: 0,
     bunker_agent: 0,
+    entity_extractor: 0,
   };
 
   // CIRCUIT BREAKER: Prevent infinite loops
@@ -177,6 +178,7 @@ function countAgentCalls(messages: any[]): Record<string, number> {
       if (content.includes('[ROUTE-AGENT]')) counts.route_agent++;
       if (content.includes('[WEATHER-AGENT]')) counts.weather_agent++;
       if (content.includes('[BUNKER-AGENT]')) counts.bunker_agent++;
+      if (content.includes('[ENTITY-EXTRACTOR]')) counts.entity_extractor = (counts.entity_extractor || 0) + 1;
     }
   }
 
@@ -1052,6 +1054,8 @@ export async function supervisorAgentNode(
         hasPrereq = !!state.weather_forecast;
       } else if (prereq === 'bunker_ports') {
         hasPrereq = !!state.bunker_ports && state.bunker_ports.length > 0;
+      } else if (prereq === 'messages') {
+        hasPrereq = !!(state.messages && state.messages.length > 0);
       } else {
         // Unknown prerequisite - assume valid for now
         hasPrereq = true;
@@ -1091,6 +1095,8 @@ export async function supervisorAgentNode(
       // Check if agent's work is already done
       const routeAgentDone = agentName === 'route_agent' && routeCompleteForQuery;
       const complianceAgentDone = agentName === 'compliance_agent' && state.compliance_data;
+      const entityExtractorDone = agentName === 'entity_extractor' &&
+        (state.agent_status?.entity_extractor === 'success' || !!state.vessel_identifiers);
       const weatherAgentDone = agentName === 'weather_agent' && 
         state.weather_forecast && 
         (!needsBunker || state.weather_consumption);
@@ -1103,7 +1109,7 @@ export async function supervisorAgentNode(
         state.bunker_analysis.recommendations.length > 0 &&
         state.bunker_analysis.best_option;
       
-      const agentDone = routeAgentDone || complianceAgentDone || weatherAgentDone || bunkerAgentDone;
+      const agentDone = routeAgentDone || complianceAgentDone || entityExtractorDone || weatherAgentDone || bunkerAgentDone;
       
       // Debug logging for bunker_agent to diagnose issues
       if (agentName === 'bunker_agent') {
@@ -3950,6 +3956,37 @@ export async function finalizeNode(state: MultiAgentState) {
 
   try {
     // ========================================================================
+    // VESSEL INFORMATION (Phase 1) - Entity extraction only, Phase 2 coming
+    // ========================================================================
+    
+    if (state.vessel_identifiers && !state.route_data && !state.bunker_analysis) {
+      console.log('🚢 [FINALIZE] Vessel information query (Phase 1 - entity extraction only)');
+      
+      const ids = state.vessel_identifiers;
+      const vesselList = [...(ids.names || []), ...(ids.imos || []).map((imo) => `IMO ${imo}`)].join(', ');
+      const totalCount = (ids.names?.length || 0) + (ids.imos?.length || 0);
+      const vesselInfoResponse = `I've identified the vessel${totalCount > 1 ? 's' : ''} **${vesselList}** in our system.
+
+Currently, I can confirm the vessel exists and extract its identifiers. Our **Hull Performance** and **Machinery Performance** agents—with detailed noon report analysis, consumption tracking, and performance monitoring—are coming in the next development phase (Phase 2).`;
+      
+      const agentDuration = Date.now() - agentStartTime;
+      recordAgentTime('finalize', agentDuration);
+      recordAgentExecution('finalize', agentDuration, true);
+      logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
+
+      return {
+        final_recommendation: vesselInfoResponse,
+        formatted_response: null,
+        synthesized_insights: null,
+        messages: [new AIMessage({ content: vesselInfoResponse })],
+        agent_status: {
+          ...(state.agent_status || {}),
+          finalize: 'success',
+        },
+      };
+    }
+    
+    // ========================================================================
     // STANDALONE PORT WEATHER - Direct formatting without synthesis
     // ========================================================================
     
@@ -4511,6 +4548,21 @@ AgentRegistry.registerAgent({
   */
   prerequisites: ['route_data'],
   outputs: ['bunker_ports', 'port_weather_status', 'port_prices', 'bunker_analysis']
+});
+
+// Register Finalize Agent (synthesizes results, always last in execution)
+AgentRegistry.registerAgent({
+  agent_name: 'finalize',
+  description: 'Synthesizes results from all specialist agents into a comprehensive, actionable recommendation. Uses LLM for natural language generation and template-based formatting. Always the terminal node in execution flow.',
+  available_tools: [],
+  prerequisites: ['messages'],
+  outputs: ['final_recommendation', 'formatted_response', 'synthesized_insights', 'synthesized_response'],
+  is_deterministic: false,
+  workflow_steps: [
+    'Decoupled synthesis: extract insights and recommendations from agent outputs',
+    'Template formatting: select and render response template',
+    'Generate structured output for UI display'
+  ]
 });
 
 // Export compliance agent node

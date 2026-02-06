@@ -1,5 +1,205 @@
 # FuelSense Architecture
 
+## Complete High-Level Architecture Diagram
+
+```mermaid
+block-beta
+    columns 1
+    
+    block:frontend["FRONTEND"]
+        columns 4
+        NextJS["Next.js App"]
+        ChatUI["Chat Interface"]
+        MapViewer["Map Viewer"]
+        ResponseCards["Response Cards"]
+    end
+    
+    block:api["API LAYER (app/api/)"]
+        columns 1
+        MultiAgentRoute["chat-multi-agent/route.ts"]
+    end
+    
+    block:langgraph["LANGGRAPH ORCHESTRATION"]
+        columns 2
+        StateGraph["StateGraph (LangGraph)"]
+        Checkpointer["Checkpointer (Redis/Memory)"]
+    end
+    
+    block:agents_llm["AGENTS (LLM - Claude)"]
+        columns 6
+        Supervisor["Supervisor Agent"]
+        RouteAgent["Route Agent"]
+        WeatherAgent["Weather Agent"]
+        BunkerAgent["Bunker Agent"]
+        EntityExtractor["Entity Extractor"]
+        Finalize["Finalize Node"]
+    end
+    
+    block:agents_det["AGENTS (Deterministic)"]
+        columns 1
+        ComplianceAgent["Compliance Agent"]
+    end
+    
+    block:registries["REGISTRIES"]
+        columns 3
+        AgentRegistry["Agent Registry"]
+        ToolRegistry["Tool Registry"]
+        WorkflowRegistry["Workflow Registry"]
+    end
+    
+    block:tools["TOOLS"]
+        columns 4
+        RouteCalc["Route Calculator"]
+        PortFinder["Port Finder"]
+        PriceFetcher["Price Fetcher"]
+        BunkerAnalyzer["Bunker Analyzer"]
+        WeatherTools["Weather Timeline / Marine / Consumption / Port"]
+        VesselTools["Noon Report / Specs / Consumption Profile"]
+    end
+    
+    block:services["SERVICE LAYER"]
+        columns 4
+        RouteService["RouteService"]
+        BunkerService["BunkerService"]
+        WeatherService["WeatherService"]
+        PortResolution["PortResolutionService"]
+    end
+    
+    block:engines["ENGINES (Deterministic)"]
+        columns 6
+        CapacityEngine["Capacity Validation"]
+        ECAEngine["ECA Consumption"]
+        ROBEngine["ROB Tracking"]
+        SafetyEngine["Safety Margin"]
+        WeatherEngine["Weather Adjustment"]
+        MultiPortEngine["Multi-Port Planner"]
+    end
+    
+    block:repos["REPOSITORY LAYER"]
+        columns 4
+        PortRepo["PortRepository"]
+        PriceRepo["PriceRepository"]
+        VesselRepo["VesselRepository"]
+        WorldPortRepo["WorldPortRepository"]
+    end
+    
+    block:infra["INFRASTRUCTURE"]
+        columns 4
+        Redis["Redis (Upstash)"]
+        Supabase["Supabase"]
+        Axiom["Axiom"]
+        ConfigLoader["Config Loader (YAML)"]
+    end
+    
+    block:external["EXTERNAL APIs"]
+        columns 4
+        SeaRouteAPI["SeaRoute API"]
+        OpenMeteo["Open-Meteo API"]
+        BunkerPricing["BunkerPricing API"]
+        WorldPortIndex["WorldPort Index API"]
+    end
+    
+    block:formatters["FORMATTERS / SYNTHESIS"]
+        columns 4
+        ResponseFormatter["Response Formatter"]
+        SynthesisEngine["Synthesis Engine"]
+        TemplateEngine["Template Engine"]
+        InsightExtractor["Insight Extractor"]
+    end
+```
+
+## Data Flow & Infrastructure Placement
+
+```mermaid
+flowchart TB
+    subgraph Frontend["Frontend"]
+        UI[Chat Interface]
+    end
+    
+    subgraph API["API Layer"]
+        Route[chat-multi-agent/route]
+    end
+    
+    subgraph LangGraph["LangGraph (frontend/lib/multi-agent/)"]
+        Graph[StateGraph]
+        Graph --> Supervisor
+        Graph --> RouteAgent
+        Graph --> WeatherAgent
+        Graph --> BunkerAgent
+        Graph --> ComplianceAgent
+        Graph --> Finalize
+        Supervisor[Supervisor Agent LLM]
+        RouteAgent[Route Agent LLM]
+        WeatherAgent[Weather Agent LLM]
+        BunkerAgent[Bunker Agent LLM]
+        ComplianceAgent[Compliance Agent Deterministic]
+        Finalize[Finalize LLM]
+    end
+    
+    subgraph Tools["Tools (frontend/lib/tools/)"]
+        T1[Route Calculator]
+        T2[Port Finder]
+        T3[Weather Tools]
+        T4[Bunker Analyzer]
+        T5[Vessel Performance]
+    end
+    
+    subgraph Services["Service Layer (frontend/lib/services/)"]
+        RS[RouteService]
+        BS[BunkerService]
+        WS[WeatherService]
+    end
+    
+    subgraph Repos["Repository Layer (frontend/lib/repositories/)"]
+        PR[PortRepository]
+        PriceR[PriceRepository]
+        VR[VesselRepository]
+    end
+    
+    subgraph Redis["Redis (Upstash)"]
+        Cache[Cache: Ports, Prices, Routes, Weather]
+        Checkpoint[LangGraph Checkpointer]
+    end
+    
+    subgraph Supabase["Supabase"]
+        DB[(Database)]
+    end
+    
+    subgraph Axiom["Axiom"]
+        Logs[Observability / Logs]
+    end
+    
+    subgraph External["External APIs"]
+        SeaRoute[SeaRoute API]
+        OpenMeteo[Open-Meteo]
+        BunkerAPI[BunkerPricing]
+    end
+    
+    UI --> Route
+    Route --> Graph
+    Route --> Redis
+    LangGraph --> Tools
+    Tools --> Services
+    Services --> Repos
+    Services --> External
+    Repos --> Cache
+    Repos --> DB
+    Graph --> Checkpoint
+    LangGraph --> Logs
+```
+
+## Component Placement Reference
+
+| Component | Location | Type |
+|-----------|----------|------|
+| **LangGraph** | `frontend/lib/multi-agent/graph.ts` | StateGraph orchestration |
+| **Redis** | Upstash | Cache (repos) + LangGraph checkpointer |
+| **Axiom** | `frontend/lib/monitoring/axiom-logger.ts` | Structured logging, agent/tool traces |
+| **Agent Registry** | `frontend/lib/registry/agent-registry.ts` | Agent discovery |
+| **Tool Registry** | `frontend/lib/registry/tool-registry.ts` | Tool discovery |
+| **Workflow Registry** | `frontend/lib/registry/workflow-registry.ts` | Workflow definitions |
+| **Service Container** | `frontend/lib/repositories/service-container.ts` | DI for repos + services |
+
 ## Project Structure
 
 ```
