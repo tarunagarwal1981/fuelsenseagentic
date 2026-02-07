@@ -29,6 +29,7 @@ import { AgentRegistry } from './registry';
 import type { MultiAgentState, ReasoningStep } from './state';
 import { matchQueryPattern, type PatternMatch } from './pattern-matcher';
 import { makeRoutingDecision, CONFIDENCE_THRESHOLDS } from './decision-framework';
+import { SupervisorPromptGenerator } from './supervisor-prompt-generator';
 
 // ============================================================================
 // Constants
@@ -313,8 +314,108 @@ async function generateReasoning(
 
 /**
  * Build enhanced system prompt with explicit decision rules
+ * 
+ * NEW: Uses SupervisorPromptGenerator for dynamic prompt generation
+ * from Agent Registry instead of hardcoded agent descriptions.
  */
 function buildSystemPrompt(): string {
+  // ============================================================================
+  // OPTION 1: Use Dynamic Prompt Generator (RECOMMENDED)
+  // ============================================================================
+  // Generates complete prompt from Agent Registry including:
+  // - All registered agents with capabilities
+  // - Capability-to-agent mapping
+  // - Dependency graph
+  // - Routing examples
+  const USE_DYNAMIC_PROMPT = process.env.USE_DYNAMIC_SUPERVISOR_PROMPT !== 'false';
+  
+  if (USE_DYNAMIC_PROMPT) {
+    console.log('🎯 [AGENTIC-SUPERVISOR] Using dynamic prompt generator');
+    const basePrompt = SupervisorPromptGenerator.generateSupervisorPrompt();
+    
+    // Add agentic-specific instructions to the dynamically generated prompt
+    return `${basePrompt}
+
+═══════════════════════════════════════════════════════════════════════════════
+AGENTIC SUPERVISOR ENHANCEMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+CRITICAL: YOU ARE THE DECISION-MAKER, NOT A QUESTIONNAIRE BOT
+
+DEFAULT BEHAVIOR: Take action whenever you have sufficient information (>= 80% confidence)
+EXCEPTION: Only ask for clarification when confidence < 30% AND critical info is COMPLETELY ABSENT
+
+═══════════════════════════════════════════════════════════════════════════════
+IMPORTANT PRINCIPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. DEFAULT TO ACTION, NOT CLARIFICATION
+   - If you have 80%+ of needed info → ACT
+   - Only clarify if critical info is 100% absent
+   
+2. TRUST DOWNSTREAM AGENTS
+   - Weather agent can look up ports you don't recognize
+   - Route agent can handle port name variations
+   - Don't clarify just because you're uncertain
+   
+3. USE REASONABLE DEFAULTS
+   - Missing date? → Assume current date
+   - Unclear terminal? → Agent will figure it out
+   
+4. NEVER CLARIFY FOR MINOR UNCERTAINTIES
+   - ❌ DON'T: "I see Singapore, but which specific terminal?"
+   - ✅ DO: Call weather_agent, let it figure out terminals
+
+═══════════════════════════════════════════════════════════════════════════════
+ACTIONS YOU CAN TAKE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. "call_agent" - Route to specific agent
+   When: Confidence >= 80%
+   Params: { "agent": "agent_id" }
+
+2. "validate" - Validate prerequisites
+   When: Need to check state before proceeding
+   Params: { "check": "description" }
+
+3. "recover" - Attempt error recovery with CORRECTIONS
+   When: An agent has failed due to invalid/misspelled data
+   Params: {
+     "recovery_action": "retry_agent" | "skip_agent" | "ask_user",
+     "agent": "agent_name",
+     "corrected_params": { ... },
+     "reason": "explanation"
+   }
+
+4. "clarify" - Ask user for clarification
+   When: Confidence < 30% AND critical info completely missing
+   Params: { "question": "specific question about missing info" }
+
+5. "finalize" - Return response
+   When: All necessary agents have completed
+   Params: {}
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMAT (STRICT JSON)
+═══════════════════════════════════════════════════════════════════════════════
+
+{
+  "thought": "Your reasoning: What info do I have? What's my confidence? What should I do?",
+  "action": "call_agent" | "validate" | "recover" | "clarify" | "finalize",
+  "params": { ... }
+}
+
+CRITICAL: 
+- Always return valid JSON
+- Be DECISIVE (default to action)
+- Only clarify when confidence < 30%
+- When retrying failed agents, provide corrected_params to fix the issue`;
+  }
+  
+  // ============================================================================
+  // OPTION 2: Legacy Hardcoded Prompt (Fallback)
+  // ============================================================================
+  console.log('⚠️ [AGENTIC-SUPERVISOR] Using legacy hardcoded prompt');
   const agentDescriptions = getAgentDescriptions();
   
   return `You are an intelligent maritime operations coordinator with a DECISIVE mindset.
@@ -742,7 +843,7 @@ function handleCallAgent(
   step: ReasoningStep
 ): Partial<MultiAgentState> {
   const agentName = reasoning.params?.agent;
-  
+
   if (!agentName) {
     console.error('❌ [AGENTIC-SUPERVISOR] No agent specified');
     return {
@@ -751,8 +852,29 @@ function handleCallAgent(
       reasoning_history: [step],
     };
   }
-  
-  const validAgents = ['route_agent', 'compliance_agent', 'weather_agent', 'bunker_agent'];
+
+  // Task-complete guard: if vessel_info_agent already succeeded and we have
+  // vessel_specs, avoid re-calling it (prevents infinite loop for "how many vessels").
+  if (
+    agentName === 'vessel_info_agent' &&
+    state.agent_status?.vessel_info_agent === 'success' &&
+    state.vessel_specs?.length
+  ) {
+    console.log(
+      '✅ [AGENTIC-SUPERVISOR] vessel_info_agent already succeeded with vessel_specs, routing to finalize'
+    );
+    step.observation = 'Vessel data already available, finalizing';
+    return {
+      next_agent: 'finalize',
+      current_thought: 'Vessel info already retrieved, synthesizing response',
+      reasoning_history: [step],
+      needs_clarification: false,
+    };
+  }
+
+  // Derive valid agents from registry for scalability
+  const registryAgentNames = AgentRegistry.getAllAgents().map((a) => a.agent_name);
+  const validAgents = [...new Set([...registryAgentNames, 'supervisor'])];
   if (!validAgents.includes(agentName)) {
     console.error(`❌ [AGENTIC-SUPERVISOR] Invalid agent: ${agentName}`);
     return {
@@ -761,10 +883,10 @@ function handleCallAgent(
       reasoning_history: [step],
     };
   }
-  
+
   console.log(`🎯 [AGENTIC-SUPERVISOR] Routing to: ${agentName}`);
   step.observation = `Routing to ${agentName}`;
-  
+
   return {
     next_agent: agentName,
     current_thought: reasoning.thought,

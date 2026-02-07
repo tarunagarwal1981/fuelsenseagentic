@@ -1,12 +1,15 @@
 /**
  * Multi-Agent System Monitoring
- * 
+ *
  * Provides monitoring and analytics for the multi-agent system including:
  * - Agent execution times
  * - Success/failure rates
  * - API cost tracking
  * - Performance metrics
+ * - Vessel selection metrics (comparisons, business KPIs, errors)
  */
+
+import { getVesselSelectionMetricsSnapshot } from '@/lib/monitoring/agent-metrics';
 
 // ============================================================================
 // Monitoring Data Structures
@@ -49,6 +52,8 @@ interface SystemMetrics {
   agentMetrics: AgentExecutionMetrics[];
   toolMetrics: ToolCallMetrics[];
   costMetrics: APICostMetrics;
+  /** Vessel selection agent metrics (last 60 min) */
+  vesselSelection?: import('@/lib/monitoring/agent-metrics').VesselSelectionMetricsSnapshot;
   timestamp: string;
 }
 
@@ -295,6 +300,8 @@ export function getSystemMetrics(): SystemMetrics {
   const averageExecutionTime =
     totalExecutions > 0 ? totalExecutionTime / totalExecutions : 0;
 
+  const vesselSelection = getVesselSelectionMetricsSnapshot(60);
+
   return {
     totalRequests: metricsStore.totalRequests,
     successfulRequests: metricsStore.successfulRequests,
@@ -303,6 +310,7 @@ export function getSystemMetrics(): SystemMetrics {
     agentMetrics,
     toolMetrics,
     costMetrics,
+    vesselSelection,
     timestamp: new Date().toISOString(),
   };
 }

@@ -1,0 +1,71 @@
+# database-column-mapping.yaml
+# Internal documentation of which columns we use for what purpose
+
+noon_reports_table:
+  used_columns:
+    vessel_identification:
+      - VESSEL_IMO: "Primary vessel identifier"
+      - VESSEL_NAME: "Vessel name"
+
+    current_rob:
+      - ROB_VLSFO: "Current Very Low Sulfur Fuel Oil remaining"
+      - ROB_LSMGO: "Current Low Sulfur Marine Gas Oil remaining"
+      - ROB_MDO: "Current Marine Diesel Oil remaining"
+      - ROB_HSFO: "Current Heavy Sulfur Fuel Oil remaining"
+      - ROB_LNG: "Current LNG remaining"
+
+    current_voyage:
+      - VOYAGE_NUMBER: "Unique voyage identifier"
+      - FROM_PORT: "Origin port of current voyage"
+      - TO_PORT: "Destination port of current voyage (voyage end port)"
+      - VOYAGE_START_DATE: "When current voyage started"
+      - VOYAGE_END_DATE: "Expected end date of current voyage"
+      - DISTANCETOGO: "Remaining distance to destination"
+
+    position:
+      - LATITUDE: "Current latitude"
+      - LONGITUDE: "Current longitude"
+      - UTC_DATE_TIME: "Timestamp of report"
+
+    operational_status:
+      - VESSEL_ACTIVITY: "AT SEA, AT PORT, AT ANCHORAGE, DRIFTING"
+      - LOAD_TYPE: "BALLAST or LADEN"
+
+    consumption_data:
+      - TOTAL_CONSUMPTION_VLSFO: "Daily VLSFO consumption"
+      - TOTAL_CONSUMPTION_LSMGO: "Daily LSMGO consumption"
+      - STEAMING_TIME_HRS: "Hours spent steaming"
+      - SPEED: "Vessel speed in knots"
+
+  future_use_columns:
+    hull_performance:
+      - SLIP: "Propeller slip percentage (hull fouling indicator)"
+      - ME_CONSUMPTION: "Main engine consumption"
+      - MERPM: "Main engine RPM"
+
+    cii_calculations:
+      - DISTANCE_TRAVELLED_ACTUAL: "Actual distance traveled"
+      - TOTAL_CARGO_CARRIED: "Cargo quantity"
+      - All fuel consumption columns for CO2 calculations
+
+    eu_ets:
+      - EU_TAGGING: "Whether segment is in EU waters"
+      - EU_SEGMENT: "EU ETS zone classification"
+      - EUA_COST: "Emissions allowance cost"
+
+vessel_details_table:
+  used_columns:
+    - IMO: "Unique vessel identifier"
+    - Vessel_Name: "Official vessel name"
+    - Vessel_Type: "Bulk Carrier, Tanker, Container, etc."
+    - Vessel_SubType: "More specific classification"
+    - Deadweight: "DWT capacity in MT"
+    - GrossTonnage: "Gross tonnage"
+    - Built_date: "Year vessel was built"
+    - Flag: "Flag state"
+    - Fleet: "Fleet grouping/owner fleet"
+    - Registered_Owner: "Legal owner"
+
+  future_use_columns:
+    - Class: "Classification society"
+    - Office: "Managing office"

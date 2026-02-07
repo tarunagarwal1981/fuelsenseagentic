@@ -1,41 +1,164 @@
 /**
  * Agent Loader
- * 
+ *
  * Utilities for loading, validating, and registering agents from various sources.
- * Supports loading from configuration files and programmatic registration.
+ * Supports loading from YAML and JSON configuration files and programmatic registration.
  */
 
 import { AgentRegistry } from '@/lib/registry/agent-registry';
 import { ToolRegistry } from '@/lib/registry/tool-registry';
 import type {
   AgentDefinition,
+  AgentNodeFunction,
   ValidationResult,
 } from '@/lib/types/agent-registry';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'yaml';
 
 /**
- * Load agents from a YAML configuration file
- * 
+ * Load a single agent from a YAML file
+ *
  * @param configPath - Path to YAML configuration file
+ * @returns Parsed agent config (metadata only, no nodeFunction)
+ */
+export function loadAgentFromYaml(configPath: string): Record<string, unknown> {
+  const fileContent = fs.readFileSync(configPath, 'utf-8');
+  const parsed = yaml.parse(fileContent);
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Invalid YAML in ${configPath}`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * Load all agents from a directory of YAML files
+ *
+ * @param configDir - Path to directory containing agent YAML files
+ * @param nodeFunctionMap - Map of agent id -> node function (required for registration)
+ * @returns Array of agent definitions ready for registration
+ */
+export function loadAgentsFromYamlDirectory(
+  configDir: string,
+  nodeFunctionMap: Record<string, AgentNodeFunction>
+): AgentDefinition[] {
+  const files = fs.readdirSync(configDir).filter((f) => f.endsWith('.yaml'));
+  const definitions: AgentDefinition[] = [];
+
+  for (const file of files) {
+    const configPath = path.join(configDir, file);
+    const config = loadAgentFromYaml(configPath);
+    const id = config.id as string;
+    if (!id) {
+      console.warn(`⚠️ [AGENT-LOADER] Skipping ${file}: no id field`);
+      continue;
+    }
+    const nodeFunction = nodeFunctionMap[id];
+    if (!nodeFunction) {
+      console.warn(
+        `⚠️ [AGENT-LOADER] Skipping ${id}: no node function provided in nodeFunctionMap`
+      );
+      continue;
+    }
+    const definition = yamlConfigToAgentDefinition(config, nodeFunction);
+    definitions.push(definition);
+  }
+
+  return definitions;
+}
+
+/**
+ * Convert YAML config to AgentDefinition
+ */
+function yamlConfigToAgentDefinition(
+  config: Record<string, unknown>,
+  nodeFunction: AgentNodeFunction
+): AgentDefinition {
+  const now = new Date();
+  const tools = config.tools as Record<string, string[]> | undefined;
+  const execution = config.execution as Record<string, unknown> | undefined;
+  const produces = config.produces as Record<string, string[]> | undefined;
+  const consumes = config.consumes as Record<string, string[]> | undefined;
+  const dependencies = config.dependencies as Record<string, string[]> | undefined;
+
+  return {
+    id: config.id as string,
+    name: config.name as string,
+    description: (config.description as string) || '',
+    version: (config.metadata as Record<string, unknown>)?.version as string || '1.0.0',
+    type: (config.type as AgentDefinition['type']) || 'specialist',
+    domain: (config.domain as string[]) || [],
+    capabilities: (config.capabilities as string[]) || [],
+    intents: (config.intents as string[]) || [],
+    produces: {
+      stateFields: produces?.stateFields || [],
+      messageTypes: produces?.messageTypes || [],
+    },
+    consumes: {
+      required: consumes?.required || [],
+      optional: consumes?.optional || [],
+    },
+    tools: {
+      required: tools?.required || [],
+      optional: tools?.optional || [],
+    },
+    dependencies: {
+      upstream: dependencies?.upstream || [],
+      downstream: dependencies?.downstream || [],
+    },
+    execution: {
+      canRunInParallel: (execution?.canRunInParallel as boolean) ?? false,
+      maxExecutionTimeMs: (execution?.maxExecutionTimeMs as number) ?? 30000,
+      retryPolicy: {
+        maxRetries: (execution?.retryPolicy as Record<string, number>)?.maxRetries ?? 2,
+        backoffMs: (execution?.retryPolicy as Record<string, number>)?.backoffMs ?? 1000,
+      },
+    },
+    implementation: `config/agents/${config.id}.yaml`,
+    nodeFunction,
+    metrics: {
+      totalExecutions: 0,
+      successfulExecutions: 0,
+      failedExecutions: 0,
+      avgExecutionTimeMs: 0,
+    },
+    enabled: (config.enabled as boolean) ?? true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Load agents from a configuration file (JSON or single YAML)
+ *
+ * @param configPath - Path to JSON or YAML configuration file
+ * @param nodeFunctionMap - For YAML: map of agent id -> node function
  * @returns Array of loaded agent definitions
- * @throws Error if file cannot be read or parsed
  */
 export async function loadAgentsFromConfig(
-  configPath: string
+  configPath: string,
+  nodeFunctionMap?: Record<string, AgentNodeFunction>
 ): Promise<AgentDefinition[]> {
   try {
     const fileContent = fs.readFileSync(configPath, 'utf-8');
-    
-    // For now, we'll support JSON format
-    // YAML support can be added later with a YAML parser
+
     if (configPath.endsWith('.json')) {
       const config = JSON.parse(fileContent);
       return Array.isArray(config.agents) ? config.agents : [];
     }
-    
-    // TODO: Add YAML parsing support when needed
-    throw new Error('YAML format not yet supported. Use JSON format.');
+
+    if (configPath.endsWith('.yaml') || configPath.endsWith('.yml')) {
+      const config = loadAgentFromYaml(configPath);
+      const id = config.id as string;
+      if (!id || !nodeFunctionMap?.[id]) {
+        throw new Error(
+          `YAML agent ${id} requires nodeFunctionMap to provide node function`
+        );
+      }
+      return [yamlConfigToAgentDefinition(config, nodeFunctionMap[id])];
+    }
+
+    throw new Error('Unsupported config format. Use .json or .yaml');
   } catch (error: any) {
     throw new Error(`Failed to load agents from config: ${error.message}`);
   }

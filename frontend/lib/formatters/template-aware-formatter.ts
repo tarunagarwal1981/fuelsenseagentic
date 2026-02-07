@@ -89,10 +89,10 @@ export function formatResponseWithTemplate(
   
   // Step 2: Load template
   const loader = getTemplateLoader();
-  const template = loader.loadTemplate(detectedQueryType);
+  const loadResult = loader.loadTemplate(detectedQueryType);
   
-  if (!template) {
-    console.log(`⚠️ [TEMPLATE-FORMATTER] No template for ${detectedQueryType}, using default`);
+  if (!loadResult.exists || !loadResult.template) {
+    console.log(`⚠️ [TEMPLATE-FORMATTER] No template for ${detectedQueryType}: ${loadResult.error || 'not found'}`);
     
     // Fallback to existing formatter
     return {
@@ -107,6 +107,7 @@ export function formatResponseWithTemplate(
     };
   }
   
+  const template = loadResult.template;
   console.log(`✅ [TEMPLATE-FORMATTER] Using: ${template.template.name} v${template.template.version}`);
   
   // Step 3: Deep clone template to avoid mutating cached version
@@ -205,19 +206,28 @@ function detectQueryType(state: MultiAgentState): string {
   if (agentsCalled.has('bunker_agent')) {
     return 'bunker-planning';
   }
-  
+
+  // Vessel info / fleet list queries (how many vessels, list vessels)
+  if (
+    agentsCalled.has('vessel_info_agent') &&
+    !agentsCalled.has('route_agent') &&
+    !agentsCalled.has('bunker_agent')
+  ) {
+    return 'informational';
+  }
+
   if (agentsCalled.has('route_agent') && !agentsCalled.has('weather_agent') && !agentsCalled.has('bunker_agent')) {
     return 'route-only';
   }
-  
+
   if (agentsCalled.has('cii_agent')) {
     return 'cii-rating';
   }
-  
+
   if (agentsCalled.has('hull_agent')) {
     return 'hull-performance';
   }
-  
+
   // Default to bunker-planning
   return 'bunker-planning';
 }
@@ -284,9 +294,19 @@ function evaluateCondition(condition: string, state: MultiAgentState): boolean {
     // Pattern: "synthesized_insights.query_type === 'informational'"
     if (condition.includes('synthesized_insights.query_type')) {
       const queryType = state.synthesized_insights?.query_type;
-      
+
       if (condition.includes("=== 'informational'")) {
-        return queryType === 'informational';
+        if (queryType === 'informational') return true;
+        // Fallback: vessel info queries use decoupled synthesis which doesn't set
+        // synthesized_insights; infer informational from vessel_info_agent success.
+        if (
+          queryType == null &&
+          state.agent_status?.vessel_info_agent === 'success' &&
+          state.vessel_specs?.length
+        ) {
+          return true;
+        }
+        return false;
       }
       if (condition.includes("=== 'decision-required'")) {
         return queryType === 'decision-required';

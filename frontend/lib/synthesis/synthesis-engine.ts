@@ -163,6 +163,45 @@ export class SynthesisEngine {
       };
     }
 
+    // Vessel list/count (from vessel_info_agent)
+    if (state.vessel_specs && state.vessel_specs.length > 0) {
+      const typeCount: Record<string, number> = {};
+      for (const v of state.vessel_specs) {
+        const t = v.type || 'Unknown';
+        typeCount[t] = (typeCount[t] || 0) + 1;
+      }
+      data.vessels = {
+        count: state.vessel_specs.length,
+        types: typeCount,
+        sample: state.vessel_specs.slice(0, 5).map((v) => ({ name: v.name, imo: v.imo, type: v.type })),
+      };
+    }
+
+    // Noon reports (from vessel_info_agent via fetch_noon_report)
+    if (state.noon_reports && state.noon_reports.length > 0) {
+      data.noon_reports = state.noon_reports.map((r) => ({
+        imo: r.imo,
+        vessel_name: r.vessel_name,
+        timestamp: r.timestamp,
+        position: r.position,
+        rob: r.rob,
+        speed: r.speed,
+        next_port: r.next_port,
+        distance_to_go: r.distance_to_go,
+      }));
+    }
+
+    // Consumption profiles (from vessel_info_agent via fetch_consumption_profile)
+    if (state.consumption_profiles && state.consumption_profiles.length > 0) {
+      data.consumption_profiles = state.consumption_profiles.map((p) => ({
+        imo: p.imo,
+        speed: p.speed,
+        weather_condition: p.weather_condition,
+        load_condition: p.load_condition,
+        consumption: p.consumption,
+      }));
+    }
+
     return data;
   }
 

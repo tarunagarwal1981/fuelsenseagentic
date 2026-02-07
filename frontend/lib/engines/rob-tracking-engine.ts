@@ -5,6 +5,8 @@
  * Critical for bunker planning safety validation.
  */
 
+import type { VesselProfile } from '@/lib/services/vessel-service';
+
 export interface FuelQuantity {
   VLSFO: number;  // Metric tons
   LSMGO: number;  // Metric tons
@@ -261,6 +263,72 @@ export class ROBTrackingEngine {
       : Infinity;
     
     return Math.min(vlsfoDays, lsmgoDays);
+  }
+
+  /**
+   * Project ROB at current voyage end
+   *
+   * Calculates projected fuel remaining when vessel arrives at current voyage end port.
+   * Uses consumption rates from vessel profile and days until ETA.
+   *
+   * @param params.vessel_profile - Vessel profile with initial_rob and consumption rates
+   * @param params.current_voyage_end_eta - When current voyage ends (arrival at destination)
+   * @param params.current_date - Reference date (defaults to now)
+   * @returns Projected ROB at voyage end (VLSFO, LSMGO), never negative
+   */
+  static projectRobAtVoyageEnd(params: {
+    vessel_profile: VesselProfile;
+    current_voyage_end_eta: Date;
+    current_date?: Date;
+  }): FuelQuantity {
+    const { vessel_profile, current_voyage_end_eta, current_date } = params;
+
+    const currentRob = vessel_profile.initial_rob ?? { VLSFO: 0, LSMGO: 0 };
+    const consumptionVlsfo = Math.max(0, vessel_profile.consumption_vlsfo_per_day ?? 30);
+    const consumptionLsmgo = Math.max(0, vessel_profile.consumption_lsmgo_per_day ?? 3);
+
+    const refDate = current_date ?? new Date();
+    const etaMs = current_voyage_end_eta.getTime();
+    const refMs = refDate.getTime();
+    const daysUntilEnd = (etaMs - refMs) / (1000 * 60 * 60 * 24);
+
+    if (daysUntilEnd <= 0) {
+      console.log(
+        `📊 [ROB-ENGINE] projectRobAtVoyageEnd: ETA is in the past (${daysUntilEnd.toFixed(1)} days ago). Returning current ROB.`
+      );
+      return {
+        VLSFO: Math.max(0, currentRob.VLSFO),
+        LSMGO: Math.max(0, currentRob.LSMGO),
+      };
+    }
+
+    const consumptionVlsfoTotal = consumptionVlsfo * daysUntilEnd;
+    const consumptionLsmgoTotal = consumptionLsmgo * daysUntilEnd;
+
+    let projectedVlsfo = currentRob.VLSFO - consumptionVlsfoTotal;
+    let projectedLsmgo = currentRob.LSMGO - consumptionLsmgoTotal;
+
+    if (projectedVlsfo < 0 || projectedLsmgo < 0) {
+      console.warn(
+        `📊 [ROB-ENGINE] projectRobAtVoyageEnd: Projected ROB would go negative. Clamping to 0. ` +
+          `VLSFO: ${projectedVlsfo.toFixed(1)} -> ${Math.max(0, projectedVlsfo).toFixed(1)}, ` +
+          `LSMGO: ${projectedLsmgo.toFixed(1)} -> ${Math.max(0, projectedLsmgo).toFixed(1)}`
+      );
+    }
+
+    projectedVlsfo = Math.max(0, projectedVlsfo);
+    projectedLsmgo = Math.max(0, projectedLsmgo);
+
+    console.log(
+      `📊 [ROB-ENGINE] projectRobAtVoyageEnd: ${daysUntilEnd.toFixed(1)} days until voyage end. ` +
+        `Consumption: ${consumptionVlsfoTotal.toFixed(1)} MT VLSFO, ${consumptionLsmgoTotal.toFixed(1)} MT LSMGO. ` +
+        `Projected ROB: ${projectedVlsfo.toFixed(1)} MT VLSFO, ${projectedLsmgo.toFixed(1)} MT LSMGO`
+    );
+
+    return {
+      VLSFO: projectedVlsfo,
+      LSMGO: projectedLsmgo,
+    };
   }
 
   /**

@@ -26,8 +26,10 @@ import {
   complianceAgentNode,
   weatherAgentNode,
   bunkerAgentNode,
+  vesselSelectionAgentNode,
   finalizeNode,
 } from './agent-nodes';
+import { vesselInfoAgentNode } from './vessel-info-agent-node';
 import { AgentRegistry } from './registry';
 import { getCheckpointer } from '@/lib/persistence/redis-checkpointer';
 
@@ -105,8 +107,9 @@ function supervisorRouter(state: MultiAgentState): string | typeof END {
     return 'entity_extractor';
   }
 
-  // Validate next agent value
-  const validAgents = ['route_agent', 'compliance_agent', 'weather_agent', 'bunker_agent', 'finalize'];
+  // Validate next agent value (derived from registry for scalability)
+  const registryAgentNames = AgentRegistry.getAllAgents().map((a) => a.agent_name);
+  const validAgents = [...new Set([...registryAgentNames, 'supervisor'])];
   if (validAgents.includes(nextAgent)) {
     console.log(`🔀 [SUPERVISOR-ROUTER] Routing to: ${nextAgent}`);
     return nextAgent;
@@ -307,6 +310,8 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   .addNode('compliance_agent', complianceAgentNode)  // Deterministic workflow
   .addNode('weather_agent', weatherAgentNode)  // Now deterministic workflow
   .addNode('bunker_agent', bunkerAgentNode)    // Now deterministic workflow
+  .addNode('vessel_selection_agent', vesselSelectionAgentNode)  // Multi-vessel comparison
+  .addNode('vessel_info_agent', vesselInfoAgentNode)  // Vessel master data, count, list (VesselDetails API)
   .addNode('finalize', finalizeNode)           // Still LLM-based
 
   // ========================================================================
@@ -329,6 +334,8 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
     compliance_agent: 'compliance_agent',
     weather_agent: 'weather_agent',
     bunker_agent: 'bunker_agent',
+    vessel_selection_agent: 'vessel_selection_agent',
+    vessel_info_agent: 'vessel_info_agent',
     finalize: 'finalize',
     supervisor: 'supervisor',  // AGENTIC: Allow supervisor self-loop for continued reasoning
     [END]: END,
@@ -358,6 +365,16 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // Bunker Agent Workflow (deterministic - goes straight back to supervisor)
   // ========================================================================
   .addEdge('bunker_agent', 'supervisor')
+
+  // ========================================================================
+  // Vessel Selection Agent Workflow (goes back to supervisor)
+  // ========================================================================
+  .addEdge('vessel_selection_agent', 'supervisor')
+
+  // ========================================================================
+  // Vessel Info Agent Workflow (goes back to supervisor)
+  // ========================================================================
+  .addEdge('vessel_info_agent', 'supervisor')
 
   // ========================================================================
   // Finalize to End

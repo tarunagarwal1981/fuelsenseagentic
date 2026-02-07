@@ -9,6 +9,7 @@
 import Handlebars from 'handlebars';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { registerTemplateHelpers } from '@/lib/formatters/template-helpers';
 
 // ============================================================================
 // Types
@@ -38,6 +39,9 @@ let helpersRegistered = false;
 function registerHandlebarsHelpers(): void {
   if (helpersRegistered) return;
   helpersRegistered = true;
+
+  // Custom formatting helpers (formatNumber, formatCurrency, pluralize, etc.)
+  registerTemplateHelpers();
 
   // Comparison (for {{#if (eq a b)}} and similar)
   Handlebars.registerHelper('eq', function (a: unknown, b: unknown) {
@@ -234,9 +238,9 @@ export class TemplateEngine {
   }
 
   /**
-   * Map full state into data.route and data.bunker for charterer-style templates.
+   * Map full state into data.route, data.bunker, data.vessels for templates.
    */
-  private mapStateToData(state: TemplateState): { route?: Record<string, unknown>; bunker?: Record<string, unknown> } {
+  private mapStateToData(state: TemplateState): { route?: Record<string, unknown>; bunker?: Record<string, unknown>; vessels?: Record<string, unknown> } {
     const routeData = state.route_data as Record<string, unknown> | undefined;
     const bunkerData = state.bunker_analysis as Record<string, unknown> | undefined;
     const multiBunker = state.multi_bunker_plan as Record<string, unknown> | undefined;
@@ -288,7 +292,26 @@ export class TemplateEngine {
       recommendations: Array.isArray(recs) ? recs.map(mapRec) : [],
     };
 
-    return { route, bunker };
+    // Map vessel_specs for informational/vessel templates
+    const vesselSpecs = state.vessel_specs as Array<Record<string, unknown>> | undefined;
+    let vessels: Record<string, unknown> | undefined;
+    if (Array.isArray(vesselSpecs) && vesselSpecs.length > 0) {
+      const byType: Record<string, number> = {};
+      vesselSpecs.forEach((v) => {
+        const t = String(v.vessel_type ?? v.type ?? 'Unknown').toUpperCase();
+        byType[t] = (byType[t] ?? 0) + 1;
+      });
+      vessels = {
+        count: vesselSpecs.length,
+        types: byType,
+        sample: vesselSpecs.slice(0, 10).map((v) => ({
+          name: v.vessel_name ?? v.name ?? 'Unknown',
+          imo: v.imo ?? v.imo_number,
+        })),
+      };
+    }
+
+    return { route, bunker, vessels };
   }
 
   clearCache(): void {

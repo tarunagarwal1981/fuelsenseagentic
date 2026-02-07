@@ -1,0 +1,122 @@
+# Vessel Comparison Template
+# Template for vessel selection and comparison queries
+# Handles: vessel_selection, vessel_comparison, which vessel, compare vessels
+
+template:
+  query_type: "vessel_comparison"
+  name: "Vessel Comparison Template"
+  version: "1.0.0"
+  description: "Template for vessel selection and comparison queries"
+
+  sections:
+    # ========================================================================
+    # TIER 1: RECOMMENDATION (Primary answer)
+    # ========================================================================
+
+    - id: "vessel_recommendation"
+      title: "🏆 Recommended Vessel"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_comparison_analysis"
+      max_words: 80
+
+      content_source:
+        state_path: "vessel_comparison_analysis.recommended_vessel"
+        fallback: ""
+
+    # Alternative: use recommended_vessel directly
+    - id: "recommended_vessel_fallback"
+      title: "🏆 Recommended Vessel"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "recommended_vessel"
+
+      content_source:
+        state_path: "recommended_vessel"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 1: ANALYSIS SUMMARY
+    # ========================================================================
+
+    - id: "comparison_summary"
+      title: "📊 Comparison Summary"
+      tier: 1
+      priority: 2
+      visibility: "conditional"
+      condition: "vessel_comparison_analysis"
+      max_words: 150
+
+      content_source:
+        state_path: "vessel_comparison_analysis.analysis_summary"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: VESSEL RANKINGS
+    # ========================================================================
+
+    - id: "vessel_rankings"
+      title: "📋 Vessel Rankings"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_rankings"
+      collapsed: false
+      max_items: 10
+
+      content_source:
+        state_path: "vessel_rankings"
+        format: "table"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: Rankings from analysis
+    # ========================================================================
+
+    - id: "analysis_rankings"
+      title: "📋 Vessel Rankings"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_comparison_analysis.rankings"
+      collapsed: false
+      max_items: 10
+
+      content_source:
+        state_path: "vessel_comparison_analysis.rankings"
+        format: "table"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: VOYAGE DETAILS (context for comparison)
+    # ========================================================================
+
+    - id: "voyage_context"
+      title: "🗺️ Voyage Context"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "next_voyage_details"
+      collapsed: true
+
+      content_source:
+        state_path: "next_voyage_details"
+        fallback: ""
+
+    # ========================================================================
+    # FALLBACK
+    # ========================================================================
+
+    - id: "fallback"
+      title: "Comparison Result"
+      tier: 1
+      priority: 999
+      visibility: "always"
+
+      content_source:
+        state_path: "final_recommendation"
+        fallback: "No vessel comparison data available."
+
+  business_rules: []

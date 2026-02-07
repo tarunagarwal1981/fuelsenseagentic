@@ -4,7 +4,7 @@
  * Singleton pattern that initializes and provides access to:
  * - Infrastructure (Redis cache, Supabase database)
  * - Repositories (Port, Price, Vessel)
- * - Services (Route, Bunker, Weather)
+ * - Services (Route, Bunker, Weather, Vessel)
  * 
  * Usage:
  * ```typescript
@@ -25,6 +25,7 @@ import type { IWorldPortRepository } from './types';
 import { RouteService } from '@/lib/services/route.service';
 import { BunkerService } from '@/lib/services/bunker.service';
 import { WeatherService } from '@/lib/services/weather.service';
+import { VesselService } from '@/lib/services/vessel-service';
 import { PortResolutionService } from '@/lib/services/port-resolution.service';
 import { SeaRouteAPIClient } from '@/lib/services/sea-route-api-client';
 import { OpenMeteoAPIClient } from '@/lib/services/open-meteo-api-client';
@@ -136,6 +137,7 @@ export class ServiceContainer {
   private routeService!: RouteService;
   private bunkerService!: BunkerService;
   private weatherService!: WeatherService;
+  private vesselService?: VesselService;
   private portResolutionService!: PortResolutionService;
   private cacheEnabled: boolean = false;
 
@@ -337,6 +339,16 @@ export class ServiceContainer {
   }
 
   /**
+   * Get VesselService instance (lazy-init)
+   */
+  public getVesselService(): VesselService {
+    if (!this.vesselService) {
+      this.vesselService = new VesselService(this.vesselRepo);
+    }
+    return this.vesselService;
+  }
+
+  /**
    * Get Redis cache instance (may be MockCache if Redis unavailable)
    */
   public getCache(): RedisCache | MockCache {
@@ -368,6 +380,7 @@ export class ServiceContainer {
         await this.cache.clear('fuelsense:*');
         console.log('[SERVICE-CONTAINER] Cache cleared');
       }
+      this.vesselService = undefined;
     } catch (error) {
       console.error('[SERVICE-CONTAINER] Error during cleanup:', error);
     }

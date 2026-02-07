@@ -1,0 +1,109 @@
+# ROB (Remaining On Board) Projection Template
+# Template for fuel tracking and ROB projection queries
+# Handles: rob_projection, fuel tracking, ROB at waypoints
+
+template:
+  query_type: "rob_projection"
+  name: "ROB Projection Template"
+  version: "1.0.0"
+  description: "Template for fuel tracking and ROB projection queries"
+
+  sections:
+    # ========================================================================
+    # TIER 1: SAFETY STATUS (Critical - always visible when available)
+    # ========================================================================
+
+    - id: "rob_safety_status"
+      title: "⛽ Fuel Safety Status"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "rob_safety_status"
+      max_words: 100
+
+      content_source:
+        state_path: "rob_safety_status"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 1: ROB Tracking summary
+    # ========================================================================
+
+    - id: "rob_tracking_summary"
+      title: "⛽ ROB Projection"
+      tier: 1
+      priority: 2
+      visibility: "conditional"
+      condition: "rob_tracking"
+      max_words: 150
+
+      content_source:
+        state_path: "rob_tracking"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: ROB WAYPOINTS (Detail view)
+    # ========================================================================
+
+    - id: "rob_waypoints"
+      title: "📍 ROB at Key Waypoints"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "rob_waypoints"
+      collapsed: false
+      max_items: 10
+
+      content_source:
+        state_path: "rob_waypoints"
+        format: "rob_table"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: Route context (when ROB relates to voyage)
+    # ========================================================================
+
+    - id: "route_context"
+      title: "🗺️ Route Information"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "route_data"
+      collapsed: true
+      max_words: 100
+
+      content_source:
+        state_path: "route_data"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: ECA Consumption (when applicable)
+    # ========================================================================
+
+    - id: "eca_consumption"
+      title: "⚓ ECA Consumption"
+      tier: 2
+      priority: 3
+      visibility: "conditional"
+      condition: "eca_summary"
+      collapsed: true
+
+      content_source:
+        state_path: "eca_summary"
+        fallback: ""
+
+    # ========================================================================
+    # FALLBACK
+    # ========================================================================
+
+    - id: "fallback"
+      title: "Fuel Tracking"
+      tier: 1
+      priority: 999
+      visibility: "always"
+
+      content_source:
+        state_path: "final_recommendation"
+        fallback: "No ROB projection data available."
+
+  business_rules: []

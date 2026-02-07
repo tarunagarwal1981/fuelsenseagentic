@@ -30,6 +30,13 @@ import {
 } from './monitoring';
 import { extractCorrelationId } from '@/lib/utils/correlation';
 import { logAgentExecution, logError, logToolCall } from '@/lib/monitoring/axiom-logger';
+import {
+  logVesselComparison,
+  logVesselAnalysis,
+  logVesselRecommendation,
+  logVesselSelectionError,
+  logVesselSelectionStep,
+} from '@/lib/monitoring/agent-metrics';
 import { sanitizeToolInput, sanitizeToolOutput } from '@/lib/monitoring/sanitize';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
@@ -59,21 +66,24 @@ import {
   listAllVessels,
   type VesselProfile,
 } from '@/lib/services/vessel-service';
+import { VesselSelectionEngine } from '@/lib/engines/vessel-selection-engine';
+import { VesselSelectionQueryParser } from '@/lib/utils/vessel-selection-parser';
+import { AgentRegistry as CapabilityAgentRegistry } from '@/lib/registry/agent-registry';
+import { INTENT_CAPABILITY_MAP } from '@/lib/registry/agents';
+import { SafetyValidators } from './safety-validators';
 import type { ECAConsumptionOutput, RouteSegment as ECARouteSegment } from '@/lib/engines/eca-consumption-engine';
 import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
 import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
 import { planMultiPortBunker, needsMultiPortBunkering } from '@/lib/engines/multi-port-bunker-planner';
 import type { MultiBunkerAnalysis } from './state';
 import { formatResponse } from '../formatters/response-formatter';
-import { formatResponseWithTemplate, type TemplateFormattedResponse } from '../formatters/template-aware-formatter';
-import { isFeatureEnabled } from '../config/feature-flags';
+import { render as templateRender } from '../formatters/template-renderer';
 import { generateSynthesis } from './synthesis/synthesis-engine';
-import { classifyQuery } from './synthesis/query-classifier';
-import { getSynthesisEngine } from '@/lib/synthesis';
-import { getTemplateEngine } from '@/lib/synthesis/template-engine';
-import { getTemplateSelector } from '@/lib/synthesis/template-selector';
+import { AutoSynthesisEngine, type AutoSynthesisResult } from './synthesis/auto-synthesis-engine';
+import { ContextAwareTemplateSelector } from '@/lib/formatters/context-aware-template-selector';
+import { getTemplateLoader } from '@/lib/config/template-loader';
+import { generateLLMResponse } from './llm-response-generator';
 import type { SynthesizedResponse } from '@/lib/synthesis';
-import type { PlanExecutionResult } from '@/lib/types/execution-plan';
 import type { FormattedResponse } from '../formatters/response-formatter';
 import type { Port } from '@/lib/types';
 
@@ -158,11 +168,39 @@ function applyCircuitBreaker(
 
   console.log(`🎯 [SUPERVISOR] Routing to ${nextAgent} (attempt ${updatedCounts[nextAgent]}/${MAX_AGENT_CALLS})`);
 
-  // Return with updated counts
-  return {
+  // Return with updated counts - apply safety validation before returning
+  const result = {
     ...defaultReturn,
     agent_call_counts: updatedCounts,
   };
+  return applySafetyValidation(state, result);
+}
+
+/**
+ * Apply safety validators before returning supervisor routing decision.
+ * Overrides next_agent if critical maritime safety rules are violated.
+ */
+function applySafetyValidation(
+  state: MultiAgentState,
+  update: Partial<MultiAgentState>
+): Partial<MultiAgentState> {
+  const merged = { ...state, ...update };
+  const safetyCheck = SafetyValidators.validateAll(merged);
+  if (!safetyCheck.valid && safetyCheck.required_agent) {
+    console.warn(
+      `⚠️ [SUPERVISOR] Safety validation failed, redirecting to ${safetyCheck.required_agent}`
+    );
+    console.warn(`   Reason: ${safetyCheck.reason}`);
+    return {
+      ...update,
+      next_agent: safetyCheck.required_agent,
+      messages: [
+        ...(Array.isArray(update.messages) ? update.messages : []),
+        new HumanMessage(`[SAFETY VALIDATOR] ${safetyCheck.reason}`),
+      ],
+    };
+  }
+  return update;
 }
 
 function countAgentCalls(messages: any[]): Record<string, number> {
@@ -422,18 +460,168 @@ function summarizeInputForLog(state: MultiAgentState): Record<string, unknown> {
 }
 
 // ============================================================================
+// Capability-Based Routing Helpers
+// ============================================================================
+// These helpers enable the Supervisor to discover agents dynamically based on
+// capabilities and intent. Uses the Agent Registry (AgentDefinition) for
+// capability metadata, not the tool registry (AgentRegistryEntry).
+
+/**
+ * Get agents that can fulfill a capability
+ *
+ * @param capability - Capability needed (e.g., 'vessel_lookup')
+ * @returns Array of agent IDs that have this capability
+ */
+function getAgentsWithCapability(capability: string): string[] {
+  const registry = CapabilityAgentRegistry.getInstance();
+  const agents = registry.getByCapability(capability);
+  const enabled = agents.filter((a) => a.enabled).map((a) => a.id);
+  if (enabled.length > 0) {
+    console.log(`   [CAPABILITY-ROUTING] Found ${enabled.length} agent(s) for '${capability}': ${enabled.join(', ')}`);
+  }
+  return enabled;
+}
+
+/**
+ * Get capabilities needed for a user intent
+ *
+ * @param intent - User intent (e.g., 'vessel_information')
+ * @returns Array of capabilities needed
+ */
+function getCapabilitiesForIntent(intent: string): string[] {
+  const capabilities = INTENT_CAPABILITY_MAP[intent] || [];
+  if (capabilities.length > 0) {
+    console.log(`   [CAPABILITY-ROUTING] Intent '${intent}' requires capabilities: ${capabilities.join(', ')}`);
+  }
+  return capabilities;
+}
+
+/**
+ * Find best agent for current state and intent
+ *
+ * Uses registry to discover which agent can handle the query
+ * based on:
+ * 1. Capabilities needed
+ * 2. Data already available in state
+ * 3. Agent dependencies
+ *
+ * @param state - Current multi-agent state
+ * @param intent - User intent
+ * @returns Agent ID to route to, or null if unclear
+ */
+function findBestAgentForIntent(
+  state: MultiAgentState,
+  intent: string
+): string | null {
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log(`[CAPABILITY-ROUTING] Finding best agent for intent: ${intent}`);
+  console.log(`${'─'.repeat(60)}`);
+
+  // Get capabilities needed for this intent
+  const neededCapabilities = getCapabilitiesForIntent(intent);
+
+  if (neededCapabilities.length === 0) {
+    console.warn(`⚠️ [SUPERVISOR] Unknown intent: ${intent}`);
+    return null;
+  }
+
+  // Find agents that have these capabilities
+  const candidateAgents: string[] = [];
+  neededCapabilities.forEach((capability) => {
+    const agents = getAgentsWithCapability(capability);
+    agents.forEach((agentId) => {
+      if (!candidateAgents.includes(agentId)) {
+        candidateAgents.push(agentId);
+      }
+    });
+  });
+
+  if (candidateAgents.length === 0) {
+    console.warn(
+      `⚠️ [SUPERVISOR] No agents found for capabilities: ${neededCapabilities.join(', ')}`
+    );
+    return null;
+  }
+
+  console.log(
+    `   [CAPABILITY-ROUTING] Candidate agents: ${candidateAgents.join(', ')}`
+  );
+
+  // Filter by agents whose data requirements are already met
+  const registry = CapabilityAgentRegistry.getInstance();
+  const viableAgents = candidateAgents.filter((agentId) => {
+    const agent = registry.getById(agentId);
+    if (!agent) return false;
+
+    const required = agent.consumes?.required || [];
+    const allMet = required.every(
+      (field) => state[field as keyof MultiAgentState] != null
+    );
+
+    if (required.length > 0) {
+      const metStr = allMet ? '✅' : '❌';
+      console.log(
+        `   [CAPABILITY-ROUTING] ${agentId} prerequisites (${required.join(', ')}): ${metStr}`
+      );
+    }
+    return allMet || required.length === 0;
+  });
+
+  // Only return agents whose prerequisites are met (viable).
+  // When no viable agents, return null so caller uses default (e.g. route_agent).
+  const result = viableAgents[0] ?? null;
+  if (result) {
+    console.log(
+      `   [CAPABILITY-ROUTING] Selected agent: ${result} (${viableAgents.length} viable, ${candidateAgents.length} total)`
+    );
+  }
+  console.log(`${'─'.repeat(60)}\n`);
+
+  return result;
+}
+
+/**
+ * Map QueryIntent (from analyzeQueryIntent) to INTENT_CAPABILITY_MAP key
+ *
+ * Used for capability-based fallback when mapping user query to routing intent.
+ */
+function mapQueryIntentToCapabilityIntent(
+  intent: import('./intent-analyzer').QueryIntent,
+  userQuery: string
+): string {
+  if (intent.needs_vessel_selection) return 'vessel_selection';
+  if (intent.needs_bunker) return 'bunker_planning';
+  if (intent.needs_weather) return 'weather_analysis';
+  if (intent.needs_route) return 'route_planning';
+
+  // Vessel info / ROB queries (not captured by QueryIntent flags)
+  const q = userQuery.toLowerCase();
+  if (
+    /vessel|ship|imo|rob|noon report|consumption profile/.test(q) &&
+    !/compare|which vessel|best ship|select vessel/.test(q)
+  ) {
+    return 'vessel_information';
+  }
+  if (/rob|remaining.*fuel|fuel.*sufficient|enough fuel/.test(q)) {
+    return 'rob_projection';
+  }
+
+  return 'bunker_planning'; // default for maritime queries
+}
+
+// ============================================================================
 // Agent Node Implementations
 // ============================================================================
 
 /**
  * Supervisor Agent Node
- * 
+ *
  * Decides which agent to delegate to next based on available state data.
  * Routes to: route_agent → weather_agent → bunker_agent → finalize
- * 
+ *
  * Implements graceful degradation: if an agent fails, skip to next step.
- * 
- * AGENTIC MODE: When USE_AGENTIC_SUPERVISOR=true, uses ReAct pattern for 
+ *
+ * AGENTIC MODE: When USE_AGENTIC_SUPERVISOR=true, uses ReAct pattern for
  * intelligent reasoning-based routing instead of hard-coded rules.
  */
 export async function supervisorAgentNode(
@@ -459,7 +647,8 @@ export async function supervisorAgentNode(
     console.log('\n🎯 [SUPERVISOR] Using PLAN-BASED mode (single LLM call)...');
     
     try {
-      return await planBasedSupervisor(state);
+      const result = await planBasedSupervisor(state);
+      return applySafetyValidation(state, result);
     } catch (error) {
       logError(extractCorrelationId(state), error, { agent: 'supervisor' });
       console.error('❌ [SUPERVISOR] Plan-based supervisor failed, falling back to legacy:', error);
@@ -478,7 +667,8 @@ export async function supervisorAgentNode(
     try {
       // Dynamic import to avoid circular dependencies
       const { reasoningSupervisor } = await import('./agentic-supervisor');
-      return await reasoningSupervisor(state);
+      const result = await reasoningSupervisor(state);
+      return applySafetyValidation(state, result);
     } catch (error) {
       logError(extractCorrelationId(state), error, { agent: 'supervisor' });
       console.error('❌ [SUPERVISOR] Agentic supervisor failed, falling back to legacy:', error);
@@ -571,7 +761,76 @@ export async function supervisorAgentNode(
   const userQuery = userMessage 
     ? (typeof userMessage.content === 'string' ? userMessage.content : String(userMessage.content))
     : state.messages[0]?.content?.toString() || 'Plan bunker route';
-  
+
+  // ========================================================================
+  // Vessel Selection Query Detection (priority - before other routing)
+  // ========================================================================
+  const isVesselSelection = VesselSelectionQueryParser.isVesselSelectionQuery(userQuery);
+  if (isVesselSelection) {
+    const vesselInput = VesselSelectionQueryParser.parseVesselSelectionQuery(userQuery);
+
+    if (
+      vesselInput &&
+      vesselInput.vessel_names.length > 1 &&
+      vesselInput.next_voyage.origin &&
+      vesselInput.next_voyage.destination
+    ) {
+      console.log(`🎯 [SUPERVISOR] Detected vessel selection query for ${vesselInput.vessel_names.length} vessels`);
+
+      const voyage = vesselInput.next_voyage;
+      const voyageDesc = `${voyage.origin} to ${voyage.destination}`;
+
+      const vesselSelectionUpdate = {
+        ...state,
+        vessel_names: vesselInput.vessel_names,
+        next_voyage_details: voyage,
+        next_agent: 'vessel_selection_agent' as const,
+        messages: [
+          ...state.messages,
+          new HumanMessage(`Comparing ${vesselInput.vessel_names.join(', ')} for ${voyageDesc}`),
+        ],
+      };
+      return applySafetyValidation(state, vesselSelectionUpdate);
+    }
+  }
+
+  // ========================================================================
+  // Vessel Selection Intent & Extraction (for later routing when not early-returned)
+  // ========================================================================
+  const hasVesselSelectionIntent = isVesselSelection;
+
+  let extractedVesselNames: string[] = state.vessel_names ?? [];
+  let extractedNextVoyage: { origin: string; destination: string; departure_date?: string; speed?: number } | undefined =
+    state.next_voyage_details;
+
+  if (hasVesselSelectionIntent && extractedVesselNames.length === 0) {
+    const parsed = VesselSelectionQueryParser.parseVesselSelectionQuery(userQuery);
+    if (parsed) {
+      extractedVesselNames = parsed.vessel_names;
+      if (parsed.next_voyage.origin || parsed.next_voyage.destination) {
+        extractedNextVoyage = parsed.next_voyage;
+      }
+      if (extractedVesselNames.length > 0) {
+        console.log('🎯 [SUPERVISOR] Vessel selection intent detected. Extracted vessel names:', extractedVesselNames);
+      }
+    }
+  }
+
+  if (hasVesselSelectionIntent && !extractedNextVoyage?.origin && state.route_data) {
+    extractedNextVoyage = {
+      origin: state.route_data.origin_port_code ?? state.route_data.origin_port_name ?? '',
+      destination: state.route_data.destination_port_code ?? state.route_data.destination_port_name ?? '',
+    };
+    console.log('🎯 [SUPERVISOR] Using route_data for next_voyage_details:', extractedNextVoyage);
+  }
+  if (hasVesselSelectionIntent && !extractedNextVoyage?.origin && state.port_overrides) {
+    extractedNextVoyage = {
+      origin: state.port_overrides.origin ?? '',
+      destination: state.port_overrides.destination ?? '',
+    };
+    console.log('🎯 [SUPERVISOR] Using port_overrides for next_voyage_details:', extractedNextVoyage);
+  }
+
   // ========================================================================
   // Circuit Breaker Check (NEW)
   // ========================================================================
@@ -1329,11 +1588,11 @@ export async function supervisorAgentNode(
         if (state.agent_status?.weather_agent === 'failed') {
           console.warn('⚠️ [SUPERVISOR] Weather agent failed, skipping consumption calculation and going to bunker');
           // Skip weather consumption, go directly to bunker
-          return {
+          return applySafetyValidation(state, {
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
-          };
+          });
         }
         
         // Consumption is needed for bunker planning
@@ -1418,6 +1677,37 @@ export async function supervisorAgentNode(
       (state.port_prices && state.port_prices.prices_by_port && Object.keys(state.port_prices.prices_by_port).length > 0);
     
     if (weatherComplete && bunkerComplete) {
+      // Vessel Selection: If user wants to compare multiple vessels
+      const vesselNames = state.vessel_names ?? extractedVesselNames;
+      console.log('🎯 [SUPERVISOR] Pre-finalize check: vessel_comparison_analysis=', !!state.vessel_comparison_analysis, ', vessel_names=', vesselNames?.length ?? 0, vesselNames);
+
+      if (
+        !state.vessel_comparison_analysis &&
+        vesselNames &&
+        vesselNames.length > 1
+      ) {
+        console.log('🎯 [SUPERVISOR] Routing to vessel_selection_agent for multi-vessel comparison');
+        const vesselSelectionUpdate = {
+          next_agent: 'vessel_selection_agent' as const,
+          vessel_names: vesselNames,
+          next_voyage_details: state.next_voyage_details ?? extractedNextVoyage,
+          agent_context: agentContext,
+          messages: [
+            ...state.messages,
+            new HumanMessage('Comparing vessels for voyage selection'),
+          ],
+          degraded_mode: degradedMode,
+          missing_data: missingData,
+        };
+        return applySafetyValidation(state, vesselSelectionUpdate);
+      }
+
+      if (vesselNames && vesselNames.length <= 1) {
+        console.log('🎯 [SUPERVISOR] Skipping vessel_selection: only 1 vessel or none');
+      }
+      if (state.vessel_comparison_analysis) {
+        console.log('🎯 [SUPERVISOR] Skipping vessel_selection: comparison already done');
+      }
       console.log('🎯 [SUPERVISOR] Decision: All requested work complete → finalize');
       return {
         next_agent: "finalize",
@@ -1449,6 +1739,23 @@ export async function supervisorAgentNode(
       messages: [],
     };
   }
+
+  // 4b. Capability-based fallback for novel/unknown query patterns
+  // Uses registry to discover best agent - safety net without removing deterministic routing
+  const capabilityIntent = mapQueryIntentToCapabilityIntent(intent, userQuery);
+  const suggestedAgent = findBestAgentForIntent(state, capabilityIntent);
+  if (suggestedAgent) {
+    console.log(
+      `🎯 [SUPERVISOR] Capability resolver suggests: ${suggestedAgent} (intent: ${capabilityIntent})`
+    );
+    return applyCircuitBreaker(suggestedAgent, state, {
+      next_agent: suggestedAgent,
+      agent_context: agentContext,
+      messages: [],
+    });
+  }
+
+  // 4c. Ultimate fallback: route_agent when capability resolver has no suggestion
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
   return applyCircuitBreaker("route_agent", state, {
     next_agent: "route_agent",
@@ -3826,6 +4133,44 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
     return parts.join('\n');
   }
   
+  // Strategy 2.5: Vessel info response (fleet count/list from vessel_info_agent)
+  if (state.vessel_specs && Array.isArray(state.vessel_specs) && state.vessel_specs.length > 0) {
+    console.log('ℹ️ [LEGACY-OUTPUT] Using vessel info summary');
+    const vessels = state.vessel_specs;
+    const count = vessels.length;
+
+    // Group by type if available
+    const byType: Record<string, number> = {};
+    vessels.forEach((v: { vessel_type?: string; type?: string }) => {
+      const t = (v.vessel_type ?? v.type ?? 'Unknown').toUpperCase();
+      byType[t] = (byType[t] ?? 0) + 1;
+    });
+
+    let output = `🚢 **Fleet Summary**\n\n`;
+    output += `**Total vessels:** ${count}\n\n`;
+    if (Object.keys(byType).length > 0) {
+      output += `**By type:**\n`;
+      Object.entries(byType)
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([type, n]) => {
+          output += `• ${type}: ${n} vessel${n !== 1 ? 's' : ''}\n`;
+        });
+    }
+
+    // Show sample if few vessels
+    if (count <= 10) {
+      output += `\n**Vessels:**\n`;
+      vessels.slice(0, 10).forEach((v: { vessel_name?: string; name?: string; imo?: string; vessel_type?: string }) => {
+        const name = v.vessel_name ?? v.name ?? 'Unknown';
+        const imo = v.imo ? ` (IMO ${v.imo})` : '';
+        const type = v.vessel_type ? ` - ${v.vessel_type}` : '';
+        output += `• ${name}${imo}${type}\n`;
+      });
+    }
+
+    return output;
+  }
+
   // Strategy 3: Route-only response
   if (state.route_data) {
     console.log('ℹ️ [LEGACY-OUTPUT] Using route-only summary');
@@ -3840,6 +4185,348 @@ async function generateLegacyTextOutput(state: MultiAgentState): Promise<string>
   // Strategy 4: Generic completion message
   console.warn('⚠️ [LEGACY-OUTPUT] No synthesis or bunker data - using generic message');
   return 'Analysis completed. Please check the structured response for details.';
+}
+
+/**
+ * Vessel Selection Agent Node
+ *
+ * Compares vessels for voyage planning, projects ROB at voyage end,
+ * checks feasibility, calculates bunker requirements per vessel,
+ * and ranks vessels by cost.
+ *
+ * Deterministic workflow - uses VesselService, BunkerService.
+ * No LLM tool-calling.
+ */
+export async function vesselSelectionAgentNode(
+  state: MultiAgentState
+): Promise<Partial<MultiAgentState>> {
+  const cid = extractCorrelationId(state);
+  logAgentExecution('vessel_selection_agent', cid, 0, 'started', {
+    input: summarizeInputForLog(state),
+  });
+
+  console.log('\n🚢 [VESSEL-SELECTION-AGENT] Starting vessel comparison analysis...');
+  const startTime = Date.now();
+
+  const vesselCount = state.vessel_names?.length ?? 0;
+  const voyageDetails = state.next_voyage_details;
+  console.log(`🚢 [VESSEL-SELECTION-AGENT] Input: ${vesselCount} vessel(s), voyage: ${voyageDetails?.origin ?? 'N/A'} → ${voyageDetails?.destination ?? 'N/A'}`);
+
+  try {
+    // ========================================================================
+    // Validate inputs
+    // ========================================================================
+
+    if (!state.vessel_names || state.vessel_names.length === 0) {
+      console.error('❌ [VESSEL-SELECTION-AGENT] Missing vessel_names array - cannot compare vessels');
+      const duration = Date.now() - startTime;
+      logVesselSelectionError({
+        correlation_id: cid,
+        error_type: 'invalid_input',
+        error_message: 'Vessel names are required for vessel comparison. Please specify vessels to compare.',
+      });
+      recordAgentExecution('vessel_selection_agent', duration, false);
+      logAgentExecution('vessel_selection_agent', cid, duration, 'failed', {});
+      return {
+        agent_status: {
+          ...(state.agent_status || {}),
+          vessel_selection_agent: 'failed',
+        },
+        agent_errors: {
+          ...(state.agent_errors || {}),
+          vessel_selection_agent: {
+            error: 'Vessel names are required for vessel comparison. Please specify vessels to compare.',
+            timestamp: Date.now(),
+          },
+        },
+        messages: [
+          ...state.messages,
+          new AIMessage({
+            content: 'Error: Vessel names are required for vessel comparison. Please specify vessels to compare.',
+          }),
+        ],
+      };
+    }
+
+    if (!state.next_voyage_details || !state.next_voyage_details.origin || !state.next_voyage_details.destination) {
+      console.error('❌ [VESSEL-SELECTION-AGENT] Missing next_voyage_details (origin, destination)');
+      const duration = Date.now() - startTime;
+      logVesselSelectionError({
+        correlation_id: cid,
+        error_type: 'invalid_input',
+        error_message: 'Next voyage details (origin and destination) are required for vessel comparison.',
+      });
+      recordAgentExecution('vessel_selection_agent', duration, false);
+      logAgentExecution('vessel_selection_agent', cid, duration, 'failed', {});
+      return {
+        agent_status: {
+          ...(state.agent_status || {}),
+          vessel_selection_agent: 'failed',
+        },
+        agent_errors: {
+          ...(state.agent_errors || {}),
+          vessel_selection_agent: {
+            error: 'Next voyage details (origin and destination) are required for vessel comparison.',
+            timestamp: Date.now(),
+          },
+        },
+        messages: [
+          ...state.messages,
+          new AIMessage({
+            content: 'Error: Next voyage details (origin and destination) are required for vessel comparison.',
+          }),
+        ],
+      };
+    }
+
+    console.log('✅ [VESSEL-SELECTION-AGENT] Prerequisites met: vessel_names and next_voyage_details');
+
+    // ========================================================================
+    // Step 2: Parallel vessel analysis
+    // ========================================================================
+
+    const nextVoyage = {
+      origin: state.next_voyage_details.origin,
+      destination: state.next_voyage_details.destination,
+      departure_date: state.next_voyage_details.departure_date,
+      speed: state.next_voyage_details.speed,
+    };
+
+    const analysisStart = Date.now();
+    const analysisResults = await Promise.allSettled(
+      state.vessel_names.map((vesselName) =>
+        (async () => {
+          const start = Date.now();
+          const result = await VesselSelectionEngine.analyzeVessel({
+            vessel_name: vesselName,
+            next_voyage: nextVoyage,
+            route_data: state.route_data ?? undefined,
+            bunker_analysis: state.bunker_analysis ?? undefined,
+          });
+          return { result, duration_ms: Date.now() - start };
+        })()
+      )
+    );
+    const analysisDuration = Date.now() - analysisStart;
+    logVesselSelectionStep('analysis', analysisDuration);
+
+    const analyses: import('@/lib/types/vessel-selection').VesselAnalysisResult[] = [];
+    const defaultProfile = getDefaultVesselProfile();
+
+    for (let i = 0; i < analysisResults.length; i++) {
+      const settled = analysisResults[i];
+      const vesselName = state.vessel_names[i];
+
+      if (settled.status === 'fulfilled') {
+        const { result, duration_ms } = settled.value;
+        analyses.push(result);
+        logVesselAnalysis({
+          correlation_id: cid,
+          vessel_name: vesselName,
+          duration_ms,
+          can_proceed_without_bunker: result.can_proceed_without_bunker,
+          total_voyage_cost: result.total_voyage_cost,
+          feasibility_score: result.feasibility_score,
+          success: true,
+        });
+        console.log(`✅ [VESSEL-SELECTION-AGENT] Analyzed ${vesselName}: cost=$${result.total_voyage_cost.toFixed(0)}, can_proceed=${result.can_proceed_without_bunker}`);
+      } else {
+        const errMsg = settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+        console.error(`❌ [VESSEL-SELECTION-AGENT] Failed to analyze ${vesselName}:`, errMsg);
+        logVesselSelectionError({
+          correlation_id: cid,
+          error_type: 'failed_analysis',
+          vessel_name: vesselName,
+          error_message: errMsg,
+        });
+        analyses.push({
+          vessel_name: vesselName,
+          vessel_profile: defaultProfile,
+          current_voyage_end_port: nextVoyage.origin,
+          current_voyage_end_eta: new Date(),
+          projected_rob_at_start: defaultProfile.initial_rob,
+          next_voyage_requirements: { VLSFO: 0, LSMGO: 0 },
+          can_proceed_without_bunker: false,
+          total_voyage_cost: Number.POSITIVE_INFINITY,
+          cost_breakdown: {
+            base_fuel_cost: 0,
+            bunker_fuel_cost: 0,
+            bunker_port_fees: 0,
+            deviation_cost: 0,
+            time_cost: 0,
+            total_cost: Number.POSITIVE_INFINITY,
+          },
+          feasibility_score: 0,
+          risks: [`Analysis failed: ${errMsg}`],
+        });
+        logVesselAnalysis({
+          correlation_id: cid,
+          vessel_name: vesselName,
+          duration_ms: 0,
+          can_proceed_without_bunker: false,
+          total_voyage_cost: Number.POSITIVE_INFINITY,
+          feasibility_score: 0,
+          success: false,
+        });
+      }
+    }
+
+    if (analyses.length === 0) {
+      throw new Error('No vessel analyses completed successfully');
+    }
+
+    // ========================================================================
+    // Step 3: Rank & compare
+    // ========================================================================
+
+    const rankStart = Date.now();
+    const rankings = VesselSelectionEngine.rankVessels(analyses);
+    const comparisonMatrix = VesselSelectionEngine.generateComparisonMatrix(analyses);
+    const recommendedVessel = rankings[0]?.vessel_name ?? state.vessel_names[0];
+    logVesselSelectionStep('ranking', Date.now() - rankStart);
+
+    const costs = analyses.map((a) => a.total_voyage_cost).filter((c) => Number.isFinite(c) && c < Number.POSITIVE_INFINITY);
+    const costSavingsUsd = costs.length >= 2 ? Math.max(...costs) - Math.min(...costs) : 0;
+
+    const duration = Date.now() - startTime;
+    logVesselComparison({
+      correlation_id: cid,
+      vessel_count: analyses.length,
+      recommended_vessel: recommendedVessel,
+      total_execution_time_ms: duration,
+      origin: nextVoyage.origin,
+      destination: nextVoyage.destination,
+      cost_savings_usd: costSavingsUsd > 0 ? costSavingsUsd : undefined,
+    });
+
+    const topRanking = rankings[0];
+    if (topRanking) {
+      const topAnalysis = analyses.find((a) => a.vessel_name === topRanking.vessel_name);
+      logVesselRecommendation({
+        correlation_id: cid,
+        vessel_name: topRanking.vessel_name,
+        rank: topRanking.rank,
+        score: topRanking.score,
+        recommendation_reason: topRanking.recommendation_reason,
+        total_cost_usd: topAnalysis?.total_voyage_cost,
+      });
+    }
+
+    console.log(`📊 [VESSEL-SELECTION-AGENT] Ranked ${rankings.length} vessel(s). Recommended: ${recommendedVessel}`);
+
+    // ========================================================================
+    // Step 4: Build state updates
+    // ========================================================================
+
+    const perVesselBunkerPlans: Record<string, unknown> = {};
+    const vesselFeasibilityMatrix: Record<string, 'feasible' | 'marginal' | 'infeasible'> = {};
+
+    for (const a of analyses) {
+      if (a.bunker_plan) {
+        perVesselBunkerPlans[a.vessel_name] = a.bunker_plan;
+      }
+      vesselFeasibilityMatrix[a.vessel_name] =
+        a.feasibility_score >= 80 ? 'feasible' : a.feasibility_score >= 50 ? 'marginal' : 'infeasible';
+    }
+
+    const vesselRankingsForState = rankings.map((r) => {
+      const analysis = analyses.find((a) => a.vessel_name === r.vessel_name);
+      return {
+        rank: r.rank,
+        vessel_name: r.vessel_name,
+        score: r.score,
+        recommendation_reason: r.recommendation_reason,
+        total_cost_usd: analysis?.total_voyage_cost ?? 0,
+        feasibility: vesselFeasibilityMatrix[r.vessel_name] ?? 'infeasible',
+      };
+    });
+
+    const analysisSummary = `Compared ${analyses.length} vessel(s). Recommended: ${recommendedVessel} (${rankings[0]?.recommendation_reason ?? 'best cost/feasibility'}).`;
+
+    console.log(`📊 [VESSEL-SELECTION-AGENT] Analysis complete: ${vesselRankingsForState.length} vessel(s) ranked`);
+    recordAgentTime('vessel_selection_agent', duration);
+    recordAgentExecution('vessel_selection_agent', duration, true);
+    logAgentExecution('vessel_selection_agent', cid, duration, 'success', {});
+
+    const messageContent = {
+      type: 'vessel_selection_complete',
+      vessels_analyzed: analyses.length,
+      recommended_vessel: recommendedVessel,
+      rankings_count: vesselRankingsForState.length,
+      analysis_summary: analysisSummary,
+      comparison_matrix: comparisonMatrix,
+      top_3: vesselRankingsForState.slice(0, 3).map((r) => ({
+        rank: r.rank,
+        vessel: r.vessel_name,
+        reason: r.recommendation_reason,
+      })),
+    };
+
+    const vesselComparisonAnalysisForState = analyses.map((a) => ({
+      vessel_name: a.vessel_name,
+      projected_rob: a.projected_rob_at_start,
+      bunker_plan: a.bunker_plan,
+      total_cost_usd: a.total_voyage_cost,
+      feasibility: vesselFeasibilityMatrix[a.vessel_name],
+      planning_data: a,
+    }));
+
+    const vesselComparisonAnalysisAggregate = {
+      vessels_analyzed: vesselComparisonAnalysisForState,
+      rankings: vesselRankingsForState,
+      recommended_vessel: recommendedVessel,
+      analysis_summary: analysisSummary,
+      comparison_matrix: comparisonMatrix,
+    };
+
+    return {
+      vessel_comparison_analysis: vesselComparisonAnalysisAggregate,
+      vessel_rankings: vesselRankingsForState,
+      recommended_vessel: recommendedVessel,
+      per_vessel_bunker_plans: Object.keys(perVesselBunkerPlans).length > 0 ? perVesselBunkerPlans : undefined,
+      vessel_feasibility_matrix: vesselFeasibilityMatrix,
+      next_agent: 'finalize',
+      agent_status: {
+        ...(state.agent_status || {}),
+        vessel_selection_agent: 'success',
+      },
+      messages: [
+        ...state.messages,
+        new AIMessage({
+          content: JSON.stringify(messageContent),
+        }),
+      ],
+    };
+  } catch (error: unknown) {
+    const duration = Date.now() - startTime;
+    const err = error instanceof Error ? error : new Error(String(error));
+    logError(extractCorrelationId(state), err, { agent: 'vessel_selection_agent' });
+    console.error(`❌ [VESSEL-SELECTION-AGENT] Error after ${duration}ms:`, err.message);
+
+    recordAgentExecution('vessel_selection_agent', duration, false);
+    logAgentExecution('vessel_selection_agent', cid, duration, 'failed', {});
+
+    return {
+      next_agent: 'finalize',
+      agent_status: {
+        ...(state.agent_status || {}),
+        vessel_selection_agent: 'failed',
+      },
+      agent_errors: {
+        ...(state.agent_errors || {}),
+        vessel_selection_agent: {
+          error: err.message,
+          timestamp: Date.now(),
+        },
+      },
+      messages: [
+        ...state.messages,
+        new AIMessage({
+          content: `Vessel selection workflow encountered an error: ${err.message}. The system will continue with available data.`,
+        }),
+      ],
+    };
+  }
 }
 
 export async function finalizeNode(state: MultiAgentState) {
@@ -4061,27 +4748,27 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     // Create mutable state copy for adding synthesis
     let updatedState = { ...state };
     let synthesizedResponse: SynthesizedResponse | null = null;
+    let autoSynthesisResult: AutoSynthesisResult | null = null;
     
     // Check if we're in plan execution mode (via _stage_context from plan executor)
     const isPlanExecution = !!(state as any)._stage_context;
     
     if (isPlanExecution) {
       // During plan execution, skip LLM-based synthesis to avoid LLM calls
-      // Use template-only formatting with existing state data
-      console.log('⏭️  [FINALIZE] Plan execution mode detected - skipping LLM-based synthesis');
-      console.log('   - Using template-only formatting (no LLM calls)');
+      // Use auto-discovery synthesis (no LLM calls) - discovers data from agent outputs
+      console.log('⏭️  [FINALIZE] Plan execution mode detected - using auto-discovery synthesis (no LLM calls)');
       
-      // Create minimal synthesis response from existing state data
-      // Plan execution mode: no LLM synthesis, so use execution_plan queryType or fallback
+      const synthesis = AutoSynthesisEngine.synthesizeResponse(state);
+      autoSynthesisResult = synthesis;
       synthesizedResponse = {
         synthesizedAt: new Date(),
         correlationId: extractCorrelationId(state),
-        queryType: state.execution_plan?.queryType ?? 'bunker_planning',
+        queryType: synthesis.context.query_type,
         success: true,
-        data: {},
-        insights: [],
-        recommendations: [],
-        warnings: [],
+        data: synthesis.context.available_data as Record<string, unknown>,
+        insights: synthesis.insights as SynthesizedResponse['insights'],
+        recommendations: synthesis.recommendations as SynthesizedResponse['recommendations'],
+        warnings: synthesis.warnings as SynthesizedResponse['warnings'],
         alerts: state.needs_clarification ? [{
           level: 'high',
           type: 'clarification',
@@ -4092,7 +4779,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         }] : [],
         metrics: {
           duration_ms: 0,
-          stages_completed: 0,
+          stages_completed: synthesis.context.agents_executed.length,
           stages_failed: 0,
           stages_skipped: 0,
           llm_calls: 0,
@@ -4100,63 +4787,49 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
           total_cost_usd: 0,
           success_rate: 1.0,
         },
-        reasoning: 'Template-based formatting without LLM synthesis (plan execution mode)',
+        reasoning: `Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`,
         nextSteps: [],
       };
       
       updatedState.synthesized_response = synthesizedResponse;
     } else {
-      // Normal execution mode - use LLM-based synthesis
-      // Use new decoupled synthesis engine
+      // Normal execution mode - use auto-discovering synthesis engine
+      // Automatically discovers data from ANY agent output (no manual updates when adding agents)
       try {
-        const synthesisEngine = getSynthesisEngine();
-        const executionResult: PlanExecutionResult = state.execution_result ? {
-          planId: state.execution_result.planId || state.correlation_id || 'unknown',
-          success: state.execution_result.success,
-          startedAt: new Date(),
-          completedAt: new Date(),
-          durationMs: state.execution_result.durationMs || 0,
-          stagesCompleted: state.execution_result.stagesCompleted || [],
-          stagesFailed: state.execution_result.stagesFailed || [],
-          stagesSkipped: state.execution_result.stagesSkipped || [],
-          stageResults: [],
-          finalState: state,
-          costs: state.execution_result.costs || {
-            llmCalls: 0,
-            apiCalls: 0,
-            actualCostUSD: 0,
-          },
-          errors: (state.execution_result.errors || []).map(err => ({
-            ...err,
-            timestamp: new Date(),
-            recoverable: false,
-          })),
-        } : {
-          planId: state.correlation_id || 'unknown',
+        const synthesis = AutoSynthesisEngine.synthesizeResponse(state);
+        autoSynthesisResult = synthesis;
+        
+        console.log('✅ [FINALIZE] Auto-synthesis complete:');
+        console.log(`   Primary domain: ${synthesis.context.primary_domain}`);
+        console.log(`   Query type: ${synthesis.context.query_type}`);
+        console.log(`   Agents executed: ${synthesis.context.agents_executed.join(', ') || '(none)'}`);
+        console.log(`   Data extracted: ${synthesis.extracted_data.length} items`);
+        console.log(`   Insights: ${synthesis.insights.length}`);
+        
+        // Adapt AutoSynthesisResult to SynthesizedResponse-like format for template engine
+        synthesizedResponse = {
+          synthesizedAt: new Date(),
+          correlationId: extractCorrelationId(state),
+          queryType: synthesis.context.query_type,
           success: true,
-          startedAt: new Date(),
-          completedAt: new Date(),
-          durationMs: 0,
-          stagesCompleted: [],
-          stagesFailed: [],
-          stagesSkipped: [],
-          stageResults: [],
-          finalState: state,
-          costs: {
-            llmCalls: 0,
-            apiCalls: 0,
-            actualCostUSD: 0,
+          data: synthesis.context.available_data as Record<string, unknown>,
+          insights: synthesis.insights as SynthesizedResponse['insights'],
+          recommendations: synthesis.recommendations as SynthesizedResponse['recommendations'],
+          warnings: synthesis.warnings as SynthesizedResponse['warnings'],
+          alerts: [],
+          metrics: {
+            duration_ms: 0,
+            stages_completed: synthesis.context.agents_executed.length,
+            stages_failed: 0,
+            stages_skipped: 0,
+            llm_calls: 0,
+            api_calls: 0,
+            total_cost_usd: 0,
+            success_rate: 1.0,
           },
-          errors: [],
+          reasoning: `Auto-discovered from ${synthesis.context.agents_executed.length} agents`,
+          nextSteps: [],
         };
-        
-        synthesizedResponse = await synthesisEngine.synthesize(state, executionResult);
-        
-        console.log('✅ [FINALIZE] Decoupled synthesis successful');
-        console.log(`   Insights: ${synthesizedResponse.insights.length}`);
-        console.log(`   Recommendations: ${synthesizedResponse.recommendations.length}`);
-        console.log(`   Warnings: ${synthesizedResponse.warnings.length}`);
-        console.log(`   Alerts: ${synthesizedResponse.alerts.length}`);
         
         // Store synthesized response in state (separate from formatting)
         updatedState.synthesized_response = synthesizedResponse;
@@ -4183,60 +4856,44 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     }
     
     // ========================================================================
-    // PHASE 2: TEMPLATE FORMATTING (DECOUPLED FROM SYNTHESIS)
+    // PHASE 2: RESPONSE RENDERING (TEMPLATE-FIRST, LLM FALLBACK)
     // ========================================================================
     
-    console.log('🎨 [FINALIZE] Phase 2: Template formatting');
+    console.log('🎨 [FINALIZE] Phase 2: Response rendering');
     
-    let renderedResponse: string | null = null;
+    let finalTextOutput: string;
     
-    // Use new template system if synthesized response is available
-    if (synthesizedResponse) {
+    if (autoSynthesisResult) {
+      // Template-first, LLM fallback when template fails
       try {
-        const templateEngine = getTemplateEngine();
-        const templateSelector = getTemplateSelector();
+        const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
+        console.log(`🎨 [FINALIZE] Attempting template: ${templateName}`);
         
-        // Detect stakeholder and format from request context
-        const requestContext = state.request_context || {};
-        const stakeholder = templateSelector.detectStakeholder(requestContext);
-        const format = templateSelector.detectFormat(requestContext);
-        // Use query classifier when synthesis doesn't provide classification (decoupled synthesis flow)
-        const rawMessage = state.messages?.[0]?.content;
-        const userMessage = typeof rawMessage === 'string' ? rawMessage : (rawMessage != null ? String(rawMessage) : '');
-        const queryType = updatedState.synthesized_insights?.synthesis_metadata?.classification_result?.queryType
-          ?? (() => { const c = classifyQuery(userMessage, state); return c.queryType; })()
-          ?? state.execution_plan?.queryType
-          ?? 'bunker_planning';
-
-        // Select template
-        const templateId = templateSelector.selectTemplate(queryType, stakeholder, format);
+        const loadResult = getTemplateLoader().loadTemplate(templateName);
         
-        console.log(`   Template: ${templateId} (stakeholder: ${stakeholder}, format: ${format})`);
-        
-        // Render template (pass updatedState so template gets data.route, data.bunker from route_data / bunker_analysis)
-        renderedResponse = await templateEngine.render(synthesizedResponse, templateId, {
-          stakeholder: stakeholder as any,
-          format: format as any,
-          verbosity: requestContext.verbosity || 'detailed',
-          includeMetrics: requestContext.includeMetrics || false,
-          includeReasoning: requestContext.includeReasoning !== false,
-        }, updatedState as Record<string, unknown>);
-        
-        console.log(`✅ [FINALIZE] Template rendered successfully (${renderedResponse.length} chars)`);
+        if (loadResult.exists && loadResult.template) {
+          console.log(`✅ [FINALIZE] Using template: ${loadResult.template.template.name}`);
+          finalTextOutput = await templateRender(loadResult, {
+            synthesis: autoSynthesisResult,
+            state: updatedState,
+          });
+          console.log(`✅ [FINALIZE] Template rendered successfully (${finalTextOutput.length} chars)`);
+        } else {
+          throw new Error(`Template not found: ${templateName}`);
+        }
       } catch (templateError: unknown) {
-        logError(extractCorrelationId(state), templateError, { agent: 'finalize', step: 'templateRendering' });
         const message = templateError instanceof Error ? templateError.message : String(templateError);
-        console.error('❌ [FINALIZE] Template rendering error:', message);
-        console.error('   Falling back to legacy formatting');
-        renderedResponse = null;
+        console.warn(`⚠️ [FINALIZE] Template rendering failed: ${message}`);
+        console.log('🤖 [FINALIZE] Falling back to LLM response generation');
+        logError(extractCorrelationId(state), templateError, { agent: 'finalize', step: 'templateRendering' });
+        
+        finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
+        console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
       }
+    } else {
+      // No synthesis (e.g. synthesis failed) - use legacy formatting
+      finalTextOutput = await generateLegacyTextOutput(updatedState);
     }
-    
-    // Generate legacy text output (backwards compatible)
-    let legacyTextOutput = await generateLegacyTextOutput(updatedState);
-    
-    // Use template-rendered response if available, otherwise use legacy
-    const finalTextOutput = renderedResponse || legacyTextOutput;
     
     // Add degradation warning if system is in degraded mode
     if (isDegraded && missingData.length > 0) {
@@ -4253,42 +4910,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         `- For critical decisions, verify data independently\n\n` +
         `---\n\n`;
       
-      legacyTextOutput = degradationWarning + legacyTextOutput;
-    }
-    
-    // Generate new formatted response (OPTIONAL)
-    let formattedResponse: TemplateFormattedResponse | null = null;
-    
-    if (isFeatureEnabled('USE_RESPONSE_FORMATTER')) {
-      console.log('🎛️ [FINALIZE] Template-aware formatter enabled, generating structured output...');
-      
-      try {
-        // Use template-aware formatter with YAML templates and business rules
-        // Pass updatedState so formatter has access to synthesis data
-        formattedResponse = formatResponseWithTemplate(updatedState);
-        console.log('✅ [FINALIZE] Template response generated successfully');
-        
-        // Log template metadata
-        if (formattedResponse.template_metadata) {
-          console.log(`   Template: ${formattedResponse.template_metadata.template_name} v${formattedResponse.template_metadata.version}`);
-          console.log(`   Sections: ${formattedResponse.template_metadata.sections_count}`);
-          console.log(`   Rules Applied: ${formattedResponse.template_metadata.rules_applied}`);
-        }
-        
-        // Check if synthesis data was used
-        if (updatedState.synthesized_insights) {
-          console.log('   ✅ Synthesis insights included in response');
-        }
-        
-      } catch (error: unknown) {
-        logError(extractCorrelationId(state), error, { agent: 'finalize', step: 'formatResponseWithTemplate' });
-        const message = error instanceof Error ? error.message : String(error);
-        console.error('❌ [FINALIZE] Template formatter error:', message);
-        console.error('   Falling back to legacy text output only');
-        // Continue with legacyTextOutput - no failure
-      }
-    } else {
-      console.log('ℹ️ [FINALIZE] Response formatter disabled, using legacy text only');
+      finalTextOutput = degradationWarning + finalTextOutput;
     }
     
     // ========================================================================
@@ -4303,8 +4925,8 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     console.log('✅ [FINALIZE] Node: Final recommendation generated');
     
     return {
-      final_recommendation: finalTextOutput,  // Template-rendered or legacy
-      formatted_response: formattedResponse,   // OPTIONAL (may be null)
+      final_recommendation: finalTextOutput,  // Template-rendered or LLM fallback or legacy
+      formatted_response: null,               // Single template pass in Phase 2
       synthesized_insights: updatedState.synthesized_insights, // Legacy format (backwards compatible)
       synthesized_response: synthesizedResponse, // NEW: Decoupled synthesis (format-agnostic)
       synthesis_data: synthesizedResponse, // Alias for API responses
@@ -4465,6 +5087,23 @@ AgentRegistry.registerAgent({
   ],
   prerequisites: ['vessel_timeline'],
   outputs: ['weather_forecast', 'weather_consumption', 'port_weather_status']
+});
+
+// Register Vessel Selection Agent
+AgentRegistry.registerAgent({
+  agent_name: 'vessel_selection_agent',
+  description:
+    'Compares vessels for voyage planning, projects ROB at voyage end, checks feasibility, ranks vessels by cost. Deterministic workflow.',
+  available_tools: [],
+  prerequisites: ['vessel_names', 'next_voyage_details'],
+  outputs: ['vessel_comparison_analysis', 'vessel_rankings', 'recommended_vessel'],
+  is_deterministic: true,
+  workflow_steps: [
+    'Validate vessel_names and next_voyage_details',
+    'Fetch vessel specs and consumption profiles',
+    'Calculate route and ROB projection per vessel',
+    'Rank vessels by total cost',
+  ],
 });
 
 // Register Bunker Agent (DETERMINISTIC WORKFLOW)

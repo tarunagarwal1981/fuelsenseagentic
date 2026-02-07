@@ -18,9 +18,20 @@ export interface PatternMatch {
   /** Whether a pattern was matched */
   matched: boolean;
   /** Type of query detected */
-  type: 'port_weather' | 'route_calculation' | 'bunker_planning' | 'compliance' | 'ambiguous';
+  type:
+    | 'port_weather'
+    | 'route_calculation'
+    | 'bunker_planning'
+    | 'compliance'
+    | 'vessel_info'
+    | 'ambiguous';
   /** Recommended agent to call */
-  agent?: 'weather_agent' | 'route_agent' | 'bunker_agent' | 'compliance_agent';
+  agent?:
+    | 'weather_agent'
+    | 'route_agent'
+    | 'bunker_agent'
+    | 'compliance_agent'
+    | 'vessel_info_agent';
   /** Confidence score 0-100 */
   confidence: number;
   /** Extracted data from the query */
@@ -126,6 +137,17 @@ const COMPLIANCE_PATTERNS = [
   /emission\s+(?:control|zone|requirement)/i,
   /regulatory\s+(?:compliance|requirement)/i,
   /sulphur\s+(?:cap|limit|requirement)/i,
+];
+
+/**
+ * Vessel info patterns - Fleet list, vessel count, vessel details
+ */
+const VESSEL_INFO_PATTERNS = [
+  /how\s+many\s+vessels?\s+(?:do\s+we\s+have|are\s+there|in\s+(?:our\s+)?fleet)/i,
+  /(?:list|show|get)\s+(?:all\s+)?(?:our\s+)?vessels?/i,
+  /(?:number|count)\s+of\s+vessels?/i,
+  /vessels?\s+(?:we\s+have|in\s+fleet|in\s+the\s+system)/i,
+  /(?:our\s+)?fleet\s+(?:list|count|overview|vessels?)/i,
 ];
 
 /**
@@ -279,6 +301,23 @@ export function matchQueryPattern(query: string): PatternMatch {
         confidence: 85,
         extracted_data: {},
         reason: 'Matched compliance/ECA pattern',
+      };
+    }
+  }
+
+  // ============================================================================
+  // Pattern 6: Vessel Info Queries (fleet list, vessel count)
+  // ============================================================================
+  
+  for (const pattern of VESSEL_INFO_PATTERNS) {
+    if (pattern.test(trimmedQuery)) {
+      return {
+        matched: true,
+        type: 'vessel_info',
+        agent: 'vessel_info_agent',
+        confidence: 90,
+        extracted_data: {},
+        reason: 'Matched vessel info/fleet list pattern',
       };
     }
   }

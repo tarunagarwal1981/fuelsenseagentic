@@ -9,21 +9,20 @@
  * - Build year
  * - Operator/manager (if available)
  *
+ * Uses FuelSense VesselDetails API (VESSEL_MASTER_API_URL or NEXT_PUBLIC_FUELSENSE_API_URL).
  * Used by both Hull and Machinery Performance agents for vessel context.
  */
 
 import { z } from 'zod';
 import type { VesselBasicInfo } from '@/lib/types/vessel-performance';
 import { ServiceContainer } from '@/lib/repositories/service-container';
+import { VesselDetailsClient } from '@/lib/clients/vessel-details-client';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const VESSEL_MASTER_API_ENDPOINT =
-  process.env.VESSEL_MASTER_API_URL || 'https://api.example.com/v1/vessels';
-
-const VESSEL_MASTER_API_KEY = process.env.VESSEL_MASTER_API_KEY;
+const vesselDetailsClient = new VesselDetailsClient();
 
 /** Cache for 24 hours (vessel specs are static) */
 const CACHE_TTL_SECONDS = 86400;
@@ -116,46 +115,24 @@ export async function fetchVesselSpecs(
   }
 
   try {
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (imo) params.append('imo', imo);
-    if (name) params.append('name', name);
-
-    const url = `${VESSEL_MASTER_API_ENDPOINT}?${params.toString()}`;
-
     console.log(
       `[VESSEL-SPEC-TOOL] 🔍 Fetching vessel specs for: ${imo || name}`
     );
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (VESSEL_MASTER_API_KEY) {
-      headers['Authorization'] = `Bearer ${VESSEL_MASTER_API_KEY}`;
+    let data: VesselBasicInfo | null = null;
+    if (imo) {
+      data = await vesselDetailsClient.getByIMO(imo);
+    }
+    if (!data && name) {
+      data = await vesselDetailsClient.getByName(name);
     }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-
-    // Handle 404 - vessel not found
-    if (response.status === 404) {
+    if (!data) {
       console.warn(
         `[VESSEL-SPEC-TOOL] ⚠️ Vessel not found: ${imo || name}`
       );
       return null;
     }
-
-    if (!response.ok) {
-      throw new Error(
-        `API returned ${response.status}: ${response.statusText}`
-      );
-    }
-
-    const data = (await response.json()) as VesselBasicInfo;
 
     if (!validateVesselSpec(data)) {
       throw new Error('Invalid vessel specification data structure from API');

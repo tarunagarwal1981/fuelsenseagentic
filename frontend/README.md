@@ -168,13 +168,8 @@ npm start
 
 ## Deployment
 
-This application is deployed to Netlify. See the root-level deployment documentation:
-
-- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
-- [DEPLOYMENT_CHECKLIST.md](../DEPLOYMENT_CHECKLIST.md) - Deployment checklist
-- [NETLIFY_ENV_SETUP.md](../NETLIFY_ENV_SETUP.md) - Environment variables
-- [NETLIFY_BRANCH_DEPLOY_SETUP.md](../NETLIFY_BRANCH_DEPLOY_SETUP.md) - Branch deploys
+Deploy to Netlify: base directory `frontend`, build `npm run build`, publish `frontend/.next`. Set env vars (ANTHROPIC_API_KEY, Redis, etc.) in Netlify dashboard.
 
 ## Architecture
 
-See [ARCHITECTURE.md](../ARCHITECTURE.md) for detailed architecture documentation.
+See [ARCHITECTURE.md](../ARCHITECTURE.md) in project root.

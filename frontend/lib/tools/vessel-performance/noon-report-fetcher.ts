@@ -8,21 +8,20 @@
  * - Current speed
  * - Weather conditions (if available)
  *
+ * Uses FuelSense Datalogs API (NOON_REPORT_API_URL or NEXT_PUBLIC_FUELSENSE_API_URL).
  * Used by Machinery Performance Agent for real-time vessel status.
  */
 
 import { z } from 'zod';
 import type { NoonReportData } from '@/lib/types/vessel-performance';
 import { ServiceContainer } from '@/lib/repositories/service-container';
+import { DatalogsClient } from '@/lib/clients/datalogs-client';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const NOON_REPORT_API_ENDPOINT =
-  process.env.NOON_REPORT_API_URL || 'https://api.example.com/v1/noon-reports';
-
-const NOON_REPORT_API_KEY = process.env.NOON_REPORT_API_KEY;
+const datalogsClient = new DatalogsClient();
 
 /** Cache TTL: 30 minutes (noon reports don't change frequently) */
 const CACHE_TTL_SECONDS = 1800;
@@ -139,47 +138,24 @@ export async function fetchNoonReport(
   }
 
   try {
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (imo) params.append('imo', imo);
-    if (name) params.append('vessel_name', name);
-    params.append('latest', 'true');
-
-    const url = `${NOON_REPORT_API_ENDPOINT}?${params.toString()}`;
-
     console.log(
       `[NOON-REPORT-TOOL] 🔍 Fetching noon report for: ${imo || name}`
     );
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (NOON_REPORT_API_KEY) {
-      headers['Authorization'] = `Bearer ${NOON_REPORT_API_KEY}`;
+    let data: NoonReportData | null = null;
+    if (imo) {
+      data = await datalogsClient.getLatestByIMO(imo);
+    }
+    if (!data && name) {
+      data = await datalogsClient.getLatestByName(name);
     }
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-
-    // Handle 404 - vessel not found
-    if (response.status === 404) {
+    if (!data) {
       console.warn(
         `[NOON-REPORT-TOOL] ⚠️ No noon report found for: ${imo || name}`
       );
       return null;
     }
-
-    if (!response.ok) {
-      throw new Error(
-        `API returned ${response.status}: ${response.statusText}`
-      );
-    }
-
-    const data = (await response.json()) as NoonReportData;
 
     if (!validateNoonReport(data)) {
       throw new Error('Invalid noon report data structure from API');

@@ -6,6 +6,8 @@
  */
 
 import vesselsDatabase from '@/lib/data/vessels.json';
+import { VesselRepository } from '@/lib/repositories/vessel-repository';
+import type { VesselPlanningData, ProjectedROB } from './types';
 
 export interface VesselROB {
   VLSFO: number;
@@ -206,4 +208,116 @@ export function updateVesselROB(
   console.log(`   Port: ${port}`);
   console.log(`   New ROB: ${newROB.VLSFO} MT VLSFO, ${newROB.LSMGO} MT LSMGO`);
   console.log('   ⚠️  Note: In-memory update only. Production would update database.');
+}
+
+/**
+ * VesselService - Higher-level vessel operations using VesselRepository
+ *
+ * Provides voyage planning data and ROB projections.
+ * Uses repository methods only, no direct DB access.
+ */
+export class VesselService {
+  constructor(private vesselRepo: VesselRepository) {}
+
+  /**
+   * Get complete vessel state for voyage planning
+   *
+   * Combines current state + master data + consumption profile
+   */
+  async getVesselForVoyagePlanning(
+    vesselIMO: string
+  ): Promise<VesselPlanningData | null> {
+    const [currentState, masterData, consumptionProfile] = await Promise.all([
+      this.vesselRepo.getVesselCurrentState(vesselIMO),
+      this.vesselRepo.getVesselMasterData(vesselIMO),
+      this.vesselRepo.getVesselConsumptionProfile(vesselIMO),
+    ]);
+
+    if (!currentState || !masterData) {
+      return null;
+    }
+
+    return {
+      imo: vesselIMO,
+      name: currentState.vessel_name,
+      current_state: currentState,
+      master_data: masterData,
+      consumption_profile: consumptionProfile,
+    };
+  }
+
+  /**
+   * Project ROB at current voyage end
+   *
+   * Uses actual consumption data from noon reports
+   */
+  async projectROBAtCurrentVoyageEnd(
+    vesselIMO: string
+  ): Promise<ProjectedROB | null> {
+    const currentState = await this.vesselRepo.getVesselCurrentState(vesselIMO);
+    const consumptionProfile =
+      await this.vesselRepo.getVesselConsumptionProfile(vesselIMO);
+
+    if (!currentState || !consumptionProfile) {
+      return null;
+    }
+
+    // Calculate days to voyage end
+    const now = new Date();
+    const voyageEnd = currentState.current_voyage.voyage_end_date;
+    const daysRemaining =
+      (voyageEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+
+    if (daysRemaining < 0) {
+      // Voyage already ended
+      return {
+        current_rob: currentState.current_rob,
+        projected_rob: currentState.current_rob,
+        days_to_voyage_end: 0,
+        voyage_end_port: currentState.current_voyage.to_port,
+        voyage_end_date: voyageEnd,
+        projection_confidence: 100,
+        assumptions: {
+          note: 'Voyage already completed',
+        },
+      };
+    }
+
+    // Get appropriate consumption rate
+    // Use recent consumption as best estimate
+    const dailyVLSFO = currentState.recent_consumption?.VLSFO || 30;
+    const dailyLSMGO = currentState.recent_consumption?.LSMGO || 3;
+
+    // Project ROB
+    const projectedROB = {
+      VLSFO: Math.max(
+        0,
+        currentState.current_rob.VLSFO - dailyVLSFO * daysRemaining
+      ),
+      LSMGO: Math.max(
+        0,
+        currentState.current_rob.LSMGO - dailyLSMGO * daysRemaining
+      ),
+      MDO: currentState.current_rob.MDO || 0,
+    };
+
+    // Calculate confidence based on data quality
+    const confidence = consumptionProfile
+      ? Math.min(100, (consumptionProfile.data_quality.report_count / 30) * 100)
+      : 50;
+
+    return {
+      current_rob: currentState.current_rob,
+      projected_rob: projectedROB,
+      days_to_voyage_end: daysRemaining,
+      voyage_end_port: currentState.current_voyage.to_port,
+      voyage_end_date: voyageEnd,
+      projection_confidence: confidence,
+      assumptions: {
+        daily_vlsfo_consumption: dailyVLSFO,
+        daily_lsmgo_consumption: dailyLSMGO,
+        based_on_reports: consumptionProfile?.data_quality.report_count || 0,
+      },
+    };
+  }
 }

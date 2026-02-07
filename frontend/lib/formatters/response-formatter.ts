@@ -1,16 +1,19 @@
 /**
  * Response Formatter
- * 
+ *
  * Formats multi-agent state into both:
  * 1. Structured data (for enhanced UI components)
  * 2. Text output (preserves current format exactly)
- * 
- * This formatter is backwards-compatible - it preserves the exact
- * current text output format while adding optional structured data.
+ *
+ * Supports synthesis-context-aware formatting when synthesis data is provided.
+ * Uses ContextAwareTemplateSelector for intelligent template selection.
  */
 
 import type { MultiAgentState } from '../multi-agent/state';
 import { ECA_ZONES } from '../tools/eca-config';
+import type { SynthesisContext, ExtractedData } from '../multi-agent/synthesis/auto-synthesis-engine';
+import { ContextAwareTemplateSelector } from './context-aware-template-selector';
+import { formatResponseWithTemplate } from './template-aware-formatter';
 
 // ============================================================================
 // Type Definitions
@@ -202,24 +205,124 @@ export interface MapOverlaysData {
 }
 
 // ============================================================================
+// Synthesis-Aware Format Params
+// ============================================================================
+
+export interface FormatResponseParams {
+  state: MultiAgentState;
+  synthesis_context: SynthesisContext;
+  extracted_data: ExtractedData[];
+  insights: unknown[];
+  recommendations: unknown[];
+  warnings: unknown[];
+}
+
+// ============================================================================
 // Main Formatter Function
 // ============================================================================
 
 /**
  * Format response from multi-agent state
+ *
+ * Overload 1: Legacy - sync, state only
+ * Overload 2: Synthesis-aware - async, uses synthesis context for intelligent rendering
  */
-export function formatResponse(state: MultiAgentState): FormattedResponse {
-  return {
-    structured: {
-      compliance: formatComplianceCard(state),
-      weather: formatWeatherCard(state),
-      bunker: formatBunkerTable(state),
-      timeline: formatTimeline(state),
-      recommendations: formatRecommendations(state),
+export function formatResponse(state: MultiAgentState): FormattedResponse;
+export function formatResponse(params: FormatResponseParams): Promise<FormattedResponse>;
+export function formatResponse(
+  stateOrParams: MultiAgentState | FormatResponseParams
+): FormattedResponse | Promise<FormattedResponse> {
+  // Synthesis-aware: params object with synthesis_context
+  const params = stateOrParams as FormatResponseParams;
+  if (params?.synthesis_context && params?.state) {
+    return formatResponseWithSynthesis(params);
+  }
+
+  // Legacy: state only
+  {
+    const state = stateOrParams as MultiAgentState;
+    return {
+      structured: {
+        compliance: formatComplianceCard(state),
+        weather: formatWeatherCard(state),
+        bunker: formatBunkerTable(state),
+        timeline: formatTimeline(state),
+        recommendations: formatRecommendations(state),
+      },
+      text: formatTextOutput(state),
+      mapOverlays: formatMapOverlays(state),
+    };
+  }
+}
+
+/**
+ * Format response using synthesis context for intelligent template selection and rendering
+ */
+async function formatResponseWithSynthesis(params: FormatResponseParams): Promise<FormattedResponse> {
+  const {
+    state,
+    synthesis_context,
+    extracted_data,
+    insights,
+    recommendations,
+    warnings,
+  } = params;
+
+  // Step 1: Select appropriate template from synthesis context
+  const templateName = ContextAwareTemplateSelector.selectTemplate(synthesis_context);
+  console.log(`🎨 [FORMATTER] Using template: ${templateName}`);
+
+  // Step 2: Build template data from extracted_data
+  const templateData = buildTemplateData(extracted_data, synthesis_context);
+
+  // Step 3: Enrich state with template data and synthesis outputs for rendering
+  const enrichedState = {
+    ...state,
+    ...templateData,
+    synthesized_response: {
+      insights,
+      recommendations,
+      warnings,
+      context: synthesis_context,
     },
-    text: formatTextOutput(state),
-    mapOverlays: formatMapOverlays(state),
+  } as MultiAgentState;
+
+  // Step 4: Render using template-aware formatter (loads template and uses synthesis context)
+  const response = formatResponseWithTemplate(enrichedState, templateName);
+
+  return response;
+}
+
+/**
+ * Build template data from extracted data and synthesis context
+ */
+function buildTemplateData(
+  extractedData: ExtractedData[],
+  context: SynthesisContext
+): Record<string, unknown> {
+  const templateData: Record<string, unknown> = {};
+
+  // Group by data type
+  extractedData.forEach((item) => {
+    if (!templateData[item.data_type]) {
+      templateData[item.data_type] = {};
+    }
+    const typeObj = templateData[item.data_type] as Record<string, unknown>;
+    typeObj[item.field_name] = item.field_value;
+
+    // Store by field name for direct access
+    templateData[item.field_name] = item.field_value;
+  });
+
+  // Add context metadata
+  templateData._meta = {
+    primary_domain: context.primary_domain,
+    query_type: context.query_type,
+    agents_executed: context.agents_executed,
+    capabilities_used: context.capabilities_used,
   };
+
+  return templateData;
 }
 
 // ============================================================================

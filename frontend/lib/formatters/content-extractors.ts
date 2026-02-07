@@ -166,6 +166,10 @@ function applyFormat(value: any, format: string, path: string): string {
     case 'multi_bunker_recommendation':
       return renderMultiBunkerPlan(value);
     
+    case 'brief':
+      if (path === 'vessel_specs') return formatVesselSpecsBrief(value);
+      return formatGenericValue(value);
+
     case 'rob_comparison':
       // P0-5: Handle merged state paths (array of paths) and single rob_tracking
       // When state_path is an array like ["rob_tracking", "vessel_profile", ...],
@@ -265,9 +269,105 @@ function formatValueByPath(value: any, path: string, state: MultiAgentState): st
   if (path === 'vessel_profile.current_rob' || path === 'current_rob') {
     return renderCurrentROBDisplay({ current_rob: value });
   }
-  
+
+  // Vessel specs (from synthesis.context.available_data)
+  if (path === 'vessel_specs') {
+    return formatVesselSpecs(value);
+  }
+
+  // Vessel comparison analysis (from synthesis.context.available_data)
+  if (path === 'vessel_comparison_analysis') {
+    return formatVesselComparisonAnalysis(value);
+  }
+
+  // Synthesis insights (from _synthesis.insights)
+  if (path === '_synthesis.insights') {
+    return formatSynthesisInsights(value);
+  }
+
   // Generic fallback
   return formatGenericValue(value);
+}
+
+/**
+ * Brief one-liner for vessel specs (for tier 1 summary when vessel_specs is primary)
+ */
+function formatVesselSpecsBrief(specs: any): string {
+  if (!Array.isArray(specs) || specs.length === 0) return '';
+  const n = specs.length;
+  const fmt = (x: number) => x.toLocaleString();
+  return `Our fleet consists of **${fmt(n)} vessels** across multiple vessel types.`;
+}
+
+function formatVesselSpecs(specs: any): string {
+  if (!Array.isArray(specs) || specs.length === 0) return '';
+  const byType: Record<string, number> = {};
+  specs.forEach((v: any) => {
+    const t = String(v?.vessel_type ?? v?.type ?? 'Unknown').toUpperCase();
+    byType[t] = (byType[t] ?? 0) + 1;
+  });
+  const fmt = (n: number) => n.toLocaleString();
+  let out = '## Fleet Overview\n\n';
+  out += `Our fleet consists of **${fmt(specs.length)} vessels** across multiple vessel types.\n\n`;
+  if (Object.keys(byType).length > 0) {
+    out += '### Fleet Composition\n\n';
+    out += '| Vessel Type | Count |\n|-------------|-------|\n';
+    Object.entries(byType)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([type, n]) => {
+        out += `| ${type} | ${n} |\n`;
+      });
+    out += '\n';
+  }
+  if (specs.length <= 15) {
+    out += '### Vessel Details\n\n';
+    out += '| # | Vessel Name | Type | DWT | Flag | Built |\n';
+    out += '|---|-------------|------|-----|------|-------|\n';
+    specs.forEach((v: any, i: number) => {
+      const name = v?.vessel_name ?? v?.name ?? 'Unknown';
+      const type = v?.vessel_type ?? v?.type ?? '-';
+      const deadweight = v?.deadweight ?? v?.deadweight_tonnage ?? '-';
+      const dwStr = deadweight !== '-' && typeof deadweight === 'number' ? fmt(deadweight) : String(deadweight);
+      const flag = v?.flag ?? '-';
+      const built = v?.built_date ?? v?.year_built ?? '-';
+      out += `| ${i + 1} | ${name} | ${type} | ${dwStr} | ${flag} | ${built} |\n`;
+    });
+  } else {
+    out += '_Fleet contains ' + fmt(specs.length) + ' vessels. Detailed breakdown available upon request._\n';
+  }
+  return out;
+}
+
+function formatVesselComparisonAnalysis(analysis: any): string {
+  if (!analysis || typeof analysis !== 'object') return '';
+  let out = '';
+  const rec = analysis.recommended_vessel ?? analysis.recommendedVessel;
+  if (rec) {
+    out += `**Recommended Vessel:** ${rec}\n\n`;
+  }
+  const rankings = analysis.rankings ?? analysis.rankings_list ?? [];
+  if (Array.isArray(rankings) && rankings.length > 0) {
+    out += '**Vessel Rankings:**\n';
+    rankings.forEach((r: any, i: number) => {
+      const rank = r?.rank ?? i + 1;
+      const name = r?.vessel_name ?? r?.vesselName ?? 'Unknown';
+      const score = r?.score ?? r?.total_score ?? '-';
+      const reason = r?.recommendation_reason ?? r?.reason ?? '';
+      out += `${rank}. **${name}** - Score: ${score}/100\n`;
+      if (reason) out += `   ${reason}\n`;
+    });
+  }
+  return out || formatGenericValue(analysis);
+}
+
+function formatSynthesisInsights(insights: any): string {
+  if (!Array.isArray(insights) || insights.length === 0) return '';
+  let out = '**Key Insights:**\n';
+  insights.forEach((i: any) => {
+    const msg = typeof i === 'object' && i !== null && 'message' in i ? i.message : i;
+    out += `- ${String(msg ?? '')}\n`;
+  });
+  return out;
 }
 
 /**

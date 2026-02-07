@@ -1,6 +1,6 @@
 /**
  * Agent and Tool Registry
- * 
+ *
  * Declarative metadata system for agents and their tools.
  * Enables LLM-based supervisor planning and intelligent tool selection.
  */
@@ -8,6 +8,7 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { Runnable } from '@langchain/core/runnables';
 import type { z } from 'zod';
+import { getToolExecutor } from './tools';
 
 // ============================================================================
 // Zod to JSON Schema Converter
@@ -288,7 +289,7 @@ export class AgentRegistry {
 
   /**
    * Get tool names for a specific agent
-   * 
+   *
    * @param agentName - The agent name
    * @returns Array of tool names available to the agent
    */
@@ -297,7 +298,30 @@ export class AgentRegistry {
     if (!agent) {
       return [];
     }
-    return agent.available_tools.map(t => t.tool_name);
+    return agent.available_tools.map((t) => t.tool_name);
+  }
+
+  /**
+   * Get tool executors for a specific agent (for dynamic dispatch).
+   * Returns an object mapping tool names to circuit-breaker-wrapped executors.
+   * Agent nodes can use this for intent-based tool invocation.
+   *
+   * @param agentName - The agent name
+   * @returns Object with tool names as keys and executor functions as values
+   */
+  static getToolsForAgent(agentName: string): Record<string, (input: unknown) => Promise<unknown>> {
+    const agent = this.registry.get(agentName);
+    if (!agent) {
+      return {};
+    }
+    const result: Record<string, (input: unknown) => Promise<unknown>> = {};
+    for (const tool of agent.available_tools) {
+      const executor = getToolExecutor(tool.tool_name);
+      if (executor) {
+        result[tool.tool_name] = executor;
+      }
+    }
+    return result;
   }
 
   /**

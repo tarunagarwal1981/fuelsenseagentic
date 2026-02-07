@@ -1,0 +1,75 @@
+# Vessel Information Template
+# Template for vessel data queries (lists, lookups, status)
+# Handles: vessel_information, vessel_list, vessel_lookup, vessel_data
+
+template:
+  query_type: "vessel_information"
+  name: "Vessel Information Template"
+  version: "1.0.0"
+  description: "Template for vessel data queries (lists, lookups, status)"
+
+  sections:
+    # ========================================================================
+    # TIER 1: VESSEL FLEET SUMMARY
+    # ========================================================================
+
+    - id: "vessel_summary"
+      title: "🚢 Vessel Fleet Summary"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_specs"
+      max_words: 150
+
+      content_source:
+        state_path: "vessel_specs"
+        fallback: "No vessel data available."
+
+    # ========================================================================
+    # TIER 2: VESSEL IDENTIFIERS (when extracted from query)
+    # ========================================================================
+
+    - id: "vessel_identifiers"
+      title: "🔍 Identified Vessels"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_identifiers"
+      collapsed: true
+
+      content_source:
+        state_path: "vessel_identifiers"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: NOON REPORTS (when available)
+    # ========================================================================
+
+    - id: "noon_reports"
+      title: "📊 Noon Report Data"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "noon_reports"
+      collapsed: true
+      max_items: 5
+
+      content_source:
+        state_path: "noon_reports"
+        fallback: ""
+
+    # ========================================================================
+    # FALLBACK: Generic information
+    # ========================================================================
+
+    - id: "fallback"
+      title: "Information"
+      tier: 1
+      priority: 999
+      visibility: "always"
+
+      content_source:
+        state_path: "final_recommendation"
+        fallback: "No vessel information available."
+
+  business_rules: []

@@ -154,3 +154,77 @@ export interface VesselProfile {
     };
   };
 }
+
+/**
+ * Vessel current state from latest noon report
+ */
+export interface VesselCurrentState {
+  vessel_imo: string;
+  vessel_name: string;
+  current_rob: {
+    VLSFO: number;
+    LSMGO: number;
+    MDO?: number;
+    HSFO?: number;
+    ULSFO?: number;
+    LNG?: number;
+  };
+  current_voyage: {
+    voyage_number: string;
+    from_port: string;
+    to_port: string;
+    voyage_start_date: Date;
+    voyage_end_date: Date;
+    distance_to_go?: number;
+  };
+  current_position: {
+    latitude: number;
+    longitude: number;
+    timestamp: Date;
+  };
+  vessel_activity: string;
+  load_type: string;
+  recent_consumption?: {
+    VLSFO: number;
+    LSMGO: number;
+  };
+  last_report_date: Date;
+}
+
+/**
+ * Vessel master data from vessel_details table
+ */
+export interface VesselMasterData {
+  imo: string;
+  vessel_name: string;
+  vessel_type: string;
+  vessel_subtype?: string;
+  dwt: number;
+  gross_tonnage: number;
+  built_year: string;
+  flag: string;
+  fleet?: string;
+  owner?: string;
+}
+
+/**
+ * Vessel consumption profile from historical noon reports
+ */
+export interface VesselConsumptionProfile {
+  vessel_imo: string;
+  consumption_by_speed: Record<
+    number,
+    {
+      vlsfo_mt_per_day: number;
+      lsmgo_mt_per_day: number;
+    }
+  >;
+  consumption_by_load: {
+    ballast: { vlsfo: number; lsmgo: number };
+    laden: { vlsfo: number; lsmgo: number };
+  };
+  data_quality: {
+    report_count: number;
+    date_range: { from: Date; to: Date };
+  };
+}

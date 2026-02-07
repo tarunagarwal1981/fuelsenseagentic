@@ -1,0 +1,75 @@
+# Compliance Report Template
+# Template for ECA zone, regulatory compliance, and emissions reporting
+# Handles: compliance_check, compliance_report, ECA zones, regulatory
+
+template:
+  query_type: "compliance_report"
+  name: "Compliance Report Template"
+  version: "1.0.0"
+  description: "Template for ECA zone validation and regulatory compliance"
+
+  sections:
+    # ========================================================================
+    # TIER 1: ECA COMPLIANCE (Handles both no-ECA and ECA zones - formatECAZones)
+    # ========================================================================
+
+    - id: "eca_compliance"
+      title: "⚓ Regulatory Compliance"
+      tier: 1
+      priority: 1
+      visibility: "conditional"
+      condition: "compliance_data"
+      max_words: 200
+
+      content_source:
+        state_path: "compliance_data.eca_zones"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: Route context (when compliance relates to voyage)
+    # ========================================================================
+
+    - id: "route_context"
+      title: "🗺️ Route Information"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "route_data"
+      collapsed: true
+      max_words: 100
+
+      content_source:
+        state_path: "route_data"
+        fallback: ""
+
+    # ========================================================================
+    # TIER 2: ECA Consumption breakdown (when available)
+    # ========================================================================
+
+    - id: "eca_consumption"
+      title: "⛽ ECA Fuel Consumption"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "eca_summary"
+      collapsed: true
+
+      content_source:
+        state_path: "eca_summary"
+        fallback: ""
+
+    # ========================================================================
+    # FALLBACK
+    # ========================================================================
+
+    - id: "fallback"
+      title: "Compliance Report"
+      tier: 1
+      priority: 999
+      visibility: "always"
+
+      content_source:
+        state_path: "final_recommendation"
+        fallback: "No compliance data available."
+
+  business_rules: []

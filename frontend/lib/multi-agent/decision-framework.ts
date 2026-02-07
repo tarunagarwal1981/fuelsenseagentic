@@ -178,22 +178,38 @@ function isAllWorkComplete(match: PatternMatch, state: MultiAgentState): boolean
     case 'port_weather':
       // Port weather is complete if we have standalone_port_weather
       return !!state.standalone_port_weather;
-      
+
+    case 'vessel_info':
+      // Vessel info is complete if vessel_info_agent succeeded and we have vessel_specs
+      return (
+        state.agent_status?.vessel_info_agent === 'success' &&
+        !!state.vessel_specs?.length
+      );
+
     case 'route_calculation':
       // Route is complete if we have route_data
       return !!state.route_data;
-      
+
     case 'bunker_planning':
       // Bunker is complete if we have bunker_analysis
       return !!state.bunker_analysis;
-      
+
     case 'compliance':
       // Compliance is complete if we have compliance_data
       return !!state.compliance_data;
-      
+
     default:
       // For ambiguous queries, check if we have any final recommendation
-      return !!state.final_recommendation;
+      if (state.final_recommendation) return true;
+      // Vessel info queries (how many vessels, list vessels) - if vessel_info_agent
+      // already succeeded and we have vessel_specs, we're done. Prevents infinite loop.
+      if (
+        state.agent_status?.vessel_info_agent === 'success' &&
+        state.vessel_specs?.length
+      ) {
+        return true;
+      }
+      return false;
   }
 }
 

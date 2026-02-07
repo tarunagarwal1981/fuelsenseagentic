@@ -14,7 +14,12 @@
 import { BaseRepository } from './base-repository';
 import { RedisCache } from './cache-client';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { VesselProfile } from './types';
+import {
+  VesselProfile,
+  VesselCurrentState,
+  VesselMasterData,
+  VesselConsumptionProfile,
+} from './types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -469,5 +474,366 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
 
     console.log(`[NOT FOUND] vessels:${id}`);
     return null;
+  }
+
+  /**
+   * Get vessel current state from latest noon report
+   *
+   * COLUMN MAPPING (Hardcoded):
+   * - VESSEL_IMO → vessel identifier
+   * - ROB_VLSFO, ROB_LSMGO → current fuel
+   * - TO_PORT → current voyage end port
+   * - VOYAGE_END_DATE → when current voyage ends
+   * - VOYAGE_NUMBER → current voyage ID
+   * - DISTANCETOGO → remaining distance
+   * - LATITUDE, LONGITUDE → current position
+   * - UTC_DATE_TIME → report timestamp
+   * - VESSEL_ACTIVITY → operational status
+   * - LOAD_TYPE → ballast or laden
+   *
+   * @param vesselIMO - IMO number of vessel
+   * @returns Current state or null if not found
+   */
+  async getVesselCurrentState(
+    vesselIMO: string
+  ): Promise<VesselCurrentState | null> {
+    const cacheKey = `vessel:current_state:${vesselIMO}`;
+
+    // Try cache first
+    const cached = await this.cache.get<VesselCurrentState>(cacheKey);
+    if (cached) {
+      console.log(`✅ [VESSEL-REPO] Cache hit for current state: ${vesselIMO}`);
+      return cached;
+    }
+
+    try {
+      // Query your self-hosted database
+      const { data, error } = await this.db
+        .from('noon_reports') // Your actual table name
+        .select(
+          `
+        VESSEL_IMO,
+        VESSEL_NAME,
+        ROB_VLSFO,
+        ROB_LSMGO,
+        ROB_MDO,
+        ROB_HSFO,
+        TO_PORT,
+        VOYAGE_NUMBER,
+        VOYAGE_END_DATE,
+        VOYAGE_START_DATE,
+        DISTANCETOGO,
+        LATITUDE,
+        LONGITUDE,
+        UTC_DATE_TIME,
+        VESSEL_ACTIVITY,
+        LOAD_TYPE,
+        FROM_PORT,
+        TOTAL_CONSUMPTION_VLSFO,
+        TOTAL_CONSUMPTION_LSMGO
+      `
+        )
+        .eq('VESSEL_IMO', vesselIMO)
+        .order('UTC_DATE_TIME', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !data) {
+        console.warn(
+          `⚠️ [VESSEL-REPO] No noon report found for ${vesselIMO}`
+        );
+        return null;
+      }
+
+      // HARDCODED MAPPING (Not LLM decision!)
+      const currentState: VesselCurrentState = {
+        vessel_imo: data.VESSEL_IMO ?? '',
+        vessel_name: data.VESSEL_NAME ?? '',
+        current_rob: {
+          VLSFO: data.ROB_VLSFO || 0,
+          LSMGO: data.ROB_LSMGO || 0,
+          MDO: data.ROB_MDO,
+          HSFO: data.ROB_HSFO,
+        },
+        current_voyage: {
+          voyage_number: data.VOYAGE_NUMBER ?? '',
+          from_port: data.FROM_PORT ?? '',
+          to_port: data.TO_PORT ?? '',
+          voyage_start_date: new Date(data.VOYAGE_START_DATE),
+          voyage_end_date: new Date(data.VOYAGE_END_DATE),
+          distance_to_go: data.DISTANCETOGO,
+        },
+        current_position: {
+          latitude: data.LATITUDE ?? 0,
+          longitude: data.LONGITUDE ?? 0,
+          timestamp: new Date(data.UTC_DATE_TIME),
+        },
+        vessel_activity: data.VESSEL_ACTIVITY ?? '',
+        load_type: data.LOAD_TYPE ?? '',
+        recent_consumption:
+          data.TOTAL_CONSUMPTION_VLSFO != null || data.TOTAL_CONSUMPTION_LSMGO != null
+            ? {
+                VLSFO: data.TOTAL_CONSUMPTION_VLSFO ?? 0,
+                LSMGO: data.TOTAL_CONSUMPTION_LSMGO ?? 0,
+              }
+            : undefined,
+        last_report_date: new Date(data.UTC_DATE_TIME),
+      };
+
+      // Cache for 5 minutes (vessel state changes slowly)
+      await this.cache.set(cacheKey, currentState, 300);
+
+      return currentState;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(
+        `❌ [VESSEL-REPO] Error fetching current state: ${msg}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get vessel master data from vessel_details table
+   *
+   * COLUMN MAPPING (Hardcoded):
+   * - IMO → vessel identifier
+   * - Vessel_Name → vessel name
+   * - Vessel_Type → type classification
+   * - Deadweight → DWT capacity
+   * - GrossTonnage → GT
+   * - Built_date → year built
+   * - Flag → flag state
+   * - Fleet → fleet grouping
+   * - Registered_Owner → owner
+   *
+   * @param vesselIMO - IMO number
+   * @returns Vessel master data or null
+   */
+  async getVesselMasterData(
+    vesselIMO: string
+  ): Promise<VesselMasterData | null> {
+    const cacheKey = `vessel:master:${vesselIMO}`;
+
+    // Try cache (master data changes rarely, cache for 24 hours)
+    const cached = await this.cache.get<VesselMasterData>(cacheKey);
+    if (cached) {
+      console.log(`✅ [VESSEL-REPO] Cache hit for master data: ${vesselIMO}`);
+      return cached;
+    }
+
+    try {
+      const { data, error } = await this.db
+        .from('vessel_details') // Your actual table name
+        .select(
+          `
+        IMO,
+        Vessel_Name,
+        Vessel_Type,
+        Vessel_SubType,
+        Deadweight,
+        GrossTonnage,
+        Built_date,
+        Flag,
+        Fleet,
+        Registered_Owner
+      `
+        )
+        .eq('IMO', vesselIMO)
+        .single();
+
+      if (error || !data) {
+        console.warn(
+          `⚠️ [VESSEL-REPO] No master data found for ${vesselIMO}`
+        );
+        return null;
+      }
+
+      // HARDCODED MAPPING
+      const masterData: VesselMasterData = {
+        imo: data.IMO ?? '',
+        vessel_name: data.Vessel_Name ?? '',
+        vessel_type: data.Vessel_Type ?? '',
+        vessel_subtype: data.Vessel_SubType,
+        dwt: parseFloat(data.Deadweight) || 0,
+        gross_tonnage: parseFloat(data.GrossTonnage) || 0,
+        built_year: String(data.Built_date ?? ''),
+        flag: data.Flag ?? '',
+        fleet: data.Fleet,
+        owner: data.Registered_Owner,
+      };
+
+      // Cache for 24 hours
+      await this.cache.set(cacheKey, masterData, 86400);
+
+      return masterData;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(
+        `❌ [VESSEL-REPO] Error fetching master data: ${msg}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Calculate consumption profile from historical noon reports
+   *
+   * COLUMN MAPPING (Hardcoded):
+   * - TOTAL_CONSUMPTION_VLSFO → VLSFO consumption
+   * - TOTAL_CONSUMPTION_LSMGO → LSMGO consumption
+   * - SPEED → vessel speed
+   * - LOAD_TYPE → ballast or laden
+   * - VESSEL_ACTIVITY → filter for "AT SEA" only
+   * - STEAMING_TIME_HRS → hours of steaming
+   * - UTC_DATE_TIME → filter last 30 days
+   *
+   * Analyzes last 30 days of at-sea reports to calculate average consumption
+   * at different speeds and load conditions.
+   *
+   * @param vesselIMO - IMO number
+   * @param days - Number of days to analyze (default 30)
+   * @returns Consumption profile
+   */
+  async getVesselConsumptionProfile(
+    vesselIMO: string,
+    days: number = 30
+  ): Promise<VesselConsumptionProfile | null> {
+    const cacheKey = `vessel:consumption:${vesselIMO}:${days}d`;
+
+    // Cache for 6 hours
+    const cached = await this.cache.get<VesselConsumptionProfile>(cacheKey);
+    if (cached) {
+      console.log(
+        `✅ [VESSEL-REPO] Cache hit for consumption profile: ${vesselIMO}`
+      );
+      return cached;
+    }
+
+    try {
+      // Get historical reports from last N days, at sea only
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+
+      const { data: reports, error } = await this.db
+        .from('noon_reports')
+        .select(
+          `
+        TOTAL_CONSUMPTION_VLSFO,
+        TOTAL_CONSUMPTION_LSMGO,
+        SPEED,
+        LOAD_TYPE,
+        STEAMING_TIME_HRS,
+        UTC_DATE_TIME
+      `
+        )
+        .eq('VESSEL_IMO', vesselIMO)
+        .eq('VESSEL_ACTIVITY', 'AT SEA') // Only at-sea consumption
+        .gte('UTC_DATE_TIME', cutoffDate.toISOString())
+        .order('UTC_DATE_TIME', { ascending: false });
+
+      if (error || !reports || reports.length === 0) {
+        console.warn(
+          `⚠️ [VESSEL-REPO] No consumption history for ${vesselIMO}`
+        );
+        return null;
+      }
+
+      // Calculate averages by speed (rounded) and load type
+      const consumptionBySpeed: Record<
+        number,
+        { vlsfo: number; lsmgo: number; count: number }
+      > = {};
+      const consumptionByLoad: Record<
+        string,
+        { vlsfo: number; lsmgo: number; count: number }
+      > = {
+        BALLAST: { vlsfo: 0, lsmgo: 0, count: 0 },
+        LADEN: { vlsfo: 0, lsmgo: 0, count: 0 },
+      };
+
+      reports.forEach((report) => {
+        const speed = Math.round(report.SPEED || 0);
+        const loadType = report.LOAD_TYPE?.toUpperCase() || 'BALLAST';
+
+        // By speed
+        if (!consumptionBySpeed[speed]) {
+          consumptionBySpeed[speed] = { vlsfo: 0, lsmgo: 0, count: 0 };
+        }
+        consumptionBySpeed[speed].vlsfo += report.TOTAL_CONSUMPTION_VLSFO || 0;
+        consumptionBySpeed[speed].lsmgo += report.TOTAL_CONSUMPTION_LSMGO || 0;
+        consumptionBySpeed[speed].count += 1;
+
+        // By load type
+        if (consumptionByLoad[loadType]) {
+          consumptionByLoad[loadType].vlsfo +=
+            report.TOTAL_CONSUMPTION_VLSFO || 0;
+          consumptionByLoad[loadType].lsmgo +=
+            report.TOTAL_CONSUMPTION_LSMGO || 0;
+          consumptionByLoad[loadType].count += 1;
+        }
+      });
+
+      // Calculate averages
+      const speedProfile: Record<
+        number,
+        { vlsfo_mt_per_day: number; lsmgo_mt_per_day: number }
+      > = {};
+      Object.entries(consumptionBySpeed).forEach(([speed, data]) => {
+        if (data.count > 0) {
+          speedProfile[parseInt(speed)] = {
+            vlsfo_mt_per_day: data.vlsfo / data.count,
+            lsmgo_mt_per_day: data.lsmgo / data.count,
+          };
+        }
+      });
+
+      const profile: VesselConsumptionProfile = {
+        vessel_imo: vesselIMO,
+        consumption_by_speed: speedProfile,
+        consumption_by_load: {
+          ballast: {
+            vlsfo:
+              consumptionByLoad.BALLAST.count > 0
+                ? consumptionByLoad.BALLAST.vlsfo /
+                  consumptionByLoad.BALLAST.count
+                : 0,
+            lsmgo:
+              consumptionByLoad.BALLAST.count > 0
+                ? consumptionByLoad.BALLAST.lsmgo /
+                  consumptionByLoad.BALLAST.count
+                : 0,
+          },
+          laden: {
+            vlsfo:
+              consumptionByLoad.LADEN.count > 0
+                ? consumptionByLoad.LADEN.vlsfo / consumptionByLoad.LADEN.count
+                : 0,
+            lsmgo:
+              consumptionByLoad.LADEN.count > 0
+                ? consumptionByLoad.LADEN.lsmgo / consumptionByLoad.LADEN.count
+                : 0,
+          },
+        },
+        data_quality: {
+          report_count: reports.length,
+          date_range: {
+            from: new Date(reports[reports.length - 1].UTC_DATE_TIME),
+            to: new Date(reports[0].UTC_DATE_TIME),
+          },
+        },
+      };
+
+      // Cache for 6 hours
+      await this.cache.set(cacheKey, profile, 21600);
+
+      return profile;
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(
+        `❌ [VESSEL-REPO] Error calculating consumption profile: ${msg}`
+      );
+      return null;
+    }
   }
 }

@@ -18,6 +18,9 @@ export type {
   FuelPrice,
   PriceQuery,
   VesselProfile,
+  VesselCurrentState,
+  VesselMasterData,
+  VesselConsumptionProfile,
   WorldPortEntry,
   IWorldPortRepository,
 } from './types';

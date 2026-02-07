@@ -202,3 +202,20 @@ export function logCheckpointOperation(
     duration_ms,
   });
 }
+
+/**
+ * Log a custom event with arbitrary payload.
+ * Used for agent-specific metrics (e.g. vessel selection, synthesis).
+ */
+export function logCustomEvent(
+  type: string,
+  correlation_id: string,
+  payload: Record<string, unknown>,
+  level: LogLevel = "info"
+): void {
+  enqueue({
+    ...baseEvent(level, correlation_id),
+    type,
+    ...payload,
+  });
+}

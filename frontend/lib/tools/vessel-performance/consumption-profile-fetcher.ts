@@ -1,32 +1,24 @@
 /**
  * Consumption Profile Fetcher Tool
  *
- * Fetches vessel fuel consumption profiles showing:
- * - Main engine and auxiliary engine consumption rates
- * - Consumption at different speeds
- * - Consumption under different weather conditions
+ * Fetches vessel fuel consumption profiles (baseline profiles):
+ * - Speed, consumption (MT/day), power at different operating points
  * - Ballast vs laden consumption differences
  *
- * Used by Machinery Performance Agent to:
- * - Predict fuel consumption for voyage
- * - Calculate fuel endurance
- * - Detect consumption anomalies
- * - Optimize speed for fuel efficiency
+ * Uses FuelSense VesselPerformanceModelTable API (BASELINE_PROFILE_API_URL).
+ * Used by Machinery Performance Agent and vessel selection.
  */
 
 import { z } from 'zod';
 import type { ConsumptionProfile } from '@/lib/types/vessel-performance';
 import { ServiceContainer } from '@/lib/repositories/service-container';
+import { VesselPerformanceModelClient } from '@/lib/clients/vessel-performance-model-client';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const CONSUMPTION_PROFILE_API_ENDPOINT =
-  process.env.CONSUMPTION_PROFILE_API_URL ||
-  'https://api.example.com/v1/consumption-profiles';
-
-const CONSUMPTION_PROFILE_API_KEY = process.env.CONSUMPTION_PROFILE_API_KEY;
+const vesselPerformanceModelClient = new VesselPerformanceModelClient();
 
 /** Cache for 1 hour (profiles don't change frequently) */
 const CACHE_TTL_SECONDS = 3600;
@@ -156,61 +148,36 @@ export async function fetchConsumptionProfiles(
   }
 
   try {
-    const queryParams = new URLSearchParams();
-    queryParams.append('imo', params.imo);
-
-    if (params.speed !== undefined) {
-      queryParams.append('speed', params.speed.toString());
-    }
-    if (params.weather_condition) {
-      queryParams.append('weather', params.weather_condition);
-    }
-    if (params.load_condition) {
-      queryParams.append('load', params.load_condition);
-    }
-
-    const url = `${CONSUMPTION_PROFILE_API_ENDPOINT}?${queryParams.toString()}`;
-
     console.log(
       `[CONSUMPTION-PROFILE-TOOL] 🔍 Fetching consumption profiles for IMO ${params.imo}` +
         (params.speed ? ` at ${params.speed}kts` : '') +
-        (params.weather_condition ? ` in ${params.weather_condition} conditions` : '')
+        (params.weather_condition ? ` in ${params.weather_condition} conditions` : '') +
+        (params.load_condition ? ` (${params.load_condition})` : '')
     );
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    let profiles = await vesselPerformanceModelClient.getByIMO(params.imo);
 
-    if (CONSUMPTION_PROFILE_API_KEY) {
-      headers['Authorization'] = `Bearer ${CONSUMPTION_PROFILE_API_KEY}`;
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-
-    // Handle 404 - no profiles found
-    if (response.status === 404) {
-      console.warn(
-        `[CONSUMPTION-PROFILE-TOOL] ⚠️ No profiles found for IMO ${params.imo}`
-      );
-      return [];
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `API returned ${response.status}: ${response.statusText}`
+    // Filter by load_condition if specified
+    if (params.load_condition) {
+      profiles = profiles.filter(
+        (p) => p.load_condition === params.load_condition
       );
     }
 
-    const data = await response.json();
+    // Filter by weather_condition if specified
+    if (params.weather_condition) {
+      profiles = profiles.filter(
+        (p) => p.weather_condition === params.weather_condition
+      );
+    }
 
-    // API might return single object or array
-    const rawProfiles = Array.isArray(data) ? data : [data];
+    // Filter by speed if specified (closest match - we filter then pick in findClosestSpeedProfile)
+    if (params.speed !== undefined && profiles.length > 1) {
+      const closest = findClosestSpeedProfile(profiles, params.speed);
+      profiles = closest ? [closest] : profiles;
+    }
 
-    const validProfiles = rawProfiles.filter((profile: unknown) => {
+    const validProfiles = profiles.filter((profile) => {
       const isValid = validateConsumptionProfile(profile);
       if (!isValid) {
         console.warn(

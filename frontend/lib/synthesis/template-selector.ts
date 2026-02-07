@@ -48,8 +48,15 @@ export class TemplateSelector {
     stakeholder: string,
     format: string
   ): string {
+    // Map query types to existing templates (general_query has no .hbs file)
+    const queryTypeMap: Record<string, string> = {
+      general_query: 'informational',
+      vessel_information: 'informational',
+    };
+    const resolvedQueryType = queryTypeMap[queryType] ?? queryType;
+
     // Template ID format: {stakeholder}_{queryType}_{format}
-    const templateId = `${stakeholder}_${queryType}_${format}`;
+    const templateId = `${stakeholder}_${resolvedQueryType}_${format}`;
 
     console.log(`🎨 [TEMPLATE-SELECTOR] Selected template: ${templateId}`);
 

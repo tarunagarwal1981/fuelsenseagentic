@@ -54,6 +54,13 @@ export interface BusinessRule {
   target: string;
 }
 
+export interface LoadTemplateResult {
+  exists: boolean;
+  name: string;
+  template?: ResponseTemplate;
+  error?: string;
+}
+
 // ============================================================================
 // Template Loader Class
 // ============================================================================
@@ -121,25 +128,36 @@ export class TemplateLoader {
   
   /**
    * Load a template by query type.
-   * Falls back to default.yaml when the requested template is not found.
+   * Returns status object with exists flag instead of throwing.
+   * Callers can check exists before rendering.
    */
-  public loadTemplate(queryType: string): ResponseTemplate | null {
-    if (this.cache.has(queryType)) {
-      console.log(`✅ [TEMPLATE-LOADER] Cache hit: ${queryType}`);
-      return this.cache.get(queryType)!;
+  public loadTemplate(queryType: string): LoadTemplateResult {
+    // Map query types to existing templates (general_query has no .yaml)
+    const queryTypeMap: Record<string, string> = {
+      general_query: 'informational',
+      vessel_information: 'informational',
+    };
+    const resolvedQueryType = queryTypeMap[queryType] ?? queryType;
+
+    if (this.cache.has(resolvedQueryType)) {
+      console.log(`✅ [TEMPLATE-LOADER] Cache hit: ${resolvedQueryType}`);
+      const template = this.cache.get(resolvedQueryType)!;
+      return {
+        exists: true,
+        name: resolvedQueryType,
+        template,
+      };
     }
 
-    const templatePath = path.join(this.templatesDir, `${queryType}.yaml`);
+    const templatePath = path.join(this.templatesDir, `${resolvedQueryType}.yaml`);
 
     if (!fs.existsSync(templatePath)) {
-      console.warn(`⚠️ [TEMPLATE-LOADER] Template not found: ${queryType}.yaml`);
-      const defaultPath = path.join(this.templatesDir, 'default.yaml');
-      if (fs.existsSync(defaultPath)) {
-        console.log('[TEMPLATE-LOADER] Using default template as fallback');
-        return this.loadTemplate('default');
-      }
-      console.warn('[TEMPLATE-LOADER] No default template found');
-      return null;
+      console.warn(`⚠️ [TEMPLATE-LOADER] Template not found: ${resolvedQueryType}.yaml`);
+      return {
+        exists: false,
+        name: resolvedQueryType,
+        error: `Template file not found: ${resolvedQueryType}.yaml`,
+      };
     }
 
     try {
@@ -147,25 +165,29 @@ export class TemplateLoader {
       const template = yaml.load(fileContents) as ResponseTemplate;
 
       if (!template?.template) {
-        throw new Error(`Invalid template format in ${queryType}.yaml: missing 'template' key`);
+        throw new Error(`Invalid template format in ${resolvedQueryType}.yaml: missing 'template' key`);
       }
 
-      this.validateTemplate(template, queryType);
-      this.cache.set(queryType, template);
+      this.validateTemplate(template, resolvedQueryType);
+      this.cache.set(resolvedQueryType, template);
 
       console.log(`✅ [TEMPLATE-LOADER] Loaded: ${template.template.name} v${template.template.version}`);
       console.log(`   Sections: ${template.template.sections.length}`);
       console.log(`   Rules: ${template.template.business_rules?.length || 0}`);
 
-      return template;
+      return {
+        exists: true,
+        name: resolvedQueryType,
+        template,
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`❌ [TEMPLATE-LOADER] Error loading '${queryType}':`, message);
-      if (queryType !== 'default') {
-        console.log('[TEMPLATE-LOADER] Attempting default template as ultimate fallback');
-        return this.loadTemplate('default');
-      }
-      return null;
+      console.error(`❌ [TEMPLATE-LOADER] Error loading '${resolvedQueryType}':`, message);
+      return {
+        exists: false,
+        name: resolvedQueryType,
+        error: message,
+      };
     }
   }
   

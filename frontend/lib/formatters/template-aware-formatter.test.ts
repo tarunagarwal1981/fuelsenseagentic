@@ -41,18 +41,18 @@ console.log('\n--- Template Loader Tests ---');
 const loader = new TemplateLoader();
 
 test('should load bunker-planning template', () => {
-  const template = loader.loadTemplate('bunker-planning');
-  return template !== null;
+  const result = loader.loadTemplate('bunker-planning');
+  return result.exists && result.template !== undefined;
 });
 
 test('should load route-only template', () => {
-  const template = loader.loadTemplate('route-only');
-  return template !== null;
+  const result = loader.loadTemplate('route-only');
+  return result.exists && result.template !== undefined;
 });
 
-test('should return null for non-existent template', () => {
-  const template = loader.loadTemplate('non-existent-template');
-  return template === null;
+test('should return exists: false for non-existent template', () => {
+  const result = loader.loadTemplate('non-existent-template');
+  return !result.exists && result.error !== undefined;
 });
 
 test('should list available templates', () => {

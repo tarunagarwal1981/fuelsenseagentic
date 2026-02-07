@@ -132,12 +132,18 @@ export interface EntityExtractorOptions {
  * Extracts vessel identifiers from user query and adds to state
  *
  * @param state - Current multi-agent state
- * @param options - Optional test-only options (e.g. __mockLLMResponse for mocking LLM)
+ * @param options - LangGraph runtime config when invoked by graph; or EntityExtractorOptions for tests (__mockLLMResponse)
  */
 export async function entityExtractorAgentNode(
   state: MultiAgentState,
-  options?: EntityExtractorOptions
+  options?: unknown
 ): Promise<Partial<MultiAgentState>> {
+  const mockResponse =
+    options &&
+    typeof options === 'object' &&
+    '__mockLLMResponse' in options
+      ? (options as EntityExtractorOptions).__mockLLMResponse
+      : undefined;
   const startTime = Date.now();
   console.log('[ENTITY-EXTRACTOR] 🔍 Starting entity extraction...');
 
@@ -164,8 +170,8 @@ export async function entityExtractorAgentNode(
     // Extract entities using LLM - invoke and parse JSON response
     // Support mock response for testing (skips actual LLM call)
     let rawContent: string | object;
-    if (options?.__mockLLMResponse !== undefined) {
-      rawContent = options.__mockLLMResponse;
+    if (mockResponse !== undefined) {
+      rawContent = mockResponse;
     } else {
       const response = await extractorLLM.invoke([
         new SystemMessage(ENTITY_EXTRACTION_PROMPT),

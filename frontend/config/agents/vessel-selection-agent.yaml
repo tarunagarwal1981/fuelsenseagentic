@@ -1,0 +1,92 @@
+# Vessel Selection Agent Configuration
+# Compares vessels, projects ROB at voyage end, and ranks by cost for voyage planning
+
+id: vessel_selection_agent
+name: Vessel Selection Agent
+description: Compares vessels for voyage planning, projects ROB at voyage end, checks feasibility, calculates bunker requirements per vessel, and ranks vessels by cost. Deterministic workflow - executes workflow directly without LLM tool-calling.
+type: specialist
+
+domain:
+  - vessel_operations
+  - fleet_optimization
+  - voyage_planning
+
+capabilities:
+  - compare_vessels
+  - project_rob_at_voyage_end
+  - check_next_voyage_feasibility
+  - calculate_bunker_requirements_per_vessel
+  - rank_vessels_by_cost
+  - multi_vessel_analysis
+
+intents:
+  - compare_vessels
+  - which_vessel
+  - best_ship
+  - vessel_selection
+  - select_vessel
+  - compare_ships
+
+tools:
+  required: []
+  optional: []
+
+dependencies:
+  upstream:
+    - route_agent
+    - bunker_agent
+  downstream:
+    - finalize
+
+execution:
+  type: deterministic
+  canRunInParallel: false
+  maxExecutionTimeMs: 45000
+  retryPolicy:
+    maxRetries: 2
+    backoffMs: 1000
+  costPerCall: 0.00
+
+produces:
+  stateFields:
+    - vessel_comparison_analysis
+    - vessel_rankings
+    - recommended_vessel
+    - per_vessel_bunker_plans
+    - vessel_feasibility_matrix
+  messageTypes:
+    - vessels_compared
+    - vessels_ranked
+    - vessel_selection_error
+
+consumes:
+  required:
+    - vessel_names
+    - next_voyage_details
+  optional:
+    - route_data
+    - current_rob_data
+
+validation:
+  preExecution:
+    - vessel_names_provided
+    - next_voyage_valid
+  postExecution:
+    - vessels_analyzed
+    - ranking_complete
+    - recommendation_provided
+
+humanApproval:
+  required: true
+  threshold:
+    field: total_investment_cost
+    operator: ">"
+    value: 1000000
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-07"
+  maintainer: FuelSense Team
+  documentation: docs/agents/vessel-selection-agent.md

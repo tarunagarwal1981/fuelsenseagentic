@@ -1,0 +1,74 @@
+# Vessel Information Agent Configuration
+# Fetches vessel data: count/list, specs, noon reports, consumption profiles
+
+id: vessel_info_agent
+name: Vessel Information Agent
+description: Fetches vessel data from FuelSense APIs - vessel count/list, vessel specs, noon reports (ROB, position), consumption profiles. Uses VesselDetailsClient and vessel performance tools.
+type: specialist
+
+domain:
+  - vessel_operations
+  - vessel_data
+  - fleet_management
+
+capabilities:
+  - vessel_lookup
+  - noon_report_fetch
+  - vessel_list
+  - consumption_profile
+
+intents:
+  - vessel_info
+  - vessel_status
+  - show_vessel
+  - get_rob
+  - vessel_details
+  - list_vessels
+
+tools:
+  required: []
+  optional:
+    - fetch_noon_report
+    - fetch_vessel_specs
+    - fetch_consumption_profile
+
+dependencies:
+  upstream:
+    - supervisor
+  downstream:
+    - rob_tracking_agent
+    - route_agent
+    - vessel_selection_agent
+
+execution:
+  canRunInParallel: true
+  maxExecutionTimeMs: 15000
+  retryPolicy:
+    maxRetries: 3
+    backoffMs: 500
+
+produces:
+  stateFields:
+    - vessel_specs
+    - noon_reports
+    - consumption_profiles
+  messageTypes:
+    - vessel_data_retrieved
+    - vessel_not_found
+    - vessel_info_error
+
+consumes:
+  required:
+    - messages
+  optional:
+    - vessel_name
+    - vessel_imo
+    - fleet_name
+    - vessel_type
+
+enabled: true
+
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-07"
+  maintainer: FuelSense Team

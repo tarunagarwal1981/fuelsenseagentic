@@ -1,0 +1,142 @@
+# =============================================================================
+# Vessel Selection Knowledge Base
+# =============================================================================
+#
+# Domain knowledge, use cases, and decision criteria for multi-vessel comparison
+# and optimal vessel selection for voyage planning.
+#
+# Used by: Vessel Selection Agent, VesselSelectionEngine, Supervisor routing
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Domain Knowledge: Core concepts and decision framework
+# -----------------------------------------------------------------------------
+domain_knowledge:
+  vessel_selection:
+    # High-level purpose of vessel selection workflow
+    purpose: "Select optimal vessel from multiple candidates for a specific voyage"
+
+    # Factors that influence vessel ranking and recommendation
+    key_factors:
+      - current_rob_sufficiency      # Can vessel proceed without bunkering?
+      - bunker_cost_if_needed        # Cost when bunkering is required
+      - deviation_penalty            # Route deviation cost to reach bunker port
+      - vessel_availability          # ETA at origin, schedule constraints
+      - total_voyage_economics       # Sum of all cost components
+
+    # Step-by-step decision process for vessel comparison
+    decision_framework:
+      step_1: "Fetch current state of all candidate vessels"
+      step_2: "Project ROB at end of current voyages"
+      step_3: "Calculate fuel requirements for next voyage"
+      step_4: "Determine if each vessel can proceed without bunkering"
+      step_5: "For vessels needing bunker, calculate optimal bunker plan"
+      step_6: "Compare total voyage costs including all factors"
+      step_7: "Rank vessels and recommend optimal choice"
+
+# -----------------------------------------------------------------------------
+# Use Cases: Typical scenarios and expected outcomes
+# -----------------------------------------------------------------------------
+use_cases:
+  simple_comparison:
+    scenario: "Two vessels, one has sufficient ROB, one needs bunker"
+    expected_outcome: "Recommend vessel with sufficient ROB (saves bunker cost & time)"
+    example:
+      vessel_a: "OCEAN PRIDE - ROB 450 MT VLSFO, can proceed"
+      vessel_b: "ATLANTIC STAR - ROB 120 MT VLSFO, needs bunker in Fujairah"
+      recommendation: "OCEAN PRIDE"
+
+  all_need_bunker:
+    scenario: "Multiple vessels all need bunkering"
+    expected_outcome: "Recommend vessel with lowest total cost (fuel + bunker + deviation)"
+    example:
+      vessels: ["TITAN", "ATHENA", "OCEAN GLORY"]
+      total_costs_usd: [125000, 118000, 132000]
+      recommendation: "ATHENA"
+
+  capacity_constraint:
+    scenario: "Vessel cannot fit required fuel even with bunker"
+    expected_outcome: "Mark as infeasible, exclude from rankings"
+    example:
+      vessel: "SMALL TANKER"
+      required_vlsfo_mt: 380
+      tank_capacity_vlsfo: 300
+      result: "infeasible"
+
+  multi_leg_voyage:
+    scenario: "Next voyage has multiple stops"
+    expected_outcome: "Calculate cumulative fuel needs and ROB tracking across all legs"
+    example:
+      legs: ["Singapore → Fujairah", "Fujairah → Rotterdam"]
+      rob_tracking: "Track ROB at each waypoint; bunker if needed at intermediate port"
+
+# -----------------------------------------------------------------------------
+# Data Requirements: Inputs needed for vessel selection analysis
+# -----------------------------------------------------------------------------
+data_requirements:
+  # Per-vessel data (from noon reports, vessel details, consumption profiles)
+  per_vessel:
+    - vessel_name
+    - current_rob        # Structure: { VLSFO: number, LSMGO: number } in MT
+    - current_voyage_end_port
+    - current_voyage_end_eta
+    - tank_capacity
+    - consumption_profile
+
+  # Voyage-level data (from route agent, user input)
+  for_voyage:
+    - origin_port
+    - destination_port
+    - distance_nm
+    - estimated_duration
+    - departure_date
+
+  # Example values for reference
+  example_per_vessel:
+    vessel_name: "OCEAN PRIDE"
+    current_rob:
+      VLSFO: 420
+      LSMGO: 85
+    current_voyage_end_port: "SGSIN"
+    current_voyage_end_eta: "2025-03-18T06:00:00Z"
+    tank_capacity:
+      VLSFO: 500
+      LSMGO: 150
+    consumption_profile:
+      at_sea_vlsfo_per_day: 25
+      at_sea_lsmgo_per_day: 2
+
+  example_for_voyage:
+    origin_port: "SGSIN"
+    destination_port: "NLRTM"
+    distance_nm: 11250
+    estimated_duration: 28
+    departure_date: "2025-03-20"
+
+# -----------------------------------------------------------------------------
+# Ranking Criteria: Priority and weights for vessel recommendation
+# -----------------------------------------------------------------------------
+ranking_criteria:
+  primary:
+    factor: "no_bunker_needed"
+    weight: 100
+    rationale: "Avoiding bunker stops saves cost and time"
+    description: "Vessels that can proceed without bunkering are strongly preferred"
+
+  secondary:
+    factor: "total_voyage_cost"
+    weight: 50
+    rationale: "Lower operational cost improves voyage profitability"
+    description: "Among vessels needing bunker, prefer lowest total cost"
+
+  tertiary:
+    factor: "bunker_deviation_nm"
+    weight: 25
+    rationale: "Less deviation means shorter voyage, less fuel consumption"
+    description: "Minimize route deviation when bunkering is required"
+
+  # Optional: feasibility score (0-100) used for marginal cases
+  feasibility:
+    factor: "feasibility_score"
+    weight: 10
+    rationale: "Accounts for ROB margin, weather risk, and operational constraints"

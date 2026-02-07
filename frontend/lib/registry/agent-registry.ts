@@ -61,12 +61,19 @@ export class AgentRegistry {
       throw new Error(`Agent with ID '${agent.id}' is already registered`);
     }
 
-    // Verify all required tools exist in ToolRegistry
+    // Verify all required and optional tools exist in ToolRegistry
     const toolRegistry = ToolRegistry.getInstance();
     for (const toolId of agent.tools.required) {
       if (!toolRegistry.has(toolId)) {
         throw new Error(
           `Agent ${agent.id} requires tool '${toolId}' which is not registered`
+        );
+      }
+    }
+    for (const toolId of agent.tools.optional) {
+      if (!toolRegistry.has(toolId)) {
+        console.warn(
+          `⚠️ [AGENT-REGISTRY] Agent ${agent.id} has optional tool '${toolId}' which is not registered`
         );
       }
     }

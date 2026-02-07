@@ -5,6 +5,7 @@
 export { RouteService } from './route.service';
 export { BunkerService } from './bunker.service';
 export { WeatherService } from './weather.service';
+export { VesselService } from './vessel-service';
 export { SeaRouteAPIClient } from './sea-route-api-client';
 export { OpenMeteoAPIClient } from './open-meteo-api-client';
 export type {
@@ -21,4 +22,6 @@ export type {
   MarineWeather,
   WeatherImpact,
   PortWeatherSafety,
+  VesselPlanningData,
+  ProjectedROB,
 } from './types';

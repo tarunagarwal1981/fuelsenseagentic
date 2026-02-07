@@ -455,6 +455,82 @@ export interface MultiBunkerAnalysis {
 }
 
 // ============================================================================
+// Vessel Selection Agent Types
+// ============================================================================
+
+/**
+ * Next voyage details for vessel comparison
+ * Populated by supervisor or entity extractor
+ */
+export interface NextVoyageDetails {
+  origin: string;
+  destination: string;
+  departure_date?: string;
+  speed?: number;
+  /** Cargo condition: 'ballast' or 'laden' - affects consumption */
+  cargo_type?: string;
+}
+
+/**
+ * Per-vessel comparison analysis entry
+ * Populated by Vessel Selection Agent for each vessel
+ */
+export interface VesselComparisonAnalysis {
+  vessel_imo?: string;
+  vessel_name?: string;
+  planning_data?: unknown;
+  projected_rob?: unknown;
+  bunker_plan?: unknown;
+  total_cost_usd?: number;
+  feasibility?: 'feasible' | 'marginal' | 'infeasible';
+  [key: string]: unknown;
+}
+
+/**
+ * Aggregate vessel comparison analysis result
+ * Contains full analysis output from Vessel Selection Agent
+ */
+export interface VesselComparisonAnalysisResult {
+  /** Per-vessel analysis results (VesselAnalysisResult[]) */
+  vessels_analyzed: unknown[];
+  /** Vessels ranked by cost and feasibility */
+  rankings: unknown[];
+  /** Recommended vessel name (best option) */
+  recommended_vessel: string;
+  /** Human-readable summary of the comparison */
+  analysis_summary: string;
+  /** Comparison matrix: vessel -> metric -> value */
+  comparison_matrix: Record<string, unknown>;
+}
+
+/**
+ * Constraints for vessel selection filtering
+ * Optional filters applied during vessel comparison
+ */
+export interface VesselSelectionConstraints {
+  /** Maximum total bunker cost in USD - exclude vessels exceeding this */
+  max_bunker_cost?: number;
+  /** Maximum route deviation in nautical miles for bunker stops */
+  max_deviation_nm?: number;
+  /** Preferred bunker ports - prioritize these when ranking options */
+  preferred_bunker_ports?: string[];
+  /** Vessel names or IMOs to exclude from comparison */
+  exclude_vessels?: string[];
+}
+
+/**
+ * Vessel ranking by total cost
+ */
+export interface VesselRanking {
+  rank: number;
+  vessel_name: string;
+  vessel_imo?: string;
+  total_cost_usd: number;
+  feasibility: 'feasible' | 'marginal' | 'infeasible';
+  [key: string]: unknown;
+}
+
+// ============================================================================
 // LangGraph State Annotation
 // ============================================================================
 
@@ -884,6 +960,82 @@ export const MultiAgentStateAnnotation = Annotation.Root({
    * Populated by vessel spec fetcher tool
    */
   vessel_specs: Annotation<VesselBasicInfo[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  // ========================================================================
+  // Vessel Selection Agent State
+  // ========================================================================
+
+  /**
+   * Vessel names or IMOs to compare.
+   * Populated by supervisor or VesselSelectionQueryParser from user query.
+   */
+  vessel_names: Annotation<string[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Next voyage details (origin, destination, dates, speed).
+   * Required for vessel comparison. Populated by supervisor or entity extractor.
+   */
+  next_voyage_details: Annotation<NextVoyageDetails | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Aggregate vessel comparison analysis result.
+   * Contains vessels_analyzed, rankings, recommended_vessel, analysis_summary, comparison_matrix.
+   * Populated by Vessel Selection Agent when analysis completes.
+   */
+  vessel_comparison_analysis: Annotation<VesselComparisonAnalysisResult | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Vessels ranked by total cost and feasibility.
+   * Duplicated from vessel_comparison_analysis.rankings for convenient access.
+   */
+  vessel_rankings: Annotation<VesselRanking[] | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Recommended vessel name (best option from comparison).
+   * Duplicated from vessel_comparison_analysis.recommended_vessel for convenient access.
+   */
+  recommended_vessel: Annotation<string | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Per-vessel bunker plans (vessel name/IMO -> bunker plan).
+   * Only populated for vessels that require bunkering.
+   */
+  per_vessel_bunker_plans: Annotation<Record<string, unknown> | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Vessel selection constraints (max cost, deviation, preferred ports, exclusions).
+   * Populated by supervisor or VesselSelectionQueryParser from user query.
+   */
+  vessel_selection_constraints: Annotation<VesselSelectionConstraints | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
+   * Vessel feasibility matrix (vessel -> feasibility status)
+   */
+  vessel_feasibility_matrix: Annotation<Record<string, 'feasible' | 'marginal' | 'infeasible'> | undefined>({
     reducer: (x, y) => (y != null ? y : x),
     default: () => undefined,
   }),

@@ -16,6 +16,17 @@ export type {
   FuelConsumptionByGrade,
 } from './vessel-performance';
 
+export type {
+  VesselSelectionInput,
+  NextVoyageDetails,
+  VesselSelectionConstraints,
+  VesselAnalysisResult,
+  CostBreakdown,
+  BunkerPlan,
+  VesselRanking,
+  VesselComparisonAnalysis,
+} from './vessel-selection';
+
 /**
  * Geographic coordinates for a location
  */

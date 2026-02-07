@@ -1,0 +1,109 @@
+# Informational Template (Generic Fallback)
+# Catch-all template for general queries, lookups, and informational responses
+# Handles: informational, general_query, lookup, status, list
+# Uses synthesis.context.available_data for condition checks (enriched state from TemplateRenderer)
+
+template:
+  query_type: "informational"
+  name: "Informational Template"
+  version: "2.0.0"
+  description: "Generic fallback template for informational and general queries. Checks synthesis.context.available_data."
+
+  sections:
+    # ========================================================================
+    # Vessel Fleet Summary - professional tables, handles small and large fleets
+    # ========================================================================
+
+    - id: "vessel_fleet_summary"
+      title: "🚢 Fleet Overview"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "vessel_specs"
+      collapsed: false
+
+      content_source:
+        state_path: "vessel_specs"
+        fallback: ""
+
+    # ========================================================================
+    # Vessel Comparison - from synthesis.context.available_data.vessel_comparison_analysis
+    # ========================================================================
+
+    - id: "vessel_comparison"
+      title: "📊 Vessel Comparison"
+      tier: 2
+      priority: 1
+      visibility: "conditional"
+      condition: "_synthesis.context.available_data.vessel_comparison_analysis"
+      collapsed: false
+
+      content_source:
+        state_path: "vessel_comparison_analysis"
+        fallback: ""
+
+    # ========================================================================
+    # Route Information - from synthesis.context.available_data.route_data
+    # ========================================================================
+
+    - id: "route_info"
+      title: "🗺️ Route Information"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "_synthesis.context.available_data.route_data"
+      collapsed: true
+
+      content_source:
+        state_path: "route_data"
+        fallback: ""
+
+    # ========================================================================
+    # Bunker Information - from synthesis.context.available_data.bunker_analysis
+    # ========================================================================
+
+    - id: "bunker_info"
+      title: "⛽ Bunker Information"
+      tier: 2
+      priority: 2
+      visibility: "conditional"
+      condition: "_synthesis.context.available_data.bunker_analysis"
+      collapsed: true
+
+      content_source:
+        state_path: "bunker_analysis"
+        fallback: ""
+
+    # ========================================================================
+    # Generic Fallback - insights from synthesis when no domain-specific data
+    # ========================================================================
+
+    - id: "generic_info"
+      title: "Information"
+      tier: 2
+      priority: 999
+      visibility: "conditional"
+      condition: "_synthesis.insights"
+      collapsed: true
+
+      content_source:
+        state_path: "_synthesis.insights"
+        fallback: ""
+
+    # ========================================================================
+    # Response Summary - primary summary from available data (avoids circular
+    # final_recommendation dependency; computed per-query by template renderer)
+    # ========================================================================
+
+    - id: "response_summary"
+      title: "Summary"
+      tier: 1
+      priority: 0
+      visibility: "always"
+      max_words: 500
+
+      content_source:
+        state_path: "primary_summary"
+        fallback: "No response available."
+
+  business_rules: []

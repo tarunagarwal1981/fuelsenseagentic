@@ -841,6 +841,49 @@ Output: Array of consumption profiles matching the criteria`,
 );
 
 // ============================================================================
+// Vessel Performance Tool Executors (for agent nodes - circuit-breaker wrapped)
+// ============================================================================
+
+/**
+ * Get vessel performance tool executors for use by vessel_info_agent.
+ * Each function wraps the circuit breaker for resilience.
+ */
+export function getVesselPerformanceToolExecutors(): {
+  fetchNoonReport: (input: { vessel_identifiers: { imo?: string; name?: string } }) => Promise<unknown>;
+  fetchVesselSpecs: (input: { vessel_identifier: { imo?: string; name?: string } }) => Promise<unknown>;
+  fetchConsumptionProfile: (input: { imo: string; speed?: number; weather_condition?: string; load_condition?: string }) => Promise<unknown>;
+} {
+  return {
+    fetchNoonReport: (input) => fetchNoonReportBreaker.fire(input),
+    fetchVesselSpecs: (input) => fetchVesselSpecsBreaker.fire(input),
+    fetchConsumptionProfile: (input) => fetchConsumptionProfileBreaker.fire(input),
+  };
+}
+
+/** Map of tool name -> executor (for getToolExecutor / getToolsForAgent) */
+const TOOL_EXECUTOR_MAP: Record<string, (input: unknown) => Promise<unknown>> = {
+  fetch_noon_report: (i) => fetchNoonReportBreaker.fire(i),
+  fetch_vessel_specs: (i) => fetchVesselSpecsBreaker.fire(i),
+  fetch_consumption_profile: (i) => fetchConsumptionProfileBreaker.fire(i),
+  calculate_route: (i) => calculateRouteBreaker.fire(i),
+  calculate_weather_timeline: (i) => calculateWeatherTimelineBreaker.fire(i),
+  fetch_marine_weather: (i) => fetchMarineWeatherBreaker.fire(i),
+  calculate_weather_consumption: (i) => calculateWeatherConsumptionBreaker.fire(i),
+  check_bunker_port_weather: (i) => checkPortWeatherBreaker.fire(i),
+  find_bunker_ports: (i) => findBunkerPortsBreaker.fire(i),
+  get_fuel_prices: (i) => getFuelPricesBreaker.fire(i),
+  analyze_bunker_options: (i) => analyzeBunkerOptionsBreaker.fire(i),
+};
+
+/**
+ * Get a tool executor by name for dynamic dispatch.
+ * Returns undefined if the tool is not available.
+ */
+export function getToolExecutor(toolName: string): ((input: unknown) => Promise<unknown>) | undefined {
+  return TOOL_EXECUTOR_MAP[toolName];
+}
+
+// ============================================================================
 // Tool Exports by Agent
 // ============================================================================
 

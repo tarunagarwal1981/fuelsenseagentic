@@ -1,0 +1,75 @@
+ℹ️ INFORMATIONAL RESPONSE
+=========================
+
+{{#if data.vessels}}
+VESSELS
+-------
+Total: {{data.vessels.count}} vessels
+{{#each data.vessels.types}}
+• {{@key}}: {{this}}
+{{/each}}
+{{#if data.vessels.sample}}
+Sample: {{#each data.vessels.sample}}{{name}} ({{imo}}){{#unless @last}}, {{/unless}}{{/each}}
+{{/if}}
+
+{{/if}}
+{{#if data.noon_reports}}
+NOON REPORTS
+------------
+{{#each data.noon_reports}}
+• {{vessel_name}} ({{imo}}): Position {{position.latitude}}, {{position.longitude}} | ROB VLSFO {{rob.vlsfo}} MT, LSMGO {{rob.lsmgo}} MT | Speed {{speed}} kn
+  Next port: {{next_port.name}}{{#if next_port.eta}} | ETA {{next_port.eta}}{{/if}}
+{{/each}}
+
+{{/if}}
+{{#if data.consumption_profiles}}
+CONSUMPTION PROFILES
+--------------------
+{{#each data.consumption_profiles}}
+• IMO {{imo}}: {{speed}} kn, {{weather_condition}}, {{load_condition}}
+{{/each}}
+
+{{/if}}
+{{#if reasoning}}
+{{reasoning}}
+{{/if}}
+
+{{#if insights}}
+{{#if insights.length}}
+KEY INSIGHTS
+------------
+{{#each insights}}
+• {{title}}: {{description}}
+{{/each}}
+{{/if}}
+{{/if}}
+
+{{#if recommendations}}
+{{#if recommendations.length}}
+RECOMMENDATIONS
+---------------
+{{#each recommendations}}
+• {{action}}: {{rationale}}
+{{/each}}
+{{/if}}
+{{/if}}
+
+{{#if alerts}}
+{{#if alerts.length}}
+ALERTS
+------
+{{#each alerts}}
+⚠️ {{title}}: {{message}}
+{{/each}}
+{{/if}}
+{{/if}}
+
+{{#unless reasoning}}
+{{#unless (gt insights.length 0)}}
+{{#unless (gt recommendations.length 0)}}
+{{#unless (gt alerts.length 0)}}
+I don't have specific data to answer this query. For vessel database questions, please check your fleet management system or contact your data administrator.
+{{/unless}}
+{{/unless}}
+{{/unless}}
+{{/unless}}

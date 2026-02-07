@@ -134,6 +134,52 @@ function testPriorityCardProps(): void {
 }
 
 // ============================================================================
+// Test: VesselComparisonCard Props
+// ============================================================================
+
+function testVesselComparisonCardProps(): void {
+  console.log('\n📋 Testing VesselComparisonCard Props...');
+  console.log('-'.repeat(50));
+
+  const validData = {
+    vessels_analyzed: [
+      {
+        vessel_name: 'MV Pacific Star',
+        projected_rob: { VLSFO: 1200, LSMGO: 150 },
+        total_cost_usd: 0,
+        feasibility: 'feasible' as const,
+        planning_data: {
+          can_proceed_without_bunker: true,
+          total_voyage_cost: 0,
+          feasibility_score: 92,
+          cost_breakdown: { total_cost: 0 },
+        },
+      },
+    ],
+    rankings: [
+      { rank: 1, vessel_name: 'MV Pacific Star', recommendation_reason: 'No bunkering required', total_cost_usd: 0 },
+    ],
+    recommended_vessel: 'MV Pacific Star',
+    analysis_summary: 'Compared 2 vessel(s). Recommended: MV Pacific Star.',
+    comparison_matrix: {
+      'MV Pacific Star': {
+        projected_rob_vlsfo: 1200,
+        projected_rob_lsmgo: 150,
+        can_proceed_without_bunker: true,
+        total_voyage_cost: 0,
+        feasibility_score: 92,
+      },
+    },
+  };
+
+  assert(typeof validData === 'object', 'data is an object');
+  assert(Array.isArray(validData.vessels_analyzed), 'vessels_analyzed is an array');
+  assert(Array.isArray(validData.rankings), 'rankings is an array');
+  assert(typeof validData.recommended_vessel === 'string', 'recommended_vessel is a string');
+  assert(typeof validData.comparison_matrix === 'object', 'comparison_matrix is an object');
+}
+
+// ============================================================================
 // Test: RiskAlertCard Props
 // ============================================================================
 
@@ -172,9 +218,10 @@ async function testCardImports(): Promise<void> {
     assert(typeof cards.ComparisonResultCard === 'function', 'ComparisonResultCard is exported');
     assert(typeof cards.PriorityCard === 'function', 'PriorityCard is exported');
     assert(typeof cards.RiskAlertCard === 'function', 'RiskAlertCard is exported');
+    assert(typeof cards.VesselComparisonCard === 'function', 'VesselComparisonCard is exported');
   } catch (error) {
     console.log(`  ❌ Failed to import cards: ${error}`);
-    testsFailed += 6;
+    testsFailed += 7;
   }
 }
 
@@ -196,6 +243,7 @@ export async function testCards(): Promise<void> {
   testComparisonResultCardProps();
   testPriorityCardProps();
   testRiskAlertCardProps();
+  testVesselComparisonCardProps();
   await testCardImports();
   
   console.log('\n' + '='.repeat(60));

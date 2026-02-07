@@ -3,6 +3,11 @@
  */
 
 import { Port as RepoPort } from '@/lib/repositories/types';
+import type {
+  VesselCurrentState,
+  VesselMasterData,
+  VesselConsumptionProfile,
+} from '@/lib/repositories/types';
 import { Port } from '@/lib/types';
 
 export interface Waypoint {
@@ -121,4 +126,36 @@ export interface PortWeatherSafety {
   isSafe: boolean;
   restrictions: string[];
   recommendation: string;
+}
+
+/**
+ * Vessel Service Types
+ */
+
+export interface VesselPlanningData {
+  imo: string;
+  name: string;
+  current_state: VesselCurrentState;
+  master_data: VesselMasterData;
+  consumption_profile: VesselConsumptionProfile | null;
+}
+
+export interface ProjectedROB {
+  current_rob: VesselCurrentState['current_rob'];
+  projected_rob: {
+    VLSFO: number;
+    LSMGO: number;
+    MDO?: number;
+  };
+  days_to_voyage_end: number;
+  voyage_end_port: string;
+  voyage_end_date: Date;
+  projection_confidence: number;
+  assumptions:
+    | { note: string }
+    | {
+        daily_vlsfo_consumption: number;
+        daily_lsmgo_consumption: number;
+        based_on_reports: number;
+      };
 }

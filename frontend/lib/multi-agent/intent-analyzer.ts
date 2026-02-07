@@ -21,6 +21,8 @@ export interface QueryIntent {
   needs_weather: boolean;
   /** Whether bunker optimization is needed */
   needs_bunker: boolean;
+  /** Whether vessel selection/comparison is needed */
+  needs_vessel_selection: boolean;
   /** Query complexity level */
   complexity: 'low' | 'medium' | 'high';
   /** Weather query classification (for standalone port weather vs route weather) */
@@ -174,6 +176,20 @@ export function analyzeQueryIntent(userQuery: string): QueryIntent {
     'best option', 'recommendation', 'compare', 'savings', 'refueling',
     'bunkering port', 'fuel price', 'fuel cost'
   ].some(keyword => queryLower.includes(keyword));
+
+  // Vessel selection detection - compare vessels, which vessel, best ship, select vessel
+  const vesselSelectionPatterns = [
+    () => queryLower.includes('compare vessels'),
+    () => /compare\s+\d*\s*vessels?/i.test(queryLower),  // "Compare 3 vessels", "compare vessels"
+    () => queryLower.includes('which vessel'),
+    () => queryLower.includes('best ship'),
+    () => queryLower.includes('select vessel'),
+    () => queryLower.includes('compare ships'),
+    () => queryLower.includes('vessel selection'),
+    () => queryLower.includes('compare vessel'),
+    () => queryLower.includes('best vessel'),
+  ];
+  const needsVesselSelection = vesselSelectionPatterns.some(fn => fn());
   
   // Route detection - check if user is asking about routes
   // IMPORTANT: For standalone port weather queries, do NOT require route
@@ -206,10 +222,15 @@ export function analyzeQueryIntent(userQuery: string): QueryIntent {
     complexity = 'medium';
   }
   
+  if (needsVesselSelection) {
+    console.log('🎯 [INTENT] Vessel selection intent detected');
+  }
+
   return {
     needs_route: needsRoute,
     needs_weather: needsWeather,
     needs_bunker: needsBunker,
+    needs_vessel_selection: needsVesselSelection,
     complexity,
     weather_type: weatherClassification.type === 'none' ? 'none' : weatherClassification.type,
     weather_port: weatherClassification.port,
