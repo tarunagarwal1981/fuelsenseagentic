@@ -11,6 +11,8 @@
     "test:registry": "tsx lib/multi-agent/__tests__/registry.test.ts",
     "test:planning": "tsx lib/multi-agent/__tests__/planning.test.ts",
     "test:agentic": "tsx lib/multi-agent/__tests__/agentic-supervisor.test.ts",
+    "test:intent-classifier": "tsx lib/multi-agent/__tests__/intent-classifier.test.ts",
+    "test:intent-classifier:errors": "jest tests/unit/multi-agent/intent-classifier-error.test.ts",
     "test:query": "tsx lib/multi-agent/__tests__/query-test.ts",
     "test:baseline": "tsx tests/integration/baseline-queries.test.ts",
     "test:infrastructure": "tsx tests/infrastructure-validation.test.ts",

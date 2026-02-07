@@ -31,13 +31,21 @@ export const bunkerAgent: AgentDefinition = {
     'rank_bunker_options',
     'multi_port_planning',
   ],
+  /** Expanded for LLM intent classification */
   intents: [
-    'plan_bunker',
-    'find_fuel',
+    'bunker_costs',
+    'bunker_planning',
+    'bunkering_ports',
     'cheapest_bunker',
-    'optimize_bunker',
     'compare_ports',
-    'fuel_cost',
+    'find_fuel',
+    'fuel_optimization',
+    'fuel_planning',
+    'fuel_stops',
+    'optimize_bunker',
+    'plan_bunker',
+    'refueling_options',
+    'voyage_optimization',
   ],
   
   // Contract

@@ -104,6 +104,7 @@ async function testMultiAgent() {
         // Graceful degradation fields
         degraded_mode: false,
         missing_data: [],
+        routing_metadata: undefined,
       };
       
       const result = await multiAgentApp.invoke(initialState, {

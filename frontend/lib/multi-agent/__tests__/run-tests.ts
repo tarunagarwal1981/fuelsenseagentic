@@ -10,6 +10,7 @@ import './setup-env';
 import { testRegistry } from './registry.test';
 import { testPlanning } from './planning.test';
 import { testAgenticSupervisor } from './agentic-supervisor.test';
+import { testIntentClassifier, testIntentClassifierErrorHandling } from './intent-classifier.test';
 
 async function runAllTests() {
   console.log('🚀 [TEST-RUNNER] Starting test suite...\n');
@@ -47,6 +48,18 @@ async function runAllTests() {
     console.log('✅ Agentic supervisor tests completed\n');
   } catch (error) {
     console.error('❌ Agentic supervisor tests failed:', error);
+    allPassed = false;
+  }
+
+  try {
+    // Run intent classifier tests
+    console.log('\n📋 Running Intent Classifier Tests...');
+    console.log('-'.repeat(60));
+    await testIntentClassifier();
+    await testIntentClassifierErrorHandling();
+    console.log('✅ Intent classifier tests completed\n');
+  } catch (error) {
+    console.error('❌ Intent classifier tests failed:', error);
     allPassed = false;
   }
   

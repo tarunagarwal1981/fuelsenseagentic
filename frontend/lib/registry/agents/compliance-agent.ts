@@ -30,11 +30,19 @@ export const complianceAgent: AgentDefinition = {
     'validate_fueleu_maritime',
     'calculate_cii_impact',
   ],
+  /** Expanded for LLM intent classification */
   intents: [
-    'check_compliance',
-    'validate_eca',
     'calculate_emissions',
+    'check_compliance',
     'check_regulations',
+    'compliance_check',
+    'compliance_requirements',
+    'eca_validation',
+    'emission_zones',
+    'emissions_calc',
+    'regulatory_compliance',
+    'sulphur_limits',
+    'validate_eca',
   ],
   
   // Contract

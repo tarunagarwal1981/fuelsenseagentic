@@ -26,9 +26,10 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { LLMFactory } from './llm-factory';
 import { AgentRegistry } from './registry';
-import type { MultiAgentState, ReasoningStep } from './state';
+import type { MultiAgentState, ReasoningStep, RoutingMetadata } from './state';
 import { matchQueryPattern, type PatternMatch } from './pattern-matcher';
-import { makeRoutingDecision, CONFIDENCE_THRESHOLDS } from './decision-framework';
+import { makeRoutingDecision, CONFIDENCE_THRESHOLDS, type DecisionResult } from './decision-framework';
+import { logIntentClassification, hashQueryForIntent } from '@/lib/monitoring/intent-classification-logger';
 import { SupervisorPromptGenerator } from './supervisor-prompt-generator';
 
 // ============================================================================
@@ -50,6 +51,119 @@ interface Reasoning {
     recovery_action?: 'retry_agent' | 'skip_agent' | 'ask_user';
     question?: string;
     [key: string]: unknown;
+  };
+}
+
+// ============================================================================
+// Logging Utilities
+// ============================================================================
+
+// ============================================================================
+// Routing Metadata
+// ============================================================================
+
+/**
+ * Build routing_metadata from pattern match and decision.
+ * Used for observability and debugging - persists through agent execution.
+ */
+function buildRoutingMetadata(
+  patternMatch: PatternMatch,
+  decision: DecisionResult,
+  options?: { classification_method?: RoutingMetadata['classification_method']; matched_intent?: string }
+): RoutingMetadata {
+  const extracted_data = patternMatch.extracted_data;
+  const extracted_params: RoutingMetadata['extracted_params'] = extracted_data
+    ? {
+        origin_port: extracted_data.origin,
+        destination_port: extracted_data.destination,
+        date: extracted_data.date,
+        ...(extracted_data.port && { port: extracted_data.port }),
+      }
+    : undefined;
+
+  const classification_method =
+    options?.classification_method ??
+    (patternMatch.reason?.includes('LLM intent')
+      ? 'llm_intent_classifier'
+      : patternMatch.matched
+        ? 'pattern_match'
+        : 'llm_reasoning');
+
+  return {
+    matched_intent: options?.matched_intent ?? (patternMatch.type === 'ambiguous' ? 'unknown' : patternMatch.type),
+    target_agent: decision.agent || 'none',
+    confidence: decision.confidence,
+    classification_method,
+    reasoning: decision.reason,
+    classified_at: Date.now(),
+    extracted_params,
+  };
+}
+
+/**
+ * Log routing decision for observability.
+ */
+function logRoutingDecision(
+  query: string,
+  correlationId: string,
+  routing_metadata: RoutingMetadata
+): void {
+  logIntentClassification({
+    correlation_id: correlationId,
+    query,
+    query_hash: hashQueryForIntent(query),
+    classification_method: routing_metadata.classification_method,
+    matched_agent: routing_metadata.target_agent,
+    matched_intent: routing_metadata.matched_intent,
+    confidence: routing_metadata.confidence,
+    reasoning: routing_metadata.reasoning,
+    cache_hit: false,
+    latency_ms: 0,
+    cost_usd: 0,
+    timestamp: routing_metadata.classified_at,
+  });
+}
+
+/**
+ * Build routing_metadata for Tier 3 LLM reasoning path.
+ * Extracts intent from LLM response if available.
+ */
+function buildRoutingMetadataForTier3(
+  reasoning: Reasoning,
+  patternMatch: PatternMatch
+): RoutingMetadata {
+  const targetAgent =
+    reasoning.action === 'call_agent'
+      ? (reasoning.params?.agent as string) || 'none'
+      : reasoning.action === 'finalize'
+        ? 'finalize'
+        : reasoning.action === 'clarify'
+          ? 'finalize'
+          : reasoning.action === 'recover'
+            ? (reasoning.params?.agent as string) || 'none'
+            : 'none';
+
+  const matched_intent =
+    (reasoning.params?.intent as string) ?? 'llm_decided';
+
+  const extracted_data = patternMatch.extracted_data;
+  const extracted_params: RoutingMetadata['extracted_params'] = extracted_data
+    ? {
+        origin_port: extracted_data.origin,
+        destination_port: extracted_data.destination,
+        date: extracted_data.date,
+        ...(extracted_data.port && { port: extracted_data.port }),
+      }
+    : undefined;
+
+  return {
+    matched_intent,
+    target_agent: targetAgent,
+    confidence: 70, // Tier 3 uses LLM - reasonable default
+    classification_method: 'llm_reasoning',
+    reasoning: reasoning.thought,
+    classified_at: Date.now(),
+    extracted_params,
   };
 }
 
@@ -122,7 +236,7 @@ export async function reasoningSupervisor(
   const query = extractQuery(state);
   console.log(`\n🔍 [TIER-1] Pattern Matcher analyzing: "${query.substring(0, 80)}..."`);
   
-  const patternMatch = matchQueryPattern(query);
+  const patternMatch = await matchQueryPattern(query);
   
   logDecisionFlow('Pattern Match Results', {
     type: patternMatch.type,
@@ -160,12 +274,21 @@ export async function reasoningSupervisor(
       observation: `Pattern match with ${decision.confidence}% confidence → ${decision.agent}`,
       timestamp: new Date(),
     };
+
+    const routing_metadata = buildRoutingMetadata(patternMatch, decision);
+    logRoutingDecision(query, state.correlation_id || 'unknown', routing_metadata);
+    console.log('📋 [AGENTIC-SUPERVISOR] Setting routing_metadata:', {
+      matched_intent: routing_metadata.matched_intent,
+      target_agent: routing_metadata.target_agent,
+      classification_method: routing_metadata.classification_method,
+    });
     
     return {
       next_agent: decision.agent,
       current_thought: decision.reason,
       reasoning_history: [step],
       needs_clarification: false,
+      routing_metadata,
     };
   }
   
@@ -184,15 +307,24 @@ export async function reasoningSupervisor(
       observation: 'All required data available',
       timestamp: new Date(),
     };
+
+    const routing_metadata = buildRoutingMetadata(patternMatch, decision);
+    logRoutingDecision(query, state.correlation_id || 'unknown', routing_metadata);
+    console.log('📋 [AGENTIC-SUPERVISOR] Setting routing_metadata:', {
+      matched_intent: routing_metadata.matched_intent,
+      target_agent: routing_metadata.target_agent,
+      classification_method: routing_metadata.classification_method,
+    });
     
     return {
       next_agent: 'finalize',
       current_thought: decision.reason,
       reasoning_history: [step],
       needs_clarification: false,
+      routing_metadata,
     };
   }
-  
+
   // ============================================================================
   // REQUEST CLARIFICATION (Low Confidence < 30%)
   // ============================================================================
@@ -208,6 +340,14 @@ export async function reasoningSupervisor(
       observation: `Confidence too low (${decision.confidence}%), need user input`,
       timestamp: new Date(),
     };
+
+    const routing_metadata = buildRoutingMetadata(patternMatch, decision);
+    logRoutingDecision(query, state.correlation_id || 'unknown', routing_metadata);
+    console.log('📋 [AGENTIC-SUPERVISOR] Setting routing_metadata:', {
+      matched_intent: routing_metadata.matched_intent,
+      target_agent: routing_metadata.target_agent,
+      classification_method: routing_metadata.classification_method,
+    });
     
     return {
       needs_clarification: true,
@@ -215,6 +355,7 @@ export async function reasoningSupervisor(
       current_thought: decision.reason,
       reasoning_history: [step],
       next_agent: 'finalize',
+      routing_metadata,
     };
   }
   
@@ -242,8 +383,8 @@ export async function reasoningSupervisor(
     timestamp: new Date(),
   };
   
-  // Execute action
-  return executeReasoningAction(reasoning, state, step);
+  // Execute action (pass patternMatch for routing_metadata)
+  return executeReasoningAction(reasoning, state, step, patternMatch);
 }
 
 // ============================================================================
@@ -809,28 +950,37 @@ function getAgentDescriptions(): string {
 async function executeReasoningAction(
   reasoning: Reasoning,
   state: MultiAgentState,
-  step: ReasoningStep
+  step: ReasoningStep,
+  patternMatch: PatternMatch
 ): Promise<Partial<MultiAgentState>> {
-  
+  const routing_metadata = buildRoutingMetadataForTier3(reasoning, patternMatch);
+  const tier3Query = extractQuery(state);
+  logRoutingDecision(tier3Query, state.correlation_id || 'unknown', routing_metadata);
+  console.log('📋 [AGENTIC-SUPERVISOR] Setting routing_metadata (Tier 3):', {
+    matched_intent: routing_metadata.matched_intent,
+    target_agent: routing_metadata.target_agent,
+    classification_method: routing_metadata.classification_method,
+  });
+
   switch (reasoning.action) {
     case 'call_agent':
-      return handleCallAgent(reasoning, state, step);
+      return handleCallAgent(reasoning, state, step, routing_metadata);
       
     case 'validate':
       return handleValidate(reasoning, state, step);
       
     case 'recover':
-      return handleRecover(reasoning, state, step);
+      return handleRecover(reasoning, state, step, routing_metadata);
       
     case 'clarify':
-      return handleClarify(reasoning, state, step);
+      return handleClarify(reasoning, state, step, routing_metadata);
       
     case 'finalize':
-      return handleFinalize(reasoning, state, step);
+      return handleFinalize(reasoning, state, step, routing_metadata);
       
     default:
       console.error(`❌ [AGENTIC-SUPERVISOR] Unknown action: ${reasoning.action}`);
-      return handleFinalize(reasoning, state, step);
+      return handleFinalize(reasoning, state, step, routing_metadata);
   }
 }
 
@@ -840,7 +990,8 @@ async function executeReasoningAction(
 function handleCallAgent(
   reasoning: Reasoning,
   state: MultiAgentState,
-  step: ReasoningStep
+  step: ReasoningStep,
+  routing_metadata: RoutingMetadata
 ): Partial<MultiAgentState> {
   const agentName = reasoning.params?.agent;
 
@@ -850,6 +1001,7 @@ function handleCallAgent(
       next_agent: 'finalize',
       current_thought: 'No agent specified, finalizing',
       reasoning_history: [step],
+      routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
     };
   }
 
@@ -869,6 +1021,7 @@ function handleCallAgent(
       current_thought: 'Vessel info already retrieved, synthesizing response',
       reasoning_history: [step],
       needs_clarification: false,
+      routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
     };
   }
 
@@ -881,6 +1034,7 @@ function handleCallAgent(
       next_agent: 'finalize',
       current_thought: `Invalid agent ${agentName}, finalizing`,
       reasoning_history: [step],
+      routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
     };
   }
 
@@ -892,6 +1046,7 @@ function handleCallAgent(
     current_thought: reasoning.thought,
     reasoning_history: [step],
     needs_clarification: false,
+    routing_metadata,
   };
 }
 
@@ -924,7 +1079,8 @@ function handleValidate(
 function handleRecover(
   reasoning: Reasoning,
   state: MultiAgentState,
-  step: ReasoningStep
+  step: ReasoningStep,
+  routing_metadata: RoutingMetadata
 ): Partial<MultiAgentState> {
   console.log('🔄 [AGENTIC-SUPERVISOR] Attempting error recovery');
   
@@ -952,6 +1108,7 @@ function handleRecover(
       reasoning_history: [step],
       recovery_attempts: 1, // Will be added to existing count via reducer
       agent_status: newAgentStatus,
+      routing_metadata: { ...routing_metadata, target_agent: targetAgent },
     };
     
     // If this is route_agent and we have corrected port parameters, pass them via port_overrides
@@ -1028,10 +1185,11 @@ function handleRecover(
       current_thought: reasoning.thought,
       reasoning_history: [step],
       next_agent: 'finalize',
+      routing_metadata,
     };
   }
   
-  return handleFinalize(reasoning, state, step);
+  return handleFinalize(reasoning, state, step, routing_metadata);
 }
 
 /**
@@ -1040,7 +1198,8 @@ function handleRecover(
 function handleClarify(
   reasoning: Reasoning,
   state: MultiAgentState,
-  step: ReasoningStep
+  step: ReasoningStep,
+  routing_metadata: RoutingMetadata
 ): Partial<MultiAgentState> {
   console.log('❓ [AGENTIC-SUPERVISOR] Need user clarification');
   
@@ -1053,6 +1212,7 @@ function handleClarify(
     current_thought: reasoning.thought,
     reasoning_history: [step],
     next_agent: 'finalize',
+    routing_metadata,
   };
 }
 
@@ -1062,7 +1222,8 @@ function handleClarify(
 function handleFinalize(
   reasoning: Reasoning,
   state: MultiAgentState,
-  step: ReasoningStep
+  step: ReasoningStep,
+  routing_metadata: RoutingMetadata
 ): Partial<MultiAgentState> {
   console.log('✅ [AGENTIC-SUPERVISOR] Finalizing');
   step.observation = 'Proceeding to finalize';
@@ -1072,6 +1233,7 @@ function handleFinalize(
     current_thought: reasoning.thought,
     reasoning_history: [step],
     needs_clarification: false,
+    routing_metadata,
   };
 }
 

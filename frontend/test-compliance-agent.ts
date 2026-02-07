@@ -109,6 +109,7 @@ async function testComplianceAgent() {
         // Graceful degradation fields
         degraded_mode: false,
         missing_data: [],
+        routing_metadata: undefined,
       };
       
       console.log('🚀 Starting multi-agent workflow...\n');

@@ -38,6 +38,7 @@ function getChatOpenAI() {
  */
 export type LLMTask = 
   | 'intent_analysis'      // Supervisor (currently uses pure logic)
+  | 'intent_classification' // Map query to agent ID (GPT-4o-mini)
   | 'supervisor_planning'  // Supervisor orchestration decisions
   | 'simple_tool'          // Route, Weather agents (simple schemas)
   | 'complex_tool'         // Bunker agent (complex nested schemas)
@@ -80,6 +81,28 @@ export class LLMFactory {
         // Supervisor: Should use pure logic, not LLM
         // If needed in future, use Gemini Flash
         throw new Error('Intent analysis should use pure logic, not LLM');
+
+      case 'intent_classification':
+        /** Lightweight query→agent mapping. Uses GPT-4o-mini for fast, cheap classification. */
+        const OpenAIIntent = getChatOpenAI();
+        if (OpenAIIntent && process.env.OPENAI_API_KEY) {
+          console.log('🤖 [LLM-FACTORY] Using GPT-4o-mini for intent classification');
+          return new OpenAIIntent({
+            model: 'gpt-4o-mini',
+            temperature: 0,
+            maxTokens: 200,
+            apiKey: process.env.OPENAI_API_KEY,
+          });
+        }
+        // Fallback to Haiku if OpenAI unavailable
+        console.warn(
+          '⚠️ [LLM-FACTORY] OPENAI_API_KEY not available, using Claude Haiku 4.5 for intent classification (fallback)'
+        );
+        return new ChatAnthropic({
+          model: 'claude-haiku-4-5-20251001',
+          temperature: 0,
+          apiKey: apiKey,
+        });
         
       case 'supervisor_planning':
         // Supervisor: Orchestration and tool allocation decisions

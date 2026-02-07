@@ -21,6 +21,7 @@ export {
 
 export type {
   SynthesizedResponse,
+  RoutingContext,
   Insight,
   Recommendation,
   Warning,

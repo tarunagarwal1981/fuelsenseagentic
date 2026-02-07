@@ -8,6 +8,13 @@
 // Core Types
 // ============================================================================
 
+export interface RoutingContext {
+  classification_method: string;
+  confidence: number;
+  primary_agent: string;
+  matched_intent: string;
+}
+
 export interface SynthesizedResponse {
   synthesizedAt: Date;
   correlationId: string;
@@ -21,6 +28,8 @@ export interface SynthesizedResponse {
   metrics: ExecutionMetrics;
   reasoning: string;
   nextSteps: NextStep[];
+  /** Routing metadata from supervisor (optional for backward compatibility) */
+  routing_context?: RoutingContext;
 }
 
 export interface Insight {
@@ -72,6 +81,10 @@ export interface ExecutionMetrics {
   api_calls: number;
   total_cost_usd: number;
   success_rate: number;
+  /** Classification confidence from routing (optional) */
+  classification_confidence?: number;
+  /** Routing method used (pattern_match, llm_intent_classifier, llm_reasoning) */
+  routing_method?: string;
 }
 
 export interface NextStep {

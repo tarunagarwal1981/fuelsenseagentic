@@ -4760,6 +4760,17 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       
       const synthesis = AutoSynthesisEngine.synthesizeResponse(state);
       autoSynthesisResult = synthesis;
+      const routingCtx = state.routing_metadata
+        ? {
+            classification_method: state.routing_metadata.classification_method,
+            confidence: state.routing_metadata.confidence,
+            primary_agent: state.routing_metadata.target_agent,
+            matched_intent: state.routing_metadata.matched_intent,
+          }
+        : undefined;
+      if (routingCtx) {
+        console.log('📋 [FINALIZE] Including routing_context in synthesis:', routingCtx);
+      }
       synthesizedResponse = {
         synthesizedAt: new Date(),
         correlationId: extractCorrelationId(state),
@@ -4786,9 +4797,14 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
           api_calls: 0,
           total_cost_usd: 0,
           success_rate: 1.0,
+          classification_confidence: state.routing_metadata?.confidence,
+          routing_method: state.routing_metadata?.classification_method,
         },
-        reasoning: `Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`,
+        reasoning: routingCtx
+          ? `Routed via ${routingCtx.classification_method} to ${routingCtx.primary_agent} (confidence: ${routingCtx.confidence}%). Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`
+          : `Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`,
         nextSteps: [],
+        routing_context: routingCtx,
       };
       
       updatedState.synthesized_response = synthesizedResponse;
@@ -4807,6 +4823,17 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         console.log(`   Insights: ${synthesis.insights.length}`);
         
         // Adapt AutoSynthesisResult to SynthesizedResponse-like format for template engine
+        const routingCtx = state.routing_metadata
+          ? {
+              classification_method: state.routing_metadata.classification_method,
+              confidence: state.routing_metadata.confidence,
+              primary_agent: state.routing_metadata.target_agent,
+              matched_intent: state.routing_metadata.matched_intent,
+            }
+          : undefined;
+        if (routingCtx) {
+          console.log('📋 [FINALIZE] Including routing_context in synthesis:', routingCtx);
+        }
         synthesizedResponse = {
           synthesizedAt: new Date(),
           correlationId: extractCorrelationId(state),
@@ -4826,9 +4853,14 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
             api_calls: 0,
             total_cost_usd: 0,
             success_rate: 1.0,
+            classification_confidence: state.routing_metadata?.confidence,
+            routing_method: state.routing_metadata?.classification_method,
           },
-          reasoning: `Auto-discovered from ${synthesis.context.agents_executed.length} agents`,
+          reasoning: routingCtx
+            ? `Routed via ${routingCtx.classification_method} to ${routingCtx.primary_agent} (confidence: ${routingCtx.confidence}%). Auto-discovered from ${synthesis.context.agents_executed.length} agents`
+            : `Auto-discovered from ${synthesis.context.agents_executed.length} agents`,
           nextSteps: [],
+          routing_context: routingCtx,
         };
         
         // Store synthesized response in state (separate from formatting)

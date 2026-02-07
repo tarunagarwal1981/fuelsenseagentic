@@ -34,12 +34,21 @@ export const routeAgent: AgentDefinition = {
     'calculate_weather_timeline',
     'estimate_travel_time',
   ],
+  /** Expanded for LLM intent classification */
   intents: [
-    'plan_route',
     'calculate_distance',
+    'distance_calculation',
     'find_waypoints',
     'how_far',
     'how_long',
+    'maritime_route',
+    'navigation_route',
+    'plan_route',
+    'route_calculation',
+    'route_distance',
+    'route_planning',
+    'sailing_route',
+    'voyage_route',
   ],
   
   // Contract

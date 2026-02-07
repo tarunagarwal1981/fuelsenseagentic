@@ -10,6 +10,10 @@
  * - Tier 3: LLM Reasoning - Complex queries
  */
 
+import { IntentClassifier } from './intent-classifier';
+import { logIntentClassification, hashQueryForIntent } from '@/lib/monitoring/intent-classification-logger';
+import { getCorrelationId } from '@/lib/monitoring/correlation-context';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -31,7 +35,11 @@ export interface PatternMatch {
     | 'route_agent'
     | 'bunker_agent'
     | 'compliance_agent'
-    | 'vessel_info_agent';
+    | 'vessel_info_agent'
+    | 'vessel_selection_agent'
+    | 'rob_tracking_agent'
+    | 'entity_extractor'
+    | string;
   /** Confidence score 0-100 */
   confidence: number;
   /** Extracted data from the query */
@@ -156,6 +164,43 @@ const VESSEL_INFO_PATTERNS = [
 const GENERIC_WORDS = ['port', 'there', 'here', 'location', 'place', 'somewhere', 'anywhere'];
 
 // ============================================================================
+// Agent ID to Pattern Type Mapping
+// ============================================================================
+
+/**
+ * Maps agent_id from IntentClassifier to PatternMatch type.
+ * Used when LLM intent classification resolves an ambiguous query.
+ */
+function intentToPatternType(agent_id: string): PatternMatch['type'] {
+  const mapping: Record<string, PatternMatch['type']> = {
+    vessel_info_agent: 'vessel_info',
+    bunker_agent: 'bunker_planning',
+    route_agent: 'route_calculation',
+    weather_agent: 'port_weather',
+    compliance_agent: 'compliance',
+    vessel_selection_agent: 'vessel_info', // vessel-related, closest match
+    rob_tracking_agent: 'bunker_planning', // ROB/fuel related
+    entity_extractor: 'vessel_info', // fallback for entity extraction
+  };
+  return mapping[agent_id] ?? 'ambiguous';
+}
+
+/**
+ * Build extracted_data from IntentClassifier extracted_params
+ */
+function buildExtractedData(
+  params: Record<string, unknown>
+): PatternMatch['extracted_data'] {
+  if (!params || typeof params !== 'object') return {};
+  return {
+    port: typeof params.port === 'string' ? params.port : undefined,
+    origin: typeof params.origin_port === 'string' ? params.origin_port : undefined,
+    destination: typeof params.destination_port === 'string' ? params.destination_port : undefined,
+    date: typeof params.date === 'string' ? params.date : undefined,
+  };
+}
+
+// ============================================================================
 // Main Pattern Matching Function
 // ============================================================================
 
@@ -165,8 +210,9 @@ const GENERIC_WORDS = ['port', 'there', 'here', 'location', 'place', 'somewhere'
  * Returns a PatternMatch with confidence score and extracted data.
  * High confidence (>= 80) means we can proceed without LLM reasoning.
  * Low confidence (< 30) means we should ask for clarification.
+ * For ambiguous queries (no pattern match, confidence < 30), falls back to LLM intent classification.
  */
-export function matchQueryPattern(query: string): PatternMatch {
+export async function matchQueryPattern(query: string): Promise<PatternMatch> {
   const trimmedQuery = query.trim();
   
   // ============================================================================
@@ -323,15 +369,64 @@ export function matchQueryPattern(query: string): PatternMatch {
   }
   
   // ============================================================================
-  // No Pattern Match - Ambiguous
+  // No Pattern Match - Ambiguous (try LLM intent classification)
   // ============================================================================
-  
-  return {
+
+  const ambiguousResult: PatternMatch = {
     matched: false,
     type: 'ambiguous',
     confidence: 0,
     reason: 'No clear pattern matched - needs LLM reasoning',
   };
+
+  // When ambiguous and confidence < 30, try LLM intent classification
+  if (ambiguousResult.type === 'ambiguous' && ambiguousResult.confidence < 30) {
+    try {
+      console.log('🤖 [PATTERN-MATCHER] Using LLM intent classification for ambiguous query');
+      const llmStart = Date.now();
+      const classification = await IntentClassifier.classify(query);
+      const latencyMs = Date.now() - llmStart;
+
+      if (classification && classification.confidence >= 0.7) {
+        const patternType = intentToPatternType(classification.agent_id);
+
+        // Only use classification if we can map to a known pattern type
+        if (patternType !== 'ambiguous') {
+          const confidencePercent = Math.round(classification.confidence * 100);
+          const correlationId = getCorrelationId() || 'unknown';
+          logIntentClassification({
+            correlation_id: correlationId,
+            query,
+            query_hash: hashQueryForIntent(query),
+            classification_method: 'llm_intent_classifier',
+            matched_agent: classification.agent_id,
+            matched_intent: patternType,
+            confidence: confidencePercent,
+            reasoning: `LLM intent classification: ${classification.reasoning}`,
+            cache_hit: false,
+            latency_ms: latencyMs,
+            cost_usd: 0,
+            timestamp: Date.now(),
+          });
+          return {
+            matched: true,
+            type: patternType,
+            agent: classification.agent_id as PatternMatch['agent'],
+            confidence: confidencePercent,
+            extracted_data: buildExtractedData(classification.extracted_params),
+            reason: `LLM intent classification: ${classification.reasoning}`,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn(
+        '[PATTERN-MATCHER] IntentClassifier failed, falling back to ambiguous:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  return ambiguousResult;
 }
 
 // ============================================================================

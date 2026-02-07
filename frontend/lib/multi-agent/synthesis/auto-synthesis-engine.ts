@@ -33,6 +33,13 @@ export interface SynthesisContext {
   /** Query context */
   query_type: string;
   query_intent: string;
+  /** Routing metadata from supervisor (optional) */
+  routing_metadata?: {
+    classification_method: string;
+    confidence: number;
+    target_agent: string;
+    matched_intent: string;
+  };
 }
 
 export interface ExtractedData {
@@ -82,6 +89,14 @@ export class AutoSynthesisEngine {
       primary_domain: primaryDomain,
       query_type: this.inferQueryType(primaryDomain, executedAgents),
       query_intent: this.inferQueryIntent(state),
+      routing_metadata: state.routing_metadata
+        ? {
+            classification_method: state.routing_metadata.classification_method,
+            confidence: state.routing_metadata.confidence,
+            target_agent: state.routing_metadata.target_agent,
+            matched_intent: state.routing_metadata.matched_intent,
+          }
+        : undefined,
     };
 
     console.log(

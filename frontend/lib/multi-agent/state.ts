@@ -65,6 +65,34 @@ export interface SupervisorNextAction {
 // ============================================================================
 
 /**
+ * Routing metadata from intent classification.
+ * Populated when query is classified (LLM or pattern match) for observability and debugging.
+ */
+export interface RoutingMetadata {
+  /** Intent matched from query (e.g., 'vessel_list', 'bunker_planning') */
+  matched_intent: string;
+  /** Target agent selected by classification */
+  target_agent: string;
+  /** Classification confidence (0-100) */
+  confidence: number;
+  /** Method used for classification */
+  classification_method: 'llm_intent_classifier' | 'pattern_match' | 'llm_reasoning';
+  /** LLM reasoning for routing decision */
+  reasoning: string;
+  /** Timestamp of classification */
+  classified_at: number;
+  /** Parameters extracted by classifier */
+  extracted_params?: {
+    vessel_name?: string;
+    imo?: string;
+    origin_port?: string;
+    destination_port?: string;
+    date?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+/**
  * Agent context passed from supervisor to agents
  * Contains intent-based instructions for each agent
  */
@@ -600,6 +628,15 @@ export const MultiAgentStateAnnotation = Annotation.Root({
       return result;
     },
     default: () => null,
+  }),
+
+  /**
+   * Routing metadata from intent classification (optional).
+   * Won't exist in old state objects. Set when query is classified for observability.
+   */
+  routing_metadata: Annotation<RoutingMetadata | undefined>({
+    reducer: (_, update) => update,
+    default: () => undefined,
   }),
 
   /**

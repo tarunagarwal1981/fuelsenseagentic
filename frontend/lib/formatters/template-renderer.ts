@@ -63,20 +63,40 @@ export async function render(
 
   const primarySummary = computePrimarySummary(synthesis, state);
 
+  // Build routing_context for templates (optional, for debug mode)
+  const routingContext = synthesis.context.routing_metadata
+    ? {
+        classification_method: synthesis.context.routing_metadata.classification_method,
+        confidence: synthesis.context.routing_metadata.confidence,
+        primary_agent: synthesis.context.routing_metadata.target_agent,
+        matched_intent: synthesis.context.routing_metadata.matched_intent,
+      }
+    : undefined;
+
   // Build enriched state: merge available_data at top level for flat access
   // (e.g. template can use {{vessel_specs}} instead of {{state.vessel_specs}})
   const enrichedState = {
     ...state,
     ...(synthesis.context.available_data || {}),
     primary_summary: primarySummary,
+    // Routing context for observability (optional in templates, e.g. {{#if routing_context}})
+    routing_context: routingContext,
+    // Show routing metadata in template when SYNTHESIS_DEBUG=true
+    show_routing_debug:
+      process.env.SYNTHESIS_DEBUG === 'true' && !!routingContext,
     // Attach synthesis for any template that needs structured access
     _synthesis: {
       context: synthesis.context,
       insights: synthesis.insights,
       recommendations: synthesis.recommendations,
       warnings: synthesis.warnings,
+      routing_metadata: synthesis.context.routing_metadata,
     },
-  } as MultiAgentState & { primary_summary: string };
+  } as MultiAgentState & {
+    primary_summary: string;
+    routing_context?: typeof routingContext;
+    show_routing_debug?: boolean;
+  };
 
   const formatted = formatResponseWithTemplate(enrichedState, loadResult.name);
   return formatted.text;

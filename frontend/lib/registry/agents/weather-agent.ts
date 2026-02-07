@@ -30,11 +30,19 @@ export const weatherAgent: AgentDefinition = {
     'assess_sea_state',
     'generate_weather_alerts',
   ],
+  /** Expanded for LLM intent classification */
   intents: [
-    'check_weather',
-    'weather_forecast',
     'calculate_consumption',
     'check_port_safety',
+    'check_weather',
+    'forecast',
+    'marine_weather',
+    'port_weather',
+    'sea_conditions',
+    'weather_analysis',
+    'weather_check',
+    'weather_conditions',
+    'weather_forecast',
     'weather_impact',
   ],
   

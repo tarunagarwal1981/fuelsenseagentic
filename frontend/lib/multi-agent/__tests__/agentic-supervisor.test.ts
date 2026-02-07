@@ -119,7 +119,7 @@ export async function testPatternMatcher(): Promise<void> {
     console.log(`📋 Test: ${testCase.description}`);
     console.log(`   Query: "${testCase.query}"`);
     
-    const result = matchQueryPattern(testCase.query);
+    const result = await matchQueryPattern(testCase.query);
     
     const typeMatch = result.type === testCase.expectedType;
     const agentMatch = result.agent === testCase.expectedAgent;
