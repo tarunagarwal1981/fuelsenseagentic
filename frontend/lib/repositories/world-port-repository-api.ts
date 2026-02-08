@@ -214,8 +214,11 @@ export class WorldPortRepositoryAPI implements IWorldPortRepository {
     }
 
     // 3. Create WorldPortEntry object
+    // When unLocode is empty (e.g. Fujairah/Al Fujayrah), use WPI_<OID> so we have a valid id for routing
+    const oid = apiPort.OID ?? apiPort.worldPortIndexNumber ?? apiPort.id;
+    const id = code ? code : (oid != null ? `WPI_${oid}` : '');
     const port: WorldPortEntry = {
-      id: code,
+      id,
       code: code || null,
       name: name,
       coordinates: [latitude, longitude],

@@ -56,7 +56,7 @@ export class PortResolutionService {
       try {
         const w = await this.worldPortRepo.findByName(originQuery);
         if (w?.coordinates) {
-          origin = w.id;
+          origin = (w.code && String(w.code).trim()) ? w.code : w.id;
           origin_coordinates = w.coordinates;
           console.log(`✅ [PORT-RESOLUTION] World Port origin: ${w.id} (${w.name})`);
         }
@@ -68,7 +68,7 @@ export class PortResolutionService {
       try {
         const w = await this.worldPortRepo.findByName(destQuery);
         if (w?.coordinates) {
-          destination = w.id;
+          destination = (w.code && String(w.code).trim()) ? w.code : w.id;
           destination_coordinates = w.coordinates;
           console.log(`✅ [PORT-RESOLUTION] World Port destination: ${w.id} (${w.name})`);
         }
@@ -136,7 +136,7 @@ export class PortResolutionService {
       try {
         const w = await this.worldPortRepo.findByName(origin.trim());
         if (w?.coordinates) {
-          result.origin = w.code ?? w.id;
+          result.origin = (w.code && String(w.code).trim()) ? w.code : w.id;
           result.origin_coordinates = [w.coordinates[0], w.coordinates[1]];
           console.log(`✅ [PORT-RESOLUTION] World Port origin: ${result.origin} (${w.name})`);
         } else if (this.useApiFallback) {
@@ -159,7 +159,7 @@ export class PortResolutionService {
       try {
         const w = await this.worldPortRepo.findByName(destination.trim());
         if (w?.coordinates) {
-          result.destination = w.code ?? w.id;
+          result.destination = (w.code && String(w.code).trim()) ? w.code : w.id;
           result.destination_coordinates = [w.coordinates[0], w.coordinates[1]];
           console.log(`✅ [PORT-RESOLUTION] World Port destination: ${result.destination} (${w.name})`);
         } else if (this.useApiFallback) {

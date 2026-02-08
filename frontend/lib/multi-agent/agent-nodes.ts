@@ -2051,25 +2051,40 @@ export async function routeAgentNode(
         destCoords = state.agent_context.route_agent.port_overrides.destination_coordinates as [number, number];
       }
       
-      // Validate we have both ports
-      if (!origin || !destination) {
-        if (!origin && destination) {
-          const errorMsg = `Could not identify origin port from: "${originName || userQuery}". Destination: ${destination}. Try "from Singapore to Fujairah".`;
-          console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
-          throw new Error(errorMsg);
-        }
-        if (origin && !destination) {
-          const errorMsg = `Could not identify destination port from: "${destName || userQuery}". Origin: ${origin}. Try "from Singapore to Fujairah".`;
-          console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
-          throw new Error(errorMsg);
-        }
-        const errorMsg = `Could not identify origin or destination. Use "from [ORIGIN] to [DESTINATION]" or "between X and Y".`;
+      // Validate we have enough data: EITHER code OR coordinates for each port
+      // Coordinates are sufficient for SeaRoute API - codes are nice-to-have for validation/caching
+      const hasOriginData = (origin && String(origin).trim()) || originCoords;
+      const hasDestData = (destination && String(destination).trim()) || destCoords;
+
+      if (!hasOriginData) {
+        const errorMsg = `Could not resolve origin port "${originName || 'unknown'}" - no valid code or coordinates found in database. Try using a major port like Singapore, Rotterdam, or Fujairah.`;
         console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
         throw new Error(errorMsg);
       }
-      
+      if (!hasDestData) {
+        const errorMsg = `Could not resolve destination port "${destName || 'unknown'}" - no valid code or coordinates found in database. Try using a major port like Singapore, Rotterdam, or Fujairah.`;
+        console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // When we have coordinates but no code (e.g. Fujairah with empty unLocode), use placeholders for route input
+      const resolvedOrigin = (origin && String(origin).trim()) || (originCoords ? 'WPI_0' : '');
+      const resolvedDest = (destination && String(destination).trim()) || (destCoords ? 'WPI_1' : '');
+      origin = resolvedOrigin || origin;
+      destination = resolvedDest || destination;
+
       if (typeof origin !== 'string' || typeof destination !== 'string') {
         throw new Error('Port resolution failed: origin and destination must be set');
+      }
+
+      // Log what we're using for routing
+      if (originCoords && destCoords) {
+        console.log(`✅ [ROUTE-WORKFLOW] Using coordinate-based routing`);
+        console.log(`   Origin: ${originName} → [${originCoords[0]}, ${originCoords[1]}]`);
+        console.log(`   Destination: ${destName} → [${destCoords[0]}, ${destCoords[1]}]`);
+      } else if (origin && destination) {
+        console.log(`✅ [ROUTE-WORKFLOW] Using code-based routing`);
+        console.log(`   Origin: ${origin}, Destination: ${destination}`);
       }
       
       console.log(`📍 [ROUTE-WORKFLOW] Calculating route: ${origin} → ${destination}`);
