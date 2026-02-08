@@ -4,6 +4,7 @@ AI-powered maritime bunker optimization and voyage planning. Multi-agent system 
 
 ## Features
 
+- **AI-FIRST Routing**: LLM Intent Classification primary (GPT-4o-mini), regex patterns fallback; natural language understanding with 7-day Redis caching
 - **Multi-Agent Architecture**: Supervisor routes to specialist agents (route, weather, bunker, compliance, vessel info, vessel selection)
 - **Vessel Intelligence**: Vessel count/list, noon reports (ROB, position), consumption profiles, vessel specs
 - **Bunker Planning**: Route calculation, bunker port finding, fuel pricing, cost-benefit analysis
@@ -61,6 +62,7 @@ Open `http://localhost:3000`.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `OPENAI_API_KEY` | No | GPT-4o-mini for intent classification (fallback: Claude) |
 | `UPSTASH_REDIS_REST_URL` | Yes | Redis REST URL (cache + LangGraph checkpointer) |
 | `UPSTASH_REDIS_REST_TOKEN` | Yes | Redis token |
 | `NEXT_PUBLIC_FUELSENSE_API_URL` | No | FuelSense API (bunker ports, vessel details, datalogs, consumption profiles) |
@@ -124,6 +126,8 @@ Key modules: `lib/multi-agent/llm-response-generator.ts`, `lib/config/template-l
 ## Architecture
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+- **Query routing**: AI-FIRST 3-tier framework (LLM → regex fallback → Tier 3 reasoning)
 
 ## License
 

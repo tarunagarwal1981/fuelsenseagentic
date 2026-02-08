@@ -72,6 +72,32 @@ User Query → API → Supervisor (LLM) → Entity Extractor
                  → Finalize → AutoSynthesis → Template (or LLM fallback) → Response
 ```
 
+## Query Routing (AI-FIRST 3-Tier Framework)
+
+The supervisor uses an **AI-FIRST** routing strategy: LLM Intent Classification is primary, regex patterns are fallback.
+
+```
+Tier 1a: LLM Intent Classification (AI-FIRST)
+         → IntentClassifier (GPT-4o-mini) maps query to agent
+         → Confidence ≥ 70% → use classification
+         → Cached results: <10ms (faster than regex!)
+         → Redis cache: 7-day TTL
+
+Tier 1b: Regex Pattern Matching (fallback)
+         → When LLM fails, low confidence, or unavailable
+         → PORT_WEATHER_PATTERNS, ROUTE_PATTERNS, BUNKER_PATTERNS, etc.
+         → Deterministic extraction (ports, dates, origin/destination)
+
+Tier 2:  Decision Framework
+         → Confidence thresholds (80% act, 30–80% judgment, <30% clarify)
+
+Tier 3:  LLM Reasoning (complex queries)
+         → When neither Tier 1a nor 1b matches
+         → Full Claude reasoning for ambiguous queries
+```
+
+**Benefits**: Handles natural language variations ("give me vessel names"), extracts parameters via LLM, regex fallback when LLM unavailable. Cost: ~$0.0001/query (GPT-4o-mini) with 7-day caching.
+
 ## Agents & Tools
 
 | Agent | Type | Tools | Outputs |
@@ -120,6 +146,8 @@ Phase 2: Response rendering
 | Component | Location |
 |-----------|----------|
 | LangGraph | `frontend/lib/multi-agent/graph.ts` |
+| Pattern Matcher (AI-FIRST routing) | `frontend/lib/multi-agent/pattern-matcher.ts` |
+| Intent Classifier (GPT-4o-mini) | `frontend/lib/multi-agent/intent-classifier.ts` |
 | Agent Registry (multi-agent) | `frontend/lib/multi-agent/registry.ts` |
 | Agent Registry (lib) | `frontend/lib/registry/agent-registry.ts` |
 | Tool Registry | `frontend/lib/registry/tool-registry.ts` |

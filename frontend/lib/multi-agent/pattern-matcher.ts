@@ -1,11 +1,11 @@
 /**
  * Pattern Matcher for Common Query Types
- * 
- * Fast, deterministic routing for obvious query patterns.
- * Avoids LLM calls when query intent is crystal clear.
- * 
+ *
+ * AI-FIRST routing: LLM Intent Classification primary, regex patterns fallback.
+ *
  * Part of the 3-Tier Decision Framework:
- * - Tier 1: Pattern Matcher (this file) - Fast regex matching
+ * - Tier 1a: LLM Intent Classification (AI-FIRST) - Natural language understanding
+ * - Tier 1b: Regex Pattern Matching (fallback) - When LLM fails or low confidence
  * - Tier 2: Decision Framework - Confidence thresholds
  * - Tier 3: LLM Reasoning - Complex queries
  */
@@ -214,19 +214,74 @@ function buildExtractedData(
 
 /**
  * Match query against known patterns
- * 
+ *
+ * AI-FIRST: Tries LLM Intent Classification first, then regex patterns as fallback.
  * Returns a PatternMatch with confidence score and extracted data.
- * High confidence (>= 80) means we can proceed without LLM reasoning.
- * Low confidence (< 30) means we should ask for clarification.
- * For ambiguous queries (no pattern match, confidence < 30), falls back to LLM intent classification.
  */
 export async function matchQueryPattern(query: string): Promise<PatternMatch> {
   const trimmedQuery = query.trim();
-  
+
   // ============================================================================
-  // Pattern 1: Port Weather Queries (highest priority for weather keywords)
+  // TIER 1a: LLM Intent Classification (AI-FIRST approach)
   // ============================================================================
-  
+  try {
+    console.log('🤖 [PATTERN-MATCHER] AI-FIRST: Trying LLM intent classification');
+    const llmStart = Date.now();
+    const correlationId = getCorrelationId() || 'unknown';
+    const classification = await IntentClassifier.classify(query, correlationId);
+    const latencyMs = Date.now() - llmStart;
+
+    if (classification && classification.confidence >= 0.7) {
+      const patternType = intentToPatternType(classification.agent_id);
+
+      if (patternType !== 'ambiguous') {
+        const confidencePercent = Math.round(classification.confidence * 100);
+
+        logIntentClassification({
+          correlation_id: correlationId,
+          query,
+          query_hash: hashQueryForIntent(query),
+          classification_method: 'llm_intent_classifier',
+          matched_agent: classification.agent_id,
+          matched_intent: patternType,
+          confidence: confidencePercent,
+          reasoning: `LLM intent classification (AI-FIRST): ${classification.reasoning}`,
+          cache_hit: classification.cache_hit ?? false,
+          latency_ms: classification.latency_ms ?? latencyMs,
+          cost_usd: classification.cost_usd ?? 0.0001,
+          timestamp: Date.now(),
+        });
+
+        console.log(`✅ [PATTERN-MATCHER] AI-FIRST: LLM classified → ${classification.agent_id} (${confidencePercent}% confidence)`);
+
+        return {
+          matched: true,
+          type: patternType,
+          agent: classification.agent_id as PatternMatch['agent'],
+          confidence: confidencePercent,
+          extracted_data: buildExtractedData(classification.extracted_params ?? {}),
+          reason: `AI-FIRST LLM classification: ${classification.reasoning}`,
+          latency_ms: classification.latency_ms,
+          cache_hit: classification.cache_hit,
+          cost_usd: classification.cost_usd,
+          query_hash: classification.query_hash,
+        };
+      }
+    } else if (classification) {
+      console.log(`⚠️ [PATTERN-MATCHER] AI-FIRST: LLM confidence too low (${Math.round(classification.confidence * 100)}%), falling back to regex patterns`);
+    }
+  } catch (err) {
+    console.warn(
+      '[PATTERN-MATCHER] AI-FIRST: IntentClassifier failed, falling back to regex patterns:',
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+
+  // ============================================================================
+  // TIER 1b: Regex Pattern Matching (FALLBACK when LLM fails/low confidence)
+  // ============================================================================
+  console.log('🔍 [PATTERN-MATCHER] Trying regex patterns (fallback)');
+
   // Check if query contains weather-related keywords
   const hasWeatherKeyword = /weather|forecast|condition/i.test(trimmedQuery);
   
@@ -377,68 +432,14 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
   }
   
   // ============================================================================
-  // No Pattern Match - Ambiguous (try LLM intent classification)
+  // No Match: Neither LLM nor regex matched - needs Tier 3 reasoning
   // ============================================================================
-
-  const ambiguousResult: PatternMatch = {
+  return {
     matched: false,
     type: 'ambiguous',
     confidence: 0,
-    reason: 'No clear pattern matched - needs LLM reasoning',
+    reason: 'No LLM classification or regex pattern matched - needs Tier 3 reasoning',
   };
-
-  // If pattern matching failed (ambiguous), try LLM classification
-  if (ambiguousResult.type === 'ambiguous') {
-    try {
-      console.log('🤖 [PATTERN-MATCHER] Ambiguous query, trying LLM intent classification...');
-      const llmStart = Date.now();
-      const correlationId = getCorrelationId() || 'unknown';
-      const classification = await IntentClassifier.classify(query, correlationId);
-      const latencyMs = Date.now() - llmStart;
-
-      if (classification && classification.confidence >= 0.7) {
-        const patternType = intentToPatternType(classification.agent_id);
-        const confidencePercent = Math.round(classification.confidence * 100);
-
-        console.log(`✅ [PATTERN-MATCHER] LLM classified as: ${classification.agent_id} (${confidencePercent}% confidence)`);
-
-        // Only use classification if we can map to a known pattern type
-        if (patternType !== 'ambiguous') {
-          logIntentClassification({
-            correlation_id: correlationId,
-            query,
-            query_hash: hashQueryForIntent(query),
-            classification_method: 'llm_gpt4o_mini',
-            matched_agent: classification.agent_id,
-            matched_intent: patternType,
-            confidence: confidencePercent,
-            reasoning: `LLM intent classification: ${classification.reasoning}`,
-            cache_hit: false,
-            latency_ms: latencyMs,
-            cost_usd: 0,
-            timestamp: Date.now(),
-          });
-          return {
-            matched: true,
-            type: patternType,
-            agent: classification.agent_id as PatternMatch['agent'],
-            confidence: confidencePercent,
-            extracted_data: buildExtractedData(classification.extracted_params ?? {}),
-            reason: `LLM intent classification: ${classification.reasoning}`,
-            latency_ms: classification.latency_ms,
-            cache_hit: classification.cache_hit,
-            cost_usd: classification.cost_usd,
-            query_hash: classification.query_hash,
-          };
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ [PATTERN-MATCHER] LLM classification failed, using pattern match fallback:', error);
-      // Fall through to return original ambiguous result
-    }
-  }
-
-  return ambiguousResult;
 }
 
 // ============================================================================

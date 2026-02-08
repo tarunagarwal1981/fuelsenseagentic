@@ -153,6 +153,17 @@ npm run build
 npm start
 ```
 
+## Query Routing (AI-FIRST)
+
+The multi-agent system uses **AI-FIRST** routing in `lib/multi-agent/pattern-matcher.ts`:
+
+1. **Tier 1a**: LLM Intent Classification (GPT-4o-mini) — primary, handles natural language
+2. **Tier 1b**: Regex patterns — fallback when LLM fails or low confidence
+3. **Tier 2**: Decision framework — confidence thresholds
+4. **Tier 3**: LLM reasoning — complex/ambiguous queries
+
+IntentClassifier results are cached (Redis, 7-day TTL); cache hits are &lt;10ms.
+
 ## Key Technologies
 
 - **Next.js 16** - React framework with App Router
