@@ -303,10 +303,12 @@ export async function POST(req: Request) {
             bunker_ports: null,
             port_prices: null,
             bunker_analysis: null,
-        multi_bunker_plan: null,
+            multi_bunker_plan: null,
             final_recommendation: null,
             formatted_response: null,
             synthesized_insights: null,
+            synthesized_response: null,
+            synthesis_data: null,
             agent_errors: {},
             agent_status: {},
           };
@@ -431,6 +433,8 @@ export async function POST(req: Request) {
             if (event.multi_bunker_plan) accumulatedState.multi_bunker_plan = event.multi_bunker_plan;
             if (event.final_recommendation) accumulatedState.final_recommendation = event.final_recommendation;
             if (event.formatted_response) accumulatedState.formatted_response = event.formatted_response;
+            if (event.synthesized_response) accumulatedState.synthesized_response = event.synthesized_response;
+            if (event.synthesis_data) accumulatedState.synthesis_data = event.synthesis_data;
             if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
             if (event.agent_status) accumulatedState.agent_status = { ...accumulatedState.agent_status, ...event.agent_status };
 
@@ -595,6 +599,7 @@ export async function POST(req: Request) {
                     type: 'final_complete',
                     recommendation: accumulatedState.final_recommendation,
                     formatted_response: accumulatedState.formatted_response || null,
+                    synthesis_data: accumulatedState.synthesis_data || accumulatedState.synthesized_response || null,
                     errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                       agent_errors: accumulatedState.agent_errors,
                       agent_status: accumulatedState.agent_status,
@@ -623,6 +628,7 @@ export async function POST(req: Request) {
                   type: 'final_complete',
                   recommendation: accumulatedState.final_recommendation,
                   formatted_response: accumulatedState.formatted_response || null,
+                  synthesis_data: accumulatedState.synthesis_data || accumulatedState.synthesized_response || null,
                   errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                     agent_errors: accumulatedState.agent_errors,
                     agent_status: accumulatedState.agent_status,

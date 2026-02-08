@@ -12,6 +12,7 @@ AI-powered maritime bunker optimization and voyage planning. Multi-agent system 
 - **ECA Compliance**: Emission Control Area detection and MGO requirements
 - **Response Synthesis**: Structured insights, recommendations, and template-based formatting
 - **Template-First with LLM Fallback**: Finalize uses templates when available; falls back to LLM-generated responses when templates fail or don't exist (user always gets a response)
+- **LLM-First Synthesis (optional)**: When `LLM_FIRST_SYNTHESIS=true`, Finalize uses LLM to generate intent-aware responses from compact context; templates remain fallback. Scalable for 25+ agents.
 - **Registry-Driven**: Agent and tool registries; valid agents derived from registry (scalable to 25+ agents)
 
 ## Project Structure
@@ -68,6 +69,7 @@ Open `http://localhost:3000`.
 | `NEXT_PUBLIC_FUELSENSE_API_URL` | No | FuelSense API (bunker ports, vessel details, datalogs, consumption profiles) |
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon key |
+| `LLM_FIRST_SYNTHESIS` | No | When true, Finalize uses LLM-first synthesis; template fallback on failure (default: false) |
 
 Create `.env.local` from `.env.example` in `frontend/`. Without Redis, a mock cache is used; without Supabase, JSON fallback works.
 
@@ -108,15 +110,16 @@ npm run test:e2e:essential  # E2E essential queries
 
 ## Finalize Response Flow
 
-The Finalize agent uses a **template-first, LLM fallback** strategy:
+The Finalize agent uses a **template-first, LLM fallback** strategy (or **LLM-first** when `LLM_FIRST_SYNTHESIS=true`):
 
 1. **Phase 1 – Synthesis**: Auto-discovery synthesis (`AutoSynthesisEngine`) extracts data from executed agents.
 2. **Phase 2 – Rendering**:
-   - **Template-first**: `ContextAwareTemplateSelector` picks a template from synthesis context; `TemplateLoader` loads it (returns `{ exists, name, template?, error? }` instead of throwing).
-   - **LLM fallback**: If the template is missing or fails, `generateLLMResponse` uses the LLM to generate a response from the full synthesis context.
+   - **LLM-first** (when `LLM_FIRST_SYNTHESIS=true`): Context Builder produces compact summaries; LLM generates response first; template fallback on failure.
+   - **Template-first** (default): `ContextAwareTemplateSelector` picks a template; `TemplateLoader` loads it.
+   - **LLM fallback**: If the template is missing or fails, `generateLLMResponse` uses the LLM.
 3. **Legacy fallback**: When synthesis fails, `generateLegacyTextOutput` uses direct formatting.
 
-Key modules: `lib/multi-agent/llm-response-generator.ts`, `lib/config/template-loader.ts`, `lib/formatters/context-aware-template-selector.ts`.
+Key modules: `lib/multi-agent/llm-response-generator.ts`, `lib/multi-agent/synthesis/context-builder.ts`, `lib/config/template-loader.ts`, `lib/formatters/context-aware-template-selector.ts`.
 
 ## Deployment
 

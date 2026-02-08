@@ -15,6 +15,12 @@ export interface RoutingContext {
   matched_intent: string;
 }
 
+/** Map view hints for frontend (route, bunker ports, weather layers) */
+export interface ViewConfig {
+  show_map: boolean;
+  map_type?: 'route' | 'bunker_ports' | 'weather';
+}
+
 export interface SynthesizedResponse {
   synthesizedAt: Date;
   correlationId: string;
@@ -30,6 +36,8 @@ export interface SynthesizedResponse {
   nextSteps: NextStep[];
   /** Routing metadata from supervisor (optional for backward compatibility) */
   routing_context?: RoutingContext;
+  /** Hints for frontend map rendering (route, bunker ports, weather) */
+  view_config?: ViewConfig;
 }
 
 export interface Insight {

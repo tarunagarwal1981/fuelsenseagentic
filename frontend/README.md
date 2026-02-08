@@ -66,6 +66,9 @@ UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
 UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 SUPABASE_URL=your_supabase_project_url
 SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Synthesis - Optional
+LLM_FIRST_SYNTHESIS=false   # When true, Finalize uses LLM-first synthesis; template fallback on failure
 ```
 
 **Note:** If Redis or Supabase credentials are not provided, the system will:

@@ -38,6 +38,7 @@ import {
   logVesselSelectionStep,
 } from '@/lib/monitoring/agent-metrics';
 import { sanitizeToolInput, sanitizeToolOutput } from '@/lib/monitoring/sanitize';
+import { sanitizeMarkdownForDisplay } from '@/lib/utils/markdown-sanitizer';
 import { analyzeQueryIntent, generateAgentContext } from './intent-analyzer';
 import { LLMFactory } from './llm-factory';
 import { AgentRegistry, zodSchemaToJsonSchema } from './registry';
@@ -83,8 +84,9 @@ import { AutoSynthesisEngine, type AutoSynthesisResult } from './synthesis/auto-
 import { ContextAwareTemplateSelector } from '@/lib/formatters/context-aware-template-selector';
 import { getTemplateLoader } from '@/lib/config/template-loader';
 import { generateLLMResponse } from './llm-response-generator';
-import type { SynthesizedResponse } from '@/lib/synthesis';
+import type { SynthesizedResponse, ViewConfig } from '@/lib/synthesis';
 import type { FormattedResponse } from '../formatters/response-formatter';
+import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import type { Port } from '@/lib/types';
 
 // Import tool schemas
@@ -4570,6 +4572,37 @@ export async function vesselSelectionAgentNode(
   }
 }
 
+/**
+ * Derive view_config from routing_metadata.matched_intent for frontend map hints.
+ */
+function deriveViewConfig(matchedIntent: string | undefined): ViewConfig {
+  if (!matchedIntent) return { show_map: false };
+  const intent = matchedIntent.toLowerCase();
+  if (
+    intent.includes('route_calculation') ||
+    intent.includes('route_analysis') ||
+    intent.includes('route') ||
+    intent === 'route_only'
+  ) {
+    return { show_map: true, map_type: 'route' };
+  }
+  if (
+    intent.includes('bunker') ||
+    intent.includes('bunker_planning') ||
+    intent.includes('bunker_requirements')
+  ) {
+    return { show_map: true, map_type: 'bunker_ports' };
+  }
+  if (
+    intent.includes('port_weather') ||
+    intent.includes('route_weather') ||
+    intent.includes('weather')
+  ) {
+    return { show_map: true, map_type: 'weather' };
+  }
+  return { show_map: false };
+}
+
 export async function finalizeNode(state: MultiAgentState) {
   const cid = extractCorrelationId(state);
   logAgentExecution('finalize', cid, 0, 'started', { input: summarizeInputForLog(state) });
@@ -4857,8 +4890,9 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
           : `Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`,
         nextSteps: [],
         routing_context: routingCtx,
+        view_config: deriveViewConfig(state.routing_metadata?.matched_intent),
       };
-      
+
       updatedState.synthesized_response = synthesizedResponse;
     } else {
       // Normal execution mode - use auto-discovering synthesis engine
@@ -4914,8 +4948,9 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
             : `Auto-discovered from ${synthesis.context.agents_executed.length} agents`,
           nextSteps: [],
           routing_context: routingCtx,
+          view_config: deriveViewConfig(state.routing_metadata?.matched_intent),
         };
-        
+
         // Store synthesized response in state (separate from formatting)
         updatedState.synthesized_response = synthesizedResponse;
         
@@ -4941,39 +4976,73 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     }
     
     // ========================================================================
-    // PHASE 2: RESPONSE RENDERING (TEMPLATE-FIRST, LLM FALLBACK)
+    // PHASE 2: RESPONSE RENDERING (LLM-FIRST when flag enabled, else template-first)
     // ========================================================================
-    
+
     console.log('🎨 [FINALIZE] Phase 2: Response rendering');
-    
+    const useLLMFirst = isFeatureEnabled('LLM_FIRST_SYNTHESIS');
+    if (useLLMFirst) {
+      console.log('🤖 [FINALIZE] LLM_FIRST_SYNTHESIS enabled - using LLM-first flow');
+    }
+
     let finalTextOutput: string;
-    
+
     if (autoSynthesisResult) {
-      // Template-first, LLM fallback when template fails
-      try {
-        const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
-        console.log(`🎨 [FINALIZE] Attempting template: ${templateName}`);
-        
-        const loadResult = getTemplateLoader().loadTemplate(templateName);
-        
-        if (loadResult.exists && loadResult.template) {
-          console.log(`✅ [FINALIZE] Using template: ${loadResult.template.template.name}`);
-          finalTextOutput = await templateRender(loadResult, {
-            synthesis: autoSynthesisResult,
-            state: updatedState,
-          });
-          console.log(`✅ [FINALIZE] Template rendered successfully (${finalTextOutput.length} chars)`);
-        } else {
-          throw new Error(`Template not found: ${templateName}`);
+      if (useLLMFirst && !isPlanExecution) {
+        // LLM-first: try LLM first, template fallback on failure
+        try {
+          finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
+          console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
+        } catch (llmError: unknown) {
+          const message = llmError instanceof Error ? llmError.message : String(llmError);
+          console.warn(`⚠️ [FINALIZE] LLM response failed: ${message}`);
+          console.log('🎨 [FINALIZE] Falling back to template rendering');
+          logError(extractCorrelationId(state), llmError, { agent: 'finalize', step: 'llmResponse' });
+          try {
+            const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
+            const loadResult = getTemplateLoader().loadTemplate(templateName);
+            if (loadResult.exists && loadResult.template) {
+              finalTextOutput = await templateRender(loadResult, {
+                synthesis: autoSynthesisResult,
+                state: updatedState,
+              });
+              console.log(`✅ [FINALIZE] Template fallback rendered successfully (${finalTextOutput.length} chars)`);
+            } else {
+              throw new Error(`Template not found: ${templateName}`);
+            }
+          } catch (templateError: unknown) {
+            const tMsg = templateError instanceof Error ? templateError.message : String(templateError);
+            console.error(`❌ [FINALIZE] Template fallback also failed: ${tMsg}`);
+            throw templateError;
+          }
         }
-      } catch (templateError: unknown) {
-        const message = templateError instanceof Error ? templateError.message : String(templateError);
-        console.warn(`⚠️ [FINALIZE] Template rendering failed: ${message}`);
-        console.log('🤖 [FINALIZE] Falling back to LLM response generation');
-        logError(extractCorrelationId(state), templateError, { agent: 'finalize', step: 'templateRendering' });
-        
-        finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
-        console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
+      } else {
+        // Template-first (default): try template first, LLM fallback when template fails
+        try {
+          const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
+          console.log(`🎨 [FINALIZE] Attempting template: ${templateName}`);
+
+          const loadResult = getTemplateLoader().loadTemplate(templateName);
+
+          if (loadResult.exists && loadResult.template) {
+            console.log(`✅ [FINALIZE] Using template: ${loadResult.template.template.name}`);
+            finalTextOutput = await templateRender(loadResult, {
+              synthesis: autoSynthesisResult,
+              state: updatedState,
+            });
+            console.log(`✅ [FINALIZE] Template rendered successfully (${finalTextOutput.length} chars)`);
+          } else {
+            throw new Error(`Template not found: ${templateName}`);
+          }
+        } catch (templateError: unknown) {
+          const message = templateError instanceof Error ? templateError.message : String(templateError);
+          console.warn(`⚠️ [FINALIZE] Template rendering failed: ${message}`);
+          console.log('🤖 [FINALIZE] Falling back to LLM response generation');
+          logError(extractCorrelationId(state), templateError, { agent: 'finalize', step: 'templateRendering' });
+
+          finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
+          console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
+        }
       }
     } else {
       // No synthesis (e.g. synthesis failed) - use legacy formatting
@@ -5001,6 +5070,9 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     // ========================================================================
     // PHASE 3: RETURN RESULTS
     // ========================================================================
+
+    // Sanitize output to prevent raw HTML (<> tags) from appearing in chat
+    const sanitizedOutput = sanitizeMarkdownForDisplay(finalTextOutput);
     
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
@@ -5010,14 +5082,14 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     console.log('✅ [FINALIZE] Node: Final recommendation generated');
     
     return {
-      final_recommendation: finalTextOutput,  // Template-rendered or LLM fallback or legacy
+      final_recommendation: sanitizedOutput,  // Template-rendered or LLM fallback or legacy
       formatted_response: null,               // Single template pass in Phase 2
       synthesized_insights: updatedState.synthesized_insights, // Legacy format (backwards compatible)
       synthesized_response: synthesizedResponse, // NEW: Decoupled synthesis (format-agnostic)
       synthesis_data: synthesizedResponse, // Alias for API responses
       messages: [
         new AIMessage({
-          content: finalTextOutput  // Use template-rendered or legacy for message
+          content: sanitizedOutput  // Use template-rendered or legacy for message
         })
       ],
     };

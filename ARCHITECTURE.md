@@ -114,7 +114,9 @@ Tier 3:  LLM Reasoning (complex queries)
 
 ## Finalize Response Flow (Template-First, LLM Fallback)
 
-The Finalize agent uses a **template-first, LLM fallback** strategy so users always receive a response:
+The Finalize agent uses a **template-first, LLM fallback** strategy so users always receive a response. When `LLM_FIRST_SYNTHESIS=true`, it uses **LLM-first** with template fallback.
+
+### Default (Template-First)
 
 ```
 Phase 1: AutoSynthesisEngine.synthesizeResponse(state)
@@ -130,9 +132,29 @@ Phase 2: Response rendering
          └─ No synthesis: generateLegacyTextOutput(state) (direct formatting)
 ```
 
+### LLM-First Synthesis (Feature-Flagged)
+
+When `LLM_FIRST_SYNTHESIS=true`:
+
+1. **Context Builder** produces compact, token-bounded summaries from synthesis data.
+2. **LLM** generates response first (intent-aware: full list vs count, filter by type, etc.).
+3. **Template fallback** if LLM fails.
+4. Plan execution mode: unchanged (template-only, no LLM calls).
+
+- **Context Builder** (`lib/multi-agent/synthesis/context-builder.ts`): Builds compact summaries per field (vessel, route, bunker, weather, etc.); caps total context at ~4K tokens.
 - **TemplateLoader**: Returns status object `{ exists, name, template?, error? }` instead of throwing. Callers check `exists` before rendering.
-- **LLM Response Generator** (`lib/multi-agent/llm-response-generator.ts`): When templates fail or don't exist, builds a context summary from synthesis data and invokes Claude to generate a professional, markdown-formatted response.
+- **LLM Response Generator** (`lib/multi-agent/llm-response-generator.ts`): Uses Context Builder for compact context; intent-aware prompt interprets user query for level of detail.
 - **ContextAwareTemplateSelector**: Selects templates from synthesis context (primary_domain, query_type); extensible via `DOMAIN_TEMPLATES` and `QUERY_TYPE_TEMPLATES`.
+
+### View Config (Map Hints)
+
+`synthesized_response.view_config` signals when the frontend should show a map:
+
+- `show_map: true`, `map_type: 'route'` – route intents (route_calculation, route_analysis)
+- `show_map: true`, `map_type: 'bunker_ports'` – bunker intents
+- `show_map: true`, `map_type: 'weather'` – weather intents (port_weather, route_weather)
+
+Data for maps flows via `route_data`, `weather_data`, `bunker_data` SSE events; `synthesis_data` is included in `final_complete` payload.
 
 ## Registry-Driven Design
 
@@ -155,6 +177,7 @@ Phase 2: Response rendering
 | Vessel Tools | `frontend/lib/tools/vessel-performance/` |
 | Synthesis Engine | `frontend/lib/synthesis/synthesis-engine.ts` |
 | Auto-Synthesis Engine | `frontend/lib/multi-agent/synthesis/auto-synthesis-engine.ts` |
+| Context Builder | `frontend/lib/multi-agent/synthesis/context-builder.ts` |
 | LLM Response Generator | `frontend/lib/multi-agent/llm-response-generator.ts` |
 | Template Loader | `frontend/lib/config/template-loader.ts` |
 | Context-Aware Template Selector | `frontend/lib/formatters/context-aware-template-selector.ts` |
