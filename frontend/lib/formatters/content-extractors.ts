@@ -301,40 +301,49 @@ function formatVesselSpecsBrief(specs: any): string {
 
 function formatVesselSpecs(specs: any): string {
   if (!Array.isArray(specs) || specs.length === 0) return '';
-  const byType: Record<string, number> = {};
+  const byType: Record<string, any[]> = {};
   specs.forEach((v: any) => {
     const t = String(v?.vessel_type ?? v?.type ?? 'Unknown').toUpperCase();
-    byType[t] = (byType[t] ?? 0) + 1;
+    if (!byType[t]) byType[t] = [];
+    byType[t].push(v);
   });
   const fmt = (n: number) => n.toLocaleString();
   let out = '## Fleet Overview\n\n';
-  out += `Our fleet consists of **${fmt(specs.length)} vessels** across multiple vessel types.\n\n`;
+  out += `Our fleet consists of **${fmt(specs.length)} vessels** across ${Object.keys(byType).length} vessel types.\n\n`;
   if (Object.keys(byType).length > 0) {
     out += '### Fleet Composition\n\n';
     out += '| Vessel Type | Count |\n|-------------|-------|\n';
     Object.entries(byType)
-      .sort(([, a], [, b]) => b - a)
-      .forEach(([type, n]) => {
-        out += `| ${type} | ${n} |\n`;
+      .sort(([, a], [, b]) => b.length - a.length)
+      .forEach(([type, vessels]) => {
+        out += `| ${type} | ${vessels.length} |\n`;
       });
     out += '\n';
   }
-  if (specs.length <= 15) {
-    out += '### Vessel Details\n\n';
-    out += '| # | Vessel Name | Type | DWT | Flag | Built |\n';
-    out += '|---|-------------|------|-----|------|-------|\n';
-    specs.forEach((v: any, i: number) => {
-      const name = v?.vessel_name ?? v?.name ?? 'Unknown';
-      const type = v?.vessel_type ?? v?.type ?? '-';
-      const deadweight = v?.deadweight ?? v?.deadweight_tonnage ?? '-';
-      const dwStr = deadweight !== '-' && typeof deadweight === 'number' ? fmt(deadweight) : String(deadweight);
-      const flag = v?.flag ?? '-';
-      const built = v?.built_date ?? v?.year_built ?? '-';
-      out += `| ${i + 1} | ${name} | ${type} | ${dwStr} | ${flag} | ${built} |\n`;
+  Object.entries(byType)
+    .sort(([, a], [, b]) => b.length - a.length)
+    .forEach(([type, typeVessels]) => {
+      const shouldCollapse = typeVessels.length > 10;
+      if (shouldCollapse) {
+        out += `<details>\n<summary>**${type}** (${typeVessels.length} vessels)</summary>\n\n`;
+      } else {
+        out += `### ${type}\n\n`;
+      }
+      out += '| # | Vessel Name | DWT | Flag | Built |\n';
+      out += '|---|-------------|-----|------|-------|\n';
+      typeVessels.forEach((v: any, i: number) => {
+        const name = v?.vessel_name ?? v?.name ?? 'Unknown';
+        const deadweight = v?.deadweight ?? v?.deadweight_tonnage ?? '-';
+        const dwStr = deadweight !== '-' && typeof deadweight === 'number' ? fmt(deadweight) : String(deadweight);
+        const flag = v?.flag ?? '-';
+        const built = v?.built_date ?? v?.year_built ?? '-';
+        out += `| ${i + 1} | ${name} | ${dwStr} | ${flag} | ${built} |\n`;
+      });
+      out += '\n';
+      if (shouldCollapse) {
+        out += `</details>\n\n`;
+      }
     });
-  } else {
-    out += '_Fleet contains ' + fmt(specs.length) + ' vessels. Detailed breakdown available upon request._\n';
-  }
   return out;
 }
 

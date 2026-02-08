@@ -26,6 +26,7 @@ export const FEATURE_FLAGS: Record<string, boolean> = {
   USE_SYNTHESIS: envBool('USE_SYNTHESIS', true),  // Master switch for cross-agent synthesis
   SYNTHESIS_DEBUG: envBool('SYNTHESIS_DEBUG', false),  // Extra debug logging for synthesis
   LLM_FIRST_SYNTHESIS: envBool('LLM_FIRST_SYNTHESIS', false),  // LLM-first response generation; template fallback on failure
+  USE_LLM_CONTENT_ARCHITECT: envBool('USE_LLM_CONTENT_ARCHITECT', true),  // Hybrid: LLM decides structure for unknown patterns, templates format
   
   // Agentic Supervisor - ReAct Pattern (starts FALSE for safe rollout)
   // Enable with: USE_AGENTIC_SUPERVISOR=true in environment

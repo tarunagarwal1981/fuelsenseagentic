@@ -148,28 +148,24 @@ function summarizeVesselSpecs(value: unknown): string {
   const vessels = value as Array<Record<string, unknown>>;
   if (!Array.isArray(vessels) || vessels.length === 0) return '';
 
-  const byType: Record<string, number> = {};
-  const names: string[] = [];
+  const byType: Record<string, string[]> = {};
   vessels.forEach((v) => {
     const t = String(v?.vessel_type ?? v?.type ?? 'Unknown').toUpperCase();
-    byType[t] = (byType[t] ?? 0) + 1;
+    if (!byType[t]) byType[t] = [];
     const name = v?.vessel_name ?? v?.name ?? (v?.imo ? `IMO ${v.imo}` : null);
-    if (name) names.push(String(name));
+    if (name) byType[t].push(String(name));
   });
 
-  let out = `${vessels.length} vessels. Types: ${Object.entries(byType)
-    .sort(([, a], [, b]) => b - a)
-    .map(([t, n]) => `${t}(${n})`)
-    .join(', ')}.`;
-  if (names.length > 0) {
+  const lines: string[] = [];
+  for (const [type, names] of Object.entries(byType).sort(([, a], [, b]) => b.length - a.length)) {
     const display = names.length <= MAX_VESSEL_NAMES ? names : names.slice(0, MAX_VESSEL_NAMES);
-    out += ` Names: [${display.join(', ')}]`;
+    let line = `${type} (${names.length}): [${display.join(', ')}]`;
     if (names.length > MAX_VESSEL_NAMES) {
-      out += ` ... and ${names.length - MAX_VESSEL_NAMES} more`;
+      line += ` ... and ${names.length - MAX_VESSEL_NAMES} more`;
     }
-    out += '.';
+    lines.push(line);
   }
-  return out;
+  return lines.join('\n');
 }
 
 function summarizeRouteData(value: unknown): string {

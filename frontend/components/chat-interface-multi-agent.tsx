@@ -44,6 +44,8 @@ import portsData from "@/lib/data/ports.json";
 import cachedRoutesData from "@/lib/data/cached-routes.json";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import type { FormattedResponse } from "@/lib/formatters/response-formatter";
 import { TemplateResponseContainer } from './template-response';
 import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-formatter';
@@ -617,6 +619,8 @@ export function ChatInterfaceMultiAgent() {
                       <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
+                          remarkRehypeOptions={{ allowDangerousHtml: true }}
+                          rehypePlugins={[rehypeRaw, rehypeSanitize]}
                           components={{
                             p: ({ children }) => <p className="mb-1 last:mb-0 text-xs leading-relaxed font-sans">{children}</p>,
                             strong: ({ children }) => <strong className="font-bold">{children}</strong>,
