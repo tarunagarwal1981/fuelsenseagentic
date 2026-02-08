@@ -26,7 +26,7 @@ jest.mock('@/lib/repositories/service-container', () => ({
   },
 }));
 
-// Mock agent registry
+// Mock agent registry (synthesis - used by SupervisorPromptGenerator)
 jest.mock('@/lib/registry/agent-registry', () => ({
   AgentRegistry: {
     getInstance: () => ({
@@ -35,6 +35,23 @@ jest.mock('@/lib/registry/agent-registry', () => ({
         { id: 'weather_agent', enabled: true, type: 'specialist', intents: ['port_weather'] },
       ],
     }),
+  },
+}));
+
+// Mock multi-agent registry (used by IntentClassifier.buildAgentListWithIntents)
+jest.mock('@/lib/multi-agent/registry', () => ({
+  AgentRegistry: {
+    getAllAgents: () => [
+      { agent_name: 'route_agent', description: 'Route calculation', available_tools: [{ tool_name: 'get_route' }] },
+      { agent_name: 'weather_agent', description: 'Weather forecast', available_tools: [{ tool_name: 'get_weather' }] },
+    ],
+  },
+}));
+
+// Mock SupervisorPromptGenerator
+jest.mock('@/lib/multi-agent/supervisor-prompt-generator', () => ({
+  SupervisorPromptGenerator: {
+    generateSimplifiedPrompt: () => 'You are a routing classifier. Map queries to agent IDs.',
   },
 }));
 
@@ -64,10 +81,9 @@ describe('IntentClassifier Error Handling', () => {
       content: 'Here is my response: I think the user wants route information. No JSON here.',
     });
 
-    const result = await IntentClassifier.classify('route from Singapore to Rotterdam', {
+    const result = await IntentClassifier.classify('route from Singapore to Rotterdam', 'test-malformed', {
       cache: mockCache as any,
       skipCache: true,
-      correlationId: 'test-malformed',
     });
 
     expect(result).toBeNull();
@@ -78,7 +94,7 @@ describe('IntentClassifier Error Handling', () => {
       content: '{"intent":"route_calculation","confidence":0.9}',
     });
 
-    const result = await IntentClassifier.classify('route from A to B', {
+    const result = await IntentClassifier.classify('route from A to B', 'test-invalid', {
       cache: mockCache as any,
       skipCache: true,
     });
@@ -91,7 +107,7 @@ describe('IntentClassifier Error Handling', () => {
       content: '{ "agent_id": "route_agent", "intent": invalid json }',
     });
 
-    const result = await IntentClassifier.classify('route query', {
+    const result = await IntentClassifier.classify('route query', 'test-parse', {
       cache: mockCache as any,
       skipCache: true,
     });
@@ -102,7 +118,7 @@ describe('IntentClassifier Error Handling', () => {
   it('returns null when LLM throws (network timeout)', async () => {
     mockInvoke.mockRejectedValue(new Error('Network timeout'));
 
-    const result = await IntentClassifier.classify('weather at Singapore', {
+    const result = await IntentClassifier.classify('weather at Singapore', 'test-timeout', {
       cache: mockCache as any,
       skipCache: true,
     });
@@ -115,7 +131,7 @@ describe('IntentClassifier Error Handling', () => {
     (err as any).code = 'ECONNREFUSED';
     mockInvoke.mockRejectedValue(err);
 
-    const result = await IntentClassifier.classify('bunker from Singapore', {
+    const result = await IntentClassifier.classify('bunker from Singapore', 'test-econnrefused', {
       cache: mockCache as any,
       skipCache: true,
     });

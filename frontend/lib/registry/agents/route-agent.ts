@@ -36,14 +36,10 @@ export const routeAgent: AgentDefinition = {
   ],
   /** Expanded for LLM intent classification */
   intents: [
-    'calculate_distance',
+    'calculate_route',
     'distance_calculation',
-    'find_waypoints',
-    'how_far',
-    'how_long',
     'maritime_route',
     'navigation_route',
-    'plan_route',
     'route_calculation',
     'route_distance',
     'route_planning',

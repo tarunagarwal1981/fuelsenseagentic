@@ -4534,7 +4534,17 @@ export async function finalizeNode(state: MultiAgentState) {
   logAgentExecution('finalize', cid, 0, 'started', { input: summarizeInputForLog(state) });
 
   console.log('📝 [FINALIZE] Node: Starting finalization...');
-  
+
+  // Log routing metadata if available
+  if (state.routing_metadata) {
+    console.log('📋 [FINALIZE] Routing metadata available:', {
+      method: state.routing_metadata.classification_method,
+      agent: state.routing_metadata.target_agent,
+      intent: state.routing_metadata.matched_intent,
+      confidence: state.routing_metadata.confidence,
+    });
+  }
+
   const agentStartTime = Date.now();
   
   // ========================================================================
@@ -4766,6 +4776,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
             confidence: state.routing_metadata.confidence,
             primary_agent: state.routing_metadata.target_agent,
             matched_intent: state.routing_metadata.matched_intent,
+            cache_hit: state.routing_metadata.cache_hit,
           }
         : undefined;
       if (routingCtx) {
@@ -4829,6 +4840,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
               confidence: state.routing_metadata.confidence,
               primary_agent: state.routing_metadata.target_agent,
               matched_intent: state.routing_metadata.matched_intent,
+              cache_hit: state.routing_metadata.cache_hit,
             }
           : undefined;
         if (routingCtx) {

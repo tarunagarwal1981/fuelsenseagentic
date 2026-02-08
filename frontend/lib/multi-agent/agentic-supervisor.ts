@@ -97,6 +97,10 @@ function buildRoutingMetadata(
     reasoning: decision.reason,
     classified_at: Date.now(),
     extracted_params,
+    latency_ms: patternMatch.latency_ms ?? 0,
+    cache_hit: patternMatch.cache_hit ?? false,
+    cost_usd: patternMatch.cost_usd ?? 0,
+    query_hash: patternMatch.query_hash,
   };
 }
 
@@ -111,15 +115,15 @@ function logRoutingDecision(
   logIntentClassification({
     correlation_id: correlationId,
     query,
-    query_hash: hashQueryForIntent(query),
+    query_hash: routing_metadata.query_hash ?? hashQueryForIntent(query),
     classification_method: routing_metadata.classification_method,
     matched_agent: routing_metadata.target_agent,
     matched_intent: routing_metadata.matched_intent,
     confidence: routing_metadata.confidence,
     reasoning: routing_metadata.reasoning,
-    cache_hit: false,
-    latency_ms: 0,
-    cost_usd: 0,
+    cache_hit: routing_metadata.cache_hit ?? false,
+    latency_ms: routing_metadata.latency_ms ?? 0,
+    cost_usd: routing_metadata.cost_usd ?? 0,
     timestamp: routing_metadata.classified_at,
   });
 }
@@ -164,6 +168,10 @@ function buildRoutingMetadataForTier3(
     reasoning: reasoning.thought,
     classified_at: Date.now(),
     extracted_params,
+    latency_ms: patternMatch.latency_ms ?? 0,
+    cache_hit: patternMatch.cache_hit ?? false,
+    cost_usd: patternMatch.cost_usd ?? 0,
+    query_hash: patternMatch.query_hash,
   };
 }
 

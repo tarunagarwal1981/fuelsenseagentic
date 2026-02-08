@@ -32,9 +32,6 @@ export const weatherAgent: AgentDefinition = {
   ],
   /** Expanded for LLM intent classification */
   intents: [
-    'calculate_consumption',
-    'check_port_safety',
-    'check_weather',
     'forecast',
     'marine_weather',
     'port_weather',
@@ -43,7 +40,7 @@ export const weatherAgent: AgentDefinition = {
     'weather_check',
     'weather_conditions',
     'weather_forecast',
-    'weather_impact',
+    'weather_info',
   ],
   
   // Contract

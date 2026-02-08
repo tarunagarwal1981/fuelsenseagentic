@@ -3,9 +3,8 @@
  *
  * Tests for the LLM-based intent classifier that maps user queries to agent IDs.
  * - Classification accuracy across vessel, bunker, route, weather, compliance queries
- * - Cache behavior (second call should be cache hit with latency < 10ms)
- * - Error handling (invalid API key, malformed response, network timeout)
- * - Success rate and aggregate metrics
+ * - Cache behavior (second call cache hit, latency < 10ms)
+ * - Success rate, average confidence, latency metrics, total cost
  *
  * Run with: npm run test:intent-classifier
  * or: tsx lib/multi-agent/__tests__/intent-classifier.test.ts
@@ -45,87 +44,35 @@ function createInMemoryCache(): RedisCache {
 }
 
 // ============================================================================
-// Test Cases
+// Test Cases - Natural Language Variations
 // ============================================================================
 
 const testCases = [
-  // Vessel queries - variations (intents from vessel_info_agent)
-  {
-    query: 'give me vessel names from the fleet',
-    expectedAgent: 'vessel_info_agent',
-    expectedIntent: 'list_vessels',
-    description: 'Vessel list query',
-  },
-  {
-    query: 'show me all ships',
-    expectedAgent: 'vessel_info_agent',
-    expectedIntent: 'list_vessels',
-    description: 'Ship list synonym',
-  },
-  {
-    query: 'how many vessels do we have',
-    expectedAgent: 'vessel_info_agent',
-    expectedIntent: 'fleet_size',
-    description: 'Vessel count query',
-  },
-  {
-    query: 'fleet composition',
-    expectedAgent: 'vessel_info_agent',
-    expectedIntent: 'fleet_inventory',
-    description: 'Fleet inventory query',
-  },
+  // Vessel queries
+  { query: 'give me vessel names from the fleet', expectedAgent: 'vessel_info_agent', minConfidence: 70 },
+  { query: 'show me all ships', expectedAgent: 'vessel_info_agent', minConfidence: 70 },
+  { query: 'how many vessels do we have', expectedAgent: 'vessel_info_agent', minConfidence: 70 },
+  { query: 'fleet composition', expectedAgent: 'vessel_info_agent', minConfidence: 70 },
+  { query: 'list our ships', expectedAgent: 'vessel_info_agent', minConfidence: 70 },
+
   // Bunker queries
-  {
-    query: 'cheapest bunker Singapore to Rotterdam',
-    expectedAgent: 'bunker_agent',
-    expectedIntent: 'bunker_planning',
-    description: 'Bunker planning with route',
-  },
-  {
-    query: 'where should I refuel',
-    expectedAgent: 'bunker_agent',
-    expectedIntent: 'refueling_options',
-    description: 'Refueling options query',
-  },
+  { query: 'cheapest bunker Singapore to Rotterdam', expectedAgent: 'bunker_agent', minConfidence: 70 },
+  { query: 'where should I refuel', expectedAgent: 'bunker_agent', minConfidence: 70 },
+  { query: 'fuel options along route', expectedAgent: 'bunker_agent', minConfidence: 70 },
+
   // Route queries
-  {
-    query: 'calculate route SGSIN to NLRTM',
-    expectedAgent: 'route_agent',
-    expectedIntent: 'route_calculation',
-    description: 'Route calculation with port codes',
-  },
-  {
-    query: 'distance from Singapore to Rotterdam',
-    expectedAgent: 'route_agent',
-    expectedIntent: 'route_distance',
-    description: 'Route distance query',
-  },
+  { query: 'calculate route SGSIN to NLRTM', expectedAgent: 'route_agent', minConfidence: 70 },
+  { query: 'distance from Singapore to Rotterdam', expectedAgent: 'route_agent', minConfidence: 70 },
+  { query: 'sailing route to Europe', expectedAgent: 'route_agent', minConfidence: 70 },
+
   // Weather queries
-  {
-    query: 'weather at Singapore port',
-    expectedAgent: 'weather_agent',
-    expectedIntent: 'port_weather',
-    description: 'Port weather query',
-  },
-  {
-    query: 'sea conditions along route',
-    expectedAgent: 'weather_agent',
-    expectedIntent: 'marine_weather',
-    description: 'Marine weather query',
-  },
-  // Compliance queries
-  {
-    query: 'ECA zones on my route',
-    expectedAgent: 'compliance_agent',
-    expectedIntent: 'eca_validation',
-    description: 'ECA validation query',
-  },
-  {
-    query: 'emission compliance check',
-    expectedAgent: 'compliance_agent',
-    expectedIntent: 'emissions_calc',
-    description: 'Emissions compliance query',
-  },
+  { query: 'weather at Singapore port', expectedAgent: 'weather_agent', minConfidence: 70 },
+  { query: 'sea conditions along route', expectedAgent: 'weather_agent', minConfidence: 70 },
+  { query: 'forecast for Houston', expectedAgent: 'weather_agent', minConfidence: 70 },
+
+  // Compliance
+  { query: 'ECA zones on my route', expectedAgent: 'compliance_agent', minConfidence: 70 },
+  { query: 'emission compliance check', expectedAgent: 'compliance_agent', minConfidence: 70 },
 ];
 
 // ============================================================================
@@ -149,14 +96,15 @@ export async function testIntentClassifier(): Promise<void> {
   if (!hasApiKey) {
     console.log('⚠️ [INTENT-CLASSIFIER-TEST] Skipping - API keys not available');
     console.log('   Set OPENAI_API_KEY or ANTHROPIC_API_KEY to run classification tests');
-    console.log('   Run test:error-handling for error handling tests without API keys');
     return;
   }
 
   const inMemoryCache = createInMemoryCache();
-  const MIN_CONFIDENCE = 0.7; // 70% as 0-1 scale
   let passed = 0;
   let failed = 0;
+  const latencies: number[] = [];
+  let totalCost = 0;
+  let totalConfidence = 0;
   const results: Array<{ query: string; pass: boolean; result: IntentClassification | null; error?: string }> = [];
 
   // --------------------------
@@ -164,24 +112,28 @@ export async function testIntentClassifier(): Promise<void> {
   // --------------------------
   console.log('📋 Running Classification Tests...\n');
 
-  for (const tc of testCases) {
-    console.log(`   Test: ${tc.description}`);
-    console.log(`   Query: "${tc.query}"`);
+  for (let i = 0; i < testCases.length; i++) {
+    const tc = testCases[i];
+    const correlationId = `test-${i}`;
+    console.log(`   Test ${i + 1}/${testCases.length}: "${tc.query}"`);
 
     try {
-      const result = await IntentClassifier.classify(tc.query, {
+      const result = await IntentClassifier.classify(tc.query, correlationId, {
         cache: inMemoryCache,
-        correlationId: 'test-intent-classifier',
       });
 
       const agentMatch = result?.agent_id === tc.expectedAgent;
-      const intentMatch = result?.intent === tc.expectedIntent;
-      const confidenceOk = (result?.confidence ?? 0) >= MIN_CONFIDENCE;
+      const minConfPct = tc.minConfidence;
+      const confidencePct = result ? Math.round(result.confidence * 100) : 0;
+      const confidenceOk = (result?.confidence ?? 0) >= minConfPct / 100;
 
       console.log(`   Agent: ${result?.agent_id ?? 'null'} (expected: ${tc.expectedAgent}) ${agentMatch ? '✅' : '❌'}`);
-      console.log(`   Intent: ${result?.intent ?? 'null'} (expected: ${tc.expectedIntent}) ${intentMatch ? '✅' : '❌'}`);
-      console.log(`   Confidence: ${result ? (result.confidence * 100).toFixed(0) : 0}% (min: 70%) ${confidenceOk ? '✅' : '❌'}`);
-      console.log(`   Reasoning: ${result?.reasoning?.substring(0, 80) ?? 'N/A'}...`);
+      console.log(`   Confidence: ${confidencePct}% (min: ${minConfPct}%) ${confidenceOk ? '✅' : '❌'}`);
+      console.log(`   Reasoning: ${result?.reasoning?.substring(0, 100) ?? 'N/A'}${(result?.reasoning?.length ?? 0) > 100 ? '...' : ''}`);
+
+      if (result?.latency_ms != null) latencies.push(result.latency_ms);
+      if (result?.cost_usd != null) totalCost += result.cost_usd;
+      if (result?.confidence != null) totalConfidence += result.confidence * 100;
 
       const pass = agentMatch && confidenceOk;
       if (pass) {
@@ -197,55 +149,62 @@ export async function testIntentClassifier(): Promise<void> {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.log(`   ❌ ERROR: ${errMsg}\n`);
       failed++;
-      results.push({
-        query: tc.query,
-        pass: false,
-        result: null,
-        error: errMsg,
-      });
+      results.push({ query: tc.query, pass: false, result: null, error: errMsg });
     }
   }
 
   // --------------------------
-  // Cache behavior test
+  // Cache behavior test (use unique query not in test cases)
   // --------------------------
   console.log('📋 Cache Behavior Test...\n');
-  const cacheTestQuery = 'weather at Singapore port';
+  const cacheTestQuery = 'marine weather forecast Singapore';
   const cacheStart1 = Date.now();
-  await IntentClassifier.classify(cacheTestQuery, {
+  const firstResult = await IntentClassifier.classify(cacheTestQuery, 'test-cache-1', {
     cache: inMemoryCache,
     skipCache: false,
   });
   const firstCallMs = Date.now() - cacheStart1;
 
   const cacheStart2 = Date.now();
-  await IntentClassifier.classify(cacheTestQuery, {
+  const secondResult = await IntentClassifier.classify(cacheTestQuery, 'test-cache-2', {
     cache: inMemoryCache,
     skipCache: false,
   });
   const secondCallMs = Date.now() - cacheStart2;
 
-  const cacheHitOk = secondCallMs < 10;
-  console.log(`   First call: ${firstCallMs}ms`);
-  console.log(`   Second call (cache hit): ${secondCallMs}ms (expected < 10ms) ${cacheHitOk ? '✅' : '❌'}`);
-  if (cacheHitOk) {
+  const cacheHitOk = secondResult?.cache_hit === true;
+  const latencyOk = secondCallMs < 10;
+  console.log(`   First call: ${firstCallMs}ms, cache_hit: ${firstResult?.cache_hit ?? 'N/A'}`);
+  console.log(`   Second call: ${secondCallMs}ms, cache_hit: ${secondResult?.cache_hit ?? 'N/A'} ${cacheHitOk ? '✅' : '❌'}`);
+  console.log(`   Latency < 10ms on cache hit: ${latencyOk ? '✅' : '❌'}`);
+  if (cacheHitOk && latencyOk) {
     console.log(`   ✅ Cache hit test PASSED\n`);
   } else {
-    console.log(`   ❌ Cache hit test FAILED (second call took ${secondCallMs}ms)\n`);
+    console.log(`   ❌ Cache hit test FAILED\n`);
   }
 
   // --------------------------
-  // Success rate and metrics
+  // Aggregate metrics
   // --------------------------
   const successRate = testCases.length > 0 ? (passed / testCases.length) * 100 : 0;
+  const avgConfidence = results.filter((r) => r.result?.confidence != null).length > 0
+    ? totalConfidence / results.filter((r) => r.result?.confidence != null).length
+    : 0;
+  const avgLatencyUncached = latencies.length > 0
+    ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+    : 0;
 
-  console.log('='.repeat(60));
+  console.log('═'.repeat(60));
   console.log('📊 Aggregate Metrics');
-  console.log('='.repeat(60));
+  console.log('═'.repeat(60));
   console.log(`   Classification: ${passed} passed, ${failed} failed`);
   console.log(`   Success rate: ${successRate.toFixed(1)}%`);
-  console.log(`   Cache behavior: ${cacheHitOk ? 'PASS' : 'FAIL'}`);
-  console.log('='.repeat(60));
+  console.log(`   Average confidence: ${avgConfidence.toFixed(1)}%`);
+  console.log(`   Average latency (uncached): ${avgLatencyUncached.toFixed(0)}ms`);
+  console.log(`   Cached call latency: ${secondCallMs}ms`);
+  console.log(`   Total cost (LLM): $${totalCost.toFixed(6)}`);
+  console.log(`   Cache behavior: ${cacheHitOk && latencyOk ? 'PASS' : 'FAIL'}`);
+  console.log('═'.repeat(60));
 
   // Per-case pass/fail summary
   console.log('\n📋 Pass/Fail Summary:\n');
@@ -256,9 +215,9 @@ export async function testIntentClassifier(): Promise<void> {
     console.log(`   ${status} | "${tc.query}"`);
   }
 
-  if (failed > 0 || !cacheHitOk) {
+  if (failed > 0 || !cacheHitOk || !latencyOk) {
     throw new Error(
-      `Intent classifier tests failed: ${failed} classification failures, cache test: ${cacheHitOk ? 'pass' : 'fail'}`
+      `Intent classifier tests failed: ${failed} classification failures, cache_hit: ${cacheHitOk}, latency_ok: ${latencyOk}`
     );
   }
 
@@ -272,8 +231,6 @@ export async function testIntentClassifier(): Promise<void> {
 export async function testIntentClassifierErrorHandling(): Promise<void> {
   console.log('\n🧪 [INTENT-CLASSIFIER-ERROR] Error Handling Tests\n');
 
-  // 1. Invalid API key scenario
-  console.log('📋 Test: Invalid API key');
   const savedOpenAI = process.env.OPENAI_API_KEY;
   const savedAnthropic = process.env.ANTHROPIC_API_KEY;
 
@@ -283,7 +240,7 @@ export async function testIntentClassifierErrorHandling(): Promise<void> {
 
     let threw = false;
     try {
-      await IntentClassifier.classify('weather at Singapore', { skipCache: true });
+      await IntentClassifier.classify('weather at Singapore', 'test-error', { skipCache: true });
     } catch {
       threw = true;
     }
@@ -298,10 +255,7 @@ export async function testIntentClassifierErrorHandling(): Promise<void> {
     process.env.ANTHROPIC_API_KEY = savedAnthropic;
   }
 
-  // 2. Malformed LLM response & 3. Network timeout
-  // Covered by Jest tests with mocks. Run: npm run test:intent-classifier:errors
-  console.log('📋 Test: Malformed response / Network timeout');
-  console.log('   ℹ️  Run: npm run test:intent-classifier:errors\n');
+  console.log('📋 Malformed response / Network timeout: Run npm run test:intent-classifier:errors\n');
 }
 
 // ============================================================================

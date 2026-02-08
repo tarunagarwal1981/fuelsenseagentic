@@ -81,6 +81,16 @@ export interface RoutingMetadata {
   reasoning: string;
   /** Timestamp of classification */
   classified_at: number;
+
+  /** Latency of classification in milliseconds */
+  latency_ms?: number;
+  /** Whether result came from cache */
+  cache_hit?: boolean;
+  /** Cost of classification in USD (for LLM calls) */
+  cost_usd?: number;
+  /** Query hash for cache lookup */
+  query_hash?: string;
+
   /** Parameters extracted by classifier */
   extracted_params?: {
     vessel_name?: string;

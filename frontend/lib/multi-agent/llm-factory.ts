@@ -95,9 +95,7 @@ export class LLMFactory {
           });
         }
         // Fallback to Haiku if OpenAI unavailable
-        console.warn(
-          '⚠️ [LLM-FACTORY] OPENAI_API_KEY not available, using Claude Haiku 4.5 for intent classification (fallback)'
-        );
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for intent classification (fallback)');
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,

@@ -32,17 +32,14 @@ export const complianceAgent: AgentDefinition = {
   ],
   /** Expanded for LLM intent classification */
   intents: [
-    'calculate_emissions',
-    'check_compliance',
-    'check_regulations',
     'compliance_check',
     'compliance_requirements',
     'eca_validation',
+    'eca_zones',
     'emission_zones',
     'emissions_calc',
     'regulatory_compliance',
     'sulphur_limits',
-    'validate_eca',
   ],
   
   // Contract

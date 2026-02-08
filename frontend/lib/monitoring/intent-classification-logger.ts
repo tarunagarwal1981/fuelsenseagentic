@@ -23,6 +23,7 @@ export function hashQueryForIntent(query: string): string {
 
 export type ClassificationMethod =
   | 'llm_intent_classifier'
+  | 'llm_gpt4o_mini'
   | 'pattern_match'
   | 'llm_reasoning';
 
@@ -117,11 +118,13 @@ export function getClassificationMetrics(): ClassificationMetrics {
       average_confidence: 0,
       by_method: {
         llm_intent_classifier: 0,
+        llm_gpt4o_mini: 0,
         pattern_match: 0,
         llm_reasoning: 0,
       },
       avg_latency_by_method: {
         llm_intent_classifier: 0,
+        llm_gpt4o_mini: 0,
         pattern_match: 0,
         llm_reasoning: 0,
       },
@@ -135,16 +138,19 @@ export function getClassificationMetrics(): ClassificationMetrics {
 
   const byMethod: Record<ClassificationMethod, number> = {
     llm_intent_classifier: 0,
+    llm_gpt4o_mini: 0,
     pattern_match: 0,
     llm_reasoning: 0,
   };
   const sumLatencyByMethod: Record<ClassificationMethod, number> = {
     llm_intent_classifier: 0,
+    llm_gpt4o_mini: 0,
     pattern_match: 0,
     llm_reasoning: 0,
   };
   const countByMethod: Record<ClassificationMethod, number> = {
     llm_intent_classifier: 0,
+    llm_gpt4o_mini: 0,
     pattern_match: 0,
     llm_reasoning: 0,
   };
@@ -162,6 +168,10 @@ export function getClassificationMetrics(): ClassificationMetrics {
     llm_intent_classifier:
       countByMethod.llm_intent_classifier > 0
         ? sumLatencyByMethod.llm_intent_classifier / countByMethod.llm_intent_classifier
+        : 0,
+    llm_gpt4o_mini:
+      countByMethod.llm_gpt4o_mini > 0
+        ? sumLatencyByMethod.llm_gpt4o_mini / countByMethod.llm_gpt4o_mini
         : 0,
     pattern_match:
       countByMethod.pattern_match > 0

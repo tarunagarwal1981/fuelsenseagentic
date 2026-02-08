@@ -51,6 +51,14 @@ export interface PatternMatch {
   };
   /** Human-readable reason for the match */
   reason?: string;
+  /** Latency of classification in ms (set when LLM classifies) */
+  latency_ms?: number;
+  /** Whether result came from cache (set when LLM classifies) */
+  cache_hit?: boolean;
+  /** Cost of classification in USD (set when LLM classifies) */
+  cost_usd?: number;
+  /** Query hash for cache lookup (set when LLM classifies) */
+  query_hash?: string;
 }
 
 // ============================================================================
@@ -379,26 +387,28 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
     reason: 'No clear pattern matched - needs LLM reasoning',
   };
 
-  // When ambiguous and confidence < 30, try LLM intent classification
-  if (ambiguousResult.type === 'ambiguous' && ambiguousResult.confidence < 30) {
+  // If pattern matching failed (ambiguous), try LLM classification
+  if (ambiguousResult.type === 'ambiguous') {
     try {
-      console.log('🤖 [PATTERN-MATCHER] Using LLM intent classification for ambiguous query');
+      console.log('🤖 [PATTERN-MATCHER] Ambiguous query, trying LLM intent classification...');
       const llmStart = Date.now();
-      const classification = await IntentClassifier.classify(query);
+      const correlationId = getCorrelationId() || 'unknown';
+      const classification = await IntentClassifier.classify(query, correlationId);
       const latencyMs = Date.now() - llmStart;
 
       if (classification && classification.confidence >= 0.7) {
         const patternType = intentToPatternType(classification.agent_id);
+        const confidencePercent = Math.round(classification.confidence * 100);
+
+        console.log(`✅ [PATTERN-MATCHER] LLM classified as: ${classification.agent_id} (${confidencePercent}% confidence)`);
 
         // Only use classification if we can map to a known pattern type
         if (patternType !== 'ambiguous') {
-          const confidencePercent = Math.round(classification.confidence * 100);
-          const correlationId = getCorrelationId() || 'unknown';
           logIntentClassification({
             correlation_id: correlationId,
             query,
             query_hash: hashQueryForIntent(query),
-            classification_method: 'llm_intent_classifier',
+            classification_method: 'llm_gpt4o_mini',
             matched_agent: classification.agent_id,
             matched_intent: patternType,
             confidence: confidencePercent,
@@ -413,16 +423,18 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
             type: patternType,
             agent: classification.agent_id as PatternMatch['agent'],
             confidence: confidencePercent,
-            extracted_data: buildExtractedData(classification.extracted_params),
+            extracted_data: buildExtractedData(classification.extracted_params ?? {}),
             reason: `LLM intent classification: ${classification.reasoning}`,
+            latency_ms: classification.latency_ms,
+            cache_hit: classification.cache_hit,
+            cost_usd: classification.cost_usd,
+            query_hash: classification.query_hash,
           };
         }
       }
-    } catch (err) {
-      console.warn(
-        '[PATTERN-MATCHER] IntentClassifier failed, falling back to ambiguous:',
-        err instanceof Error ? err.message : String(err)
-      );
+    } catch (error) {
+      console.warn('⚠️ [PATTERN-MATCHER] LLM classification failed, using pattern match fallback:', error);
+      // Fall through to return original ambiguous result
     }
   }
 

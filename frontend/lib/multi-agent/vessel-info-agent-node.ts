@@ -253,78 +253,70 @@ async function handleConsumptionProfile(
 /**
  * Vessel Info Agent Node
  *
- * Fetches vessel data using intent-based branching from routing_metadata.
- * When routing_metadata is missing (e.g. legacy flows), defaults to vessel_list.
+ * Fetches vessel data using intent-based branching from routing_metadata (set by supervisor).
+ * No regex/query pattern matching - routes purely on matched_intent.
+ *
+ * Intent handlers:
+ * - vessel_list | vessel_count | vessel_info | fleet_inventory | ship_roster | vessel_catalog → handleVesselList
+ * - noon_report → handleNoonReport
+ * - consumption_profile → handleConsumptionProfile
+ *
+ * Fallback: When routing_metadata is missing, defaults to vessel_list (backward compatible).
  */
 export async function vesselInfoAgentNode(
   state: MultiAgentState
 ): Promise<Partial<MultiAgentState>> {
   const cid = extractCorrelationId(state);
-  logAgentExecution('vessel_info_agent', cid, 0, 'started', {
-    input: { message_count: state.messages?.length ?? 0 },
-  });
+  logAgentExecution('vessel_info_agent', cid, 0, 'started', {});
 
   console.log('\n🚢 [VESSEL-INFO-AGENT] Starting vessel info retrieval...');
   const startTime = Date.now();
 
   try {
-    const lastUserMessage = state.messages
-      ?.filter((m) => m._getType() === 'human')
-      .pop();
-    const userQuery = (lastUserMessage?.content?.toString() || '').trim();
+    // Get intent from routing metadata (set by supervisor)
+    const rawIntent = state.routing_metadata?.matched_intent || 'vessel_list';
+    const intent = String(rawIntent).toLowerCase().replace(/\s+/g, '_');
+    const extracted = state.routing_metadata?.extracted_params || {};
 
-    if (!userQuery) {
-      console.warn('⚠️ [VESSEL-INFO-AGENT] No user query found');
-      return {
-        agent_status: { ...(state.agent_status || {}), vessel_info_agent: 'failed' },
-        agent_errors: {
-          ...(state.agent_errors || {}),
-          vessel_info_agent: {
-            error: 'No user query to process',
-            timestamp: Date.now(),
-          },
+    console.log(`📋 [VESSEL-INFO-AGENT] Intent: ${intent}, Params:`, extracted);
+
+    // Use extracted_params to populate vessel_identifiers when missing (e.g. when entity extractor didn't run)
+    let effectiveState = state;
+    if (!state.vessel_identifiers && (extracted.vessel_name || extracted.imo)) {
+      effectiveState = {
+        ...state,
+        vessel_identifiers: {
+          imos: extracted.imo ? [extracted.imo] : [],
+          names: extracted.vessel_name ? [extracted.vessel_name] : [],
         },
-        messages: [
-          ...state.messages,
-          new AIMessage({ content: '[VESSEL-INFO-AGENT] No query found.' }),
-        ],
       };
     }
 
-    // Get intent from routing metadata (from supervisor)
-    const intent =
-      state.routing_metadata?.matched_intent ||
-      (state.routing_metadata?.extracted_params?.intent as string | undefined) ||
-      'vessel_list'; // safe default when routing_metadata missing
-
-    const normalizedIntent = String(intent).toLowerCase().replace(/\s+/g, '_');
-
-    console.log(`📋 [VESSEL-INFO-AGENT] Intent: ${normalizedIntent} (from routing_metadata)`);
-
     // Branch on intent instead of query patterns
-    switch (normalizedIntent) {
+    switch (intent) {
       case 'vessel_list':
       case 'vessel_count':
       case 'vessel_info':
       case 'fleet_inventory':
+      case 'ship_roster':
+      case 'vessel_catalog':
       case 'list_vessels':
       case 'vessel_details':
       case 'show_vessel':
-        return await handleVesselList(state, cid, startTime);
+        return await handleVesselList(effectiveState, cid, startTime);
 
       case 'noon_report':
       case 'noon_report_fetch':
       case 'get_rob':
       case 'vessel_status':
-        return await handleNoonReport(state, cid, startTime);
+        return await handleNoonReport(effectiveState, cid, startTime);
 
       case 'consumption_profile':
-        return await handleConsumptionProfile(state, cid, startTime);
+        return await handleConsumptionProfile(effectiveState, cid, startTime);
 
       default:
-        // Fallback to vessel list with getAll(50) for unknown intents
-        console.log('⚠️ [VESSEL-INFO-AGENT] Unknown intent, defaulting to vessel list (getAll 50)');
-        return await handleVesselList(state, cid, startTime, 50);
+        console.log(`⚠️ [VESSEL-INFO-AGENT] Unknown intent '${intent}', defaulting to vessel list`);
+        return await handleVesselList(effectiveState, cid, startTime);
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
