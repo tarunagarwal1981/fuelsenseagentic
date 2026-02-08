@@ -273,24 +273,38 @@ export async function vesselInfoAgentNode(
   const startTime = Date.now();
 
   try {
-    // Get intent from routing metadata (set by supervisor)
+    // ========================================================================
+    // PARAMETER EXTRACTION PRIORITY
+    // ========================================================================
+    // 1. routing_metadata.extracted_params (from AI - HIGHEST PRIORITY)
+    // 2. vessel_identifiers (from entity extractor)
+    // ========================================================================
     const rawIntent = state.routing_metadata?.matched_intent || 'vessel_list';
     const intent = String(rawIntent).toLowerCase().replace(/\s+/g, '_');
     const extracted = state.routing_metadata?.extracted_params || {};
 
-    console.log(`📋 [VESSEL-INFO-AGENT] Intent: ${intent}, Params:`, extracted);
+    const vesselFromAI = extracted.vessel_name;
+    const imoFromAI = extracted.imo;
+    const finalNames = vesselFromAI ? [vesselFromAI] : (state.vessel_identifiers?.names ?? []);
+    const finalImos = imoFromAI ? [imoFromAI] : (state.vessel_identifiers?.imos ?? []);
 
-    // Use extracted_params to populate vessel_identifiers when missing (e.g. when entity extractor didn't run)
-    let effectiveState = state;
-    if (!state.vessel_identifiers && (extracted.vessel_name || extracted.imo)) {
-      effectiveState = {
-        ...state,
-        vessel_identifiers: {
-          imos: extracted.imo ? [extracted.imo] : [],
-          names: extracted.vessel_name ? [extracted.vessel_name] : [],
-        },
-      };
+    console.log(`📋 [VESSEL-INFO-AGENT] Intent: ${intent}, Params:`, extracted);
+    console.log(`📋 [VESSEL-INFO-AGENT] Parameter sources:`, {
+      vessel_name: vesselFromAI ? 'AI' : 'entity_extractor',
+      imo: imoFromAI ? 'AI' : 'entity_extractor',
+    });
+
+    if (!vesselFromAI && !imoFromAI && (state.vessel_identifiers?.names?.length || state.vessel_identifiers?.imos?.length)) {
+      console.warn('⚠️ [VESSEL-INFO-AGENT] Falling back to vessel_identifiers (entity extractor) - no AI params');
     }
+
+    const effectiveState: MultiAgentState = {
+      ...state,
+      vessel_identifiers: {
+        names: finalNames,
+        imos: finalImos,
+      },
+    };
 
     // Branch on intent instead of query patterns
     switch (intent) {

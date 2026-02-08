@@ -141,6 +141,10 @@ export interface AgentContext {
     task_description: string;
     /** Priority level for this agent's work */
     priority: 'critical' | 'important' | 'optional';
+    /** Port for port weather (from supervisor entity extraction) */
+    port?: string;
+    /** Date for weather forecast (from supervisor entity extraction) */
+    date?: string;
   };
   bunker_agent?: {
     /** Whether weather consumption is needed for accurate bunker analysis */

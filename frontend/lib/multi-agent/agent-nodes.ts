@@ -1968,50 +1968,58 @@ export async function routeAgentNode(
       const userQuery = userMessage?.content?.toString() || '';
       
       // ======================================================================
-      // PRIORITY 1: Check for agent context port overrides (from supervisor entity extraction)
-      // These come from LLM entity extraction and should be used first
-      // Accept partial overrides - use what's provided, extract the rest
+      // PARAMETER EXTRACTION PRIORITY
       // ======================================================================
-      const agentContext = state.agent_context?.route_agent;
-      if (agentContext?.port_overrides) {
-        console.log('🎯 [ROUTE-WORKFLOW] Found supervisor-extracted ports in agent context');
-        
-        if (agentContext.port_overrides.origin) {
-          origin = agentContext.port_overrides.origin;
+      // 1. routing_metadata.extracted_params (from AI - HIGHEST PRIORITY)
+      // 2. agent_context (from supervisor)
+      // 3. state port_overrides (from error recovery)
+      // 4. Legacy extraction from query (FALLBACK ONLY)
+      // ======================================================================
+      const originFromAI = state.routing_metadata?.extracted_params?.origin_port;
+      const destFromAI = state.routing_metadata?.extracted_params?.destination_port;
+      const dateFromAI = state.routing_metadata?.extracted_params?.date;
+
+      if (originFromAI || destFromAI) {
+        console.log('🎯 [ROUTE-WORKFLOW] Using ports from routing_metadata (AI extraction)');
+        if (originFromAI && !origin) {
+          origin = originFromAI;
           console.log(`   ✅ Origin: ${origin}`);
         }
-        
-        if (agentContext.port_overrides.destination) {
-          destination = agentContext.port_overrides.destination;
-          console.log(`   ✅ Destination: ${destination}`);
-        }
-      } 
-      
-      // ======================================================================
-      // PRIORITY 2: Check for state port overrides (from error recovery/agentic supervisor)
-      // These bypass extraction logic entirely - supervisor has already validated them
-      // Accept partial overrides - use what's provided, extract the rest
-      // ======================================================================
-      if (state.port_overrides) {
-        console.log('🎯 [ROUTE-WORKFLOW] Found supervisor-provided port overrides in state');
-        
-        if (state.port_overrides.origin && !origin) {
-          origin = state.port_overrides.origin;
-          console.log(`   ✅ Origin: ${origin}`);
-        }
-        
-        if (state.port_overrides.destination && !destination) {
-          destination = state.port_overrides.destination;
+        if (destFromAI && !destination) {
+          destination = destFromAI;
           console.log(`   ✅ Destination: ${destination}`);
         }
       }
-      
-      // ======================================================================
-      // PRIORITY 3: Standard flow - extract ports via PortResolutionService (Agent → Service → Repository; no ports.json)
-      // Only extract if we're still missing ports
-      // ======================================================================
+
+      // PRIORITY 2: agent context port overrides (from supervisor)
+      const agentContext = state.agent_context?.route_agent;
+      if (agentContext?.port_overrides) {
+        if (agentContext.port_overrides.origin && !origin) {
+          origin = agentContext.port_overrides.origin;
+          console.log(`   ✅ Origin (context): ${origin}`);
+        }
+        if (agentContext.port_overrides.destination && !destination) {
+          destination = agentContext.port_overrides.destination;
+          console.log(`   ✅ Destination (context): ${destination}`);
+        }
+      }
+
+      // PRIORITY 3: state port overrides (from error recovery/agentic supervisor)
+      if (state.port_overrides) {
+        if (state.port_overrides.origin && !origin) {
+          origin = state.port_overrides.origin;
+          console.log(`   ✅ Origin (state override): ${origin}`);
+        }
+        if (state.port_overrides.destination && !destination) {
+          destination = state.port_overrides.destination;
+          console.log(`   ✅ Destination (state override): ${destination}`);
+        }
+      }
+
+      // PRIORITY 4: Legacy extraction via PortResolutionService
       if (!origin || !destination) {
-        console.log('📍 [ROUTE-WORKFLOW] Some ports still missing, extracting from query...');
+        console.warn('⚠️ [ROUTE-WORKFLOW] Falling back to legacy extraction - some ports still missing');
+        console.log(`📋 [ROUTE-WORKFLOW] Parameter sources: origin=${originFromAI ? 'AI' : 'fallback'}, destination=${destFromAI ? 'AI' : 'fallback'}`);
         if (!origin) console.log('   ❓ Missing: origin');
         if (!destination) console.log('   ❓ Missing: destination');
         
@@ -2399,26 +2407,59 @@ export async function weatherAgentNode(
   
   try {
     // ========================================================================
-    // QUERY INTENT ANALYSIS - Check for standalone port weather
+    // PARAMETER EXTRACTION PRIORITY
     // ========================================================================
-    
+    // 1. routing_metadata.extracted_params (from AI - HIGHEST PRIORITY)
+    // 2. agent_context (from supervisor)
+    // 3. Legacy extraction from query (FALLBACK ONLY)
+    // ========================================================================
+    const portFromAI = state.routing_metadata?.extracted_params?.port;
+    const dateFromAI = state.routing_metadata?.extracted_params?.date;
+    const portFromContext = state.agent_context?.weather_agent?.port;
+    const dateFromContext = state.agent_context?.weather_agent?.date;
+
+    console.log(`📋 [WEATHER-WORKFLOW] Parameter sources:`, {
+      port: portFromAI ? 'AI' : portFromContext ? 'context' : 'legacy',
+      date: dateFromAI ? 'AI' : dateFromContext ? 'context' : 'legacy',
+    });
+
+    // PRIORITY 2: Fallback to intent analyzer for backward compatibility
     const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
-    const userQuery = userMessage?.content?.toString() || '';
-    
-    // Import intent analyzer for weather classification
+    const userQuery = (userMessage?.content?.toString() || '').trim();
     const { classifyWeatherQuery } = await import('./intent-analyzer');
     const weatherClass = classifyWeatherQuery(userQuery);
-    
+
+    // Merge params: AI > context > legacy
+    const finalPort = portFromAI || portFromContext || weatherClass.port;
+    const finalDate = dateFromAI || dateFromContext || weatherClass.date;
+
+    if (!portFromAI && !portFromContext && weatherClass.port) {
+      console.warn('⚠️ [WEATHER-WORKFLOW] Falling back to legacy extraction for port');
+    }
+    if (!dateFromAI && !dateFromContext && weatherClass.date) {
+      console.warn('⚠️ [WEATHER-WORKFLOW] Falling back to legacy extraction for date');
+    }
+
+    console.log(`🌤️ [WEATHER-WORKFLOW] Final params:`, {
+      port: finalPort,
+      date: finalDate,
+    });
+
     // ========================================================================
     // MODE: STANDALONE PORT WEATHER (no route needed)
     // ========================================================================
-    
-    if (weatherClass.type === 'port_weather' && weatherClass.port) {
+    // Trust routing_metadata when it says port_weather; otherwise use regex
+    const isStandalone =
+      finalPort &&
+      (state.routing_metadata?.matched_intent === 'port_weather' ||
+        (weatherClass.type === 'port_weather' && !weatherClass.needsRoute));
+
+    if (isStandalone) {
       console.log('🌤️ [WEATHER-WORKFLOW] Mode: Standalone port weather');
-      console.log(`   Port: ${weatherClass.port}`);
-      console.log(`   Date: ${weatherClass.date || 'not specified'}`);
-      
-      return await handleStandalonePortWeather(state, weatherClass.port, weatherClass.date, startTime);
+      console.log(`   Port: ${finalPort}`);
+      console.log(`   Date: ${finalDate || 'not specified'}`);
+
+      return await handleStandalonePortWeather(state, finalPort, finalDate, startTime);
     }
     
     // ========================================================================
