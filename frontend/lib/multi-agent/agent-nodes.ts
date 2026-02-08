@@ -77,7 +77,7 @@ import type { ROBTrackingOutput } from '@/lib/engines/rob-tracking-engine';
 import type { ECAZoneValidatorOutput } from '@/lib/tools/eca-zone-validator';
 import { planMultiPortBunker, needsMultiPortBunkering } from '@/lib/engines/multi-port-bunker-planner';
 import type { MultiBunkerAnalysis } from './state';
-import { formatResponse } from '../formatters/response-formatter';
+import { formatResponse, formatMapOverlays } from '../formatters/response-formatter';
 import { render as templateRender } from '../formatters/template-renderer';
 import { generateSynthesis } from './synthesis/synthesis-engine';
 import { AutoSynthesisEngine, type AutoSynthesisResult } from './synthesis/auto-synthesis-engine';
@@ -4927,6 +4927,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       text?: string;
       components: Array<{ id: string; component: string; props: Record<string, unknown>; tier: number; priority: number }>;
       query_type: string;
+      mapOverlays?: unknown;
     };
 
     if (renderableComponents.length === 0) {
@@ -4963,6 +4964,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         text: finalTextOutput,
         components: componentManifest,
         query_type: queryType,
+        mapOverlays: formatMapOverlays(state),
       };
     }
 

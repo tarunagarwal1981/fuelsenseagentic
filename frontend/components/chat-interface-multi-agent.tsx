@@ -33,11 +33,6 @@ import {
   X,
   FileText,
 } from "lucide-react";
-import { MultiAgentAnalysisDisplay } from "./multi-agent-analysis-display";
-import { ComplianceCard } from './compliance-card';
-import { WeatherCard } from './weather-card';
-import { EnhancedBunkerTable } from './enhanced-bunker-table';
-import { VoyageTimeline } from './voyage-timeline';
 import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import dynamic from "next/dynamic";
 import portsData from "@/lib/data/ports.json";
@@ -744,43 +739,6 @@ export function ChatInterfaceMultiAgent() {
               )}
               <div ref={messagesEndRef} />
             </div>
-            {analysisData && (
-              <>
-                {isFeatureEnabled("USE_RESPONSE_FORMATTER") && structuredData && 'structured' in structuredData && structuredData.structured ? (
-                  <div className="space-y-4 mt-4">
-                    {analysisData.route && (
-                      <MultiAgentAnalysisDisplay
-                        data={{
-                          route: analysisData.route,
-                          ports: analysisData.ports,
-                          prices: analysisData.prices,
-                          analysis: analysisData.analysis,
-                        }}
-                        mapOverlays={'mapOverlays' in structuredData ? structuredData.mapOverlays : undefined}
-                      />
-                    )}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <ComplianceCard data={structuredData.structured.compliance} />
-                      <WeatherCard data={structuredData.structured.weather} />
-                    </div>
-                    <div className="space-y-4">
-                      <VoyageTimeline data={structuredData.structured.timeline} />
-                      {structuredData.structured.bunker ? (
-                        <EnhancedBunkerTable data={structuredData.structured.bunker} />
-                      ) : (
-                        analysisData.analysis && (
-                          <div className="mt-4">
-                            <MultiAgentAnalysisDisplay data={{ analysis: analysisData.analysis }} />
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <MultiAgentAnalysisDisplay data={analysisData} />
-                )}
-              </>
-            )}
           </div>
         </div>
         {/* Possible next actions */}

@@ -5,12 +5,12 @@
 
 components:
   # ========================================
-  # Map Component - Route Visualization
+  # Map Component - Rich Route Visualization (bunker ports, ECA overlays, tooltips)
   # ========================================
   - id: route_map
     name: "Route Map Viewer"
-    component: "RouteMap"
-    description: "Interactive maritime route map with waypoints"
+    component: "RichMap"
+    description: "Interactive maritime route map with bunker ports, ECA zones, tooltips"
     
     required_state_fields:
       - route_data.waypoints
@@ -18,10 +18,8 @@ components:
       - route_data.destination_port_code
     
     optional_state_fields:
-      - bunker_ports
-      - eca_segments
-      - weather_forecast
-      - rob_waypoints
+      - bunker_analysis.recommendations
+      - compliance_data.eca_zones
     
     render_conditions:
       - "route_data && route_data.waypoints && route_data.waypoints.length > 0"
@@ -34,10 +32,7 @@ components:
     
     props_mapping:
       route: "route_data"
-      originPort: "route_data.origin_port_code"
-      destinationPort: "route_data.destination_port_code"
-      bunkerPorts: "bunker_ports"
-      showECAZones: "eca_segments"
+      analysis: "bunker_analysis"
 
   # ========================================
   # Bunker Cost Comparison
@@ -97,6 +92,33 @@ components:
       switchingPoints: "compliance_data.fuel_switching_points"
 
   # ========================================
+  # Bunker Table (EnhancedBunkerTable)
+  # ========================================
+  - id: bunker_table
+    name: "Bunker Analysis Table"
+    component: "EnhancedBunkerTable"
+    description: "Bunker port recommendations with costs and deviations"
+    
+    required_state_fields:
+      - bunker_analysis.recommendations
+    
+    optional_state_fields:
+      - bunker_analysis.best_option
+    
+    render_conditions:
+      - "bunker_analysis && bunker_analysis.recommendations && bunker_analysis.recommendations.length > 0"
+    
+    produced_by:
+      - bunker_agent
+    
+    priority: 1
+    tier: 1
+    
+    props_mapping:
+      bunkerAnalysis: "bunker_analysis"
+      complianceData: "compliance_data"
+
+  # ========================================
   # Weather Timeline
   # ========================================
   - id: weather_timeline
@@ -130,6 +152,7 @@ query_type_mappings:
     components:
       - route_map
       - bunker_comparison
+      - bunker_table
       - weather_timeline
       - eca_compliance
     

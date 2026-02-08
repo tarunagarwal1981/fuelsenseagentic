@@ -4,23 +4,27 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { RouteMap } from './ui/route-map';
+import { RichMap } from './rich-map';
 import { CostComparison } from './ui/cost-comparison';
 import { ComplianceCard } from './compliance-card';
 import { VoyageTimeline } from './voyage-timeline';
 import { WeatherCard } from './weather-card';
-import type { ComplianceCardData } from '@/lib/formatters/response-formatter';
-import type { TimelineData } from '@/lib/formatters/response-formatter';
+import { EnhancedBunkerTable } from './enhanced-bunker-table';
+import type { ComplianceCardData, TimelineData } from '@/lib/formatters/component-adapter-types';
+import { formatBunkerTable } from '@/lib/formatters/format-bunker-table';
+import type { MultiAgentState } from '@/lib/multi-agent/state';
 
 // Component registry - maps component names to actual React components
 const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
-  RouteMap,
+  RichMap,
+  RouteMap: RichMap, // backward compat alias
   CostComparison,
   ECAComplianceCard: ComplianceCard,
   ComplianceCard,
   WeatherTimeline: VoyageTimeline,
   VoyageTimeline,
   WeatherCard,
+  EnhancedBunkerTable,
 };
 
 interface ComponentManifest {
@@ -38,22 +42,22 @@ interface HybridResponseRendererProps {
     content?: string;
     components?: ComponentManifest[];
     query_type?: string;
+    mapOverlays?: unknown;
   };
   className?: string;
 }
 
 /**
- * Adapt registry props to RouteMap component props
+ * Adapt registry props to RichMap component props (rich map with bunker ports, ECA overlays)
  */
-function adaptRouteMapProps(props: Record<string, unknown>) {
+function adaptRichMapProps(
+  props: Record<string, unknown>,
+  mapOverlays?: unknown
+) {
   return {
-    routeData: {
-      route: props.route,
-      originPort: props.originPort,
-      destinationPort: props.destinationPort,
-      bunkerPorts: props.bunkerPorts ?? [],
-    },
-    mapOverlays: props.showECAZones ? { ecaSegments: props.showECAZones } : null,
+    route: props.route,
+    analysis: props.analysis,
+    mapOverlays: mapOverlays ?? null,
   };
 }
 
@@ -136,12 +140,33 @@ function adaptWeatherTimelineProps(props: Record<string, unknown>) {
 }
 
 /**
+ * Adapt registry props to EnhancedBunkerTable component props
+ */
+function adaptEnhancedBunkerTableProps(props: Record<string, unknown>) {
+  const bunkerAnalysis = props.bunkerAnalysis;
+  const complianceData = props.complianceData;
+  if (!bunkerAnalysis) return { data: null };
+
+  const partialState = {
+    bunker_analysis: bunkerAnalysis,
+    compliance_data: complianceData,
+  } as MultiAgentState;
+  const data = formatBunkerTable(partialState);
+  return { data };
+}
+
+/**
  * Get adapted props for a component based on its type
  */
-function getAdaptedProps(componentName: string, props: Record<string, unknown>) {
+function getAdaptedProps(
+  componentName: string,
+  props: Record<string, unknown>,
+  response?: { mapOverlays?: unknown }
+) {
   switch (componentName) {
+    case 'RichMap':
     case 'RouteMap':
-      return adaptRouteMapProps(props);
+      return adaptRichMapProps(props, response?.mapOverlays);
     case 'CostComparison':
       return adaptCostComparisonProps(props);
     case 'ECAComplianceCard':
@@ -150,6 +175,8 @@ function getAdaptedProps(componentName: string, props: Record<string, unknown>) 
     case 'WeatherTimeline':
     case 'VoyageTimeline':
       return adaptWeatherTimelineProps(props);
+    case 'EnhancedBunkerTable':
+      return adaptEnhancedBunkerTableProps(props);
     default:
       return props;
   }
@@ -206,7 +233,11 @@ export function HybridResponseRenderer({
           );
         }
 
-        const adaptedProps = getAdaptedProps(componentDef.component, componentDef.props);
+        const adaptedProps = getAdaptedProps(
+          componentDef.component,
+          componentDef.props,
+          response
+        );
 
         return (
           <div

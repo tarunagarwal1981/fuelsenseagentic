@@ -14,6 +14,7 @@ import { ECA_ZONES } from '../tools/eca-config';
 import type { SynthesisContext, ExtractedData } from '../multi-agent/synthesis/auto-synthesis-engine';
 import { ContextAwareTemplateSelector } from './context-aware-template-selector';
 import { formatResponseWithTemplate } from './template-aware-formatter';
+import { formatBunkerTable } from './format-bunker-table';
 
 // ============================================================================
 // Type Definitions
@@ -441,78 +442,8 @@ function formatWeatherCard(state: MultiAgentState): WeatherCardData | null {
   };
 }
 
-/**
- * Format bunker table data
- */
-function formatBunkerTable(state: MultiAgentState): BunkerTableData | null {
-  if (!state.bunker_analysis) {
-    return null;
-  }
-  
-  const formatPort = (port: any, isRecommended: boolean, savingsVsNext?: number): BunkerPortRow => {
-    // Extract fuel breakdown if available (may need to be constructed from analysis)
-    // For now, create a simple breakdown from available data
-    const fuelBreakdown: Array<{
-      type: 'VLSFO' | 'MGO' | 'LSMGO';
-      quantityMT: number;
-      pricePerMT: number;
-      totalCost: number;
-    }> = [];
-    
-    // If we have ECA compliance, we might need MGO
-    const hasECA = state.compliance_data?.eca_zones?.has_eca_zones;
-    
-    // For now, use single fuel type (VLSFO) - this will be enhanced when
-    // we have access to actual fuel breakdown from bunker analysis
-    const totalQuantity = 650; // Default - should be extracted from state or query
-    const pricePerMT = (port as any).fuel_price_per_mt || (port.fuel_cost_usd / totalQuantity) || 550;
-    const totalCost = port.total_cost_usd || port.fuel_cost_usd || 0;
-    
-    fuelBreakdown.push({
-      type: 'VLSFO',
-      quantityMT: totalQuantity,
-      pricePerMT: pricePerMT,
-      totalCost: totalCost,
-    });
-    
-    return {
-      portName: port.port_name,
-      portCode: port.port_code || '',
-      isRecommended,
-      fuelBreakdown,
-      totalQuantityMT: totalQuantity,
-      totalCostUSD: port.total_cost_usd || port.fuel_cost_usd || totalCost,
-      averagePricePerMT: pricePerMT,
-      distanceAlongRouteNM: port.distance_along_route_nm || 0,
-      deviationNM: port.distance_from_route_nm || 0,
-      weatherSafe: true, // Will be enhanced with actual weather data
-      weatherStatus: 'Safe',
-      confidenceScore: 0.8,
-      confidencePercentage: 80,
-      savingsVsNextBest: savingsVsNext,
-    };
-  };
-  
-  const best = state.bunker_analysis.best_option;
-  const alternatives = state.bunker_analysis.recommendations || [];
-  
-  // Calculate savings
-  let savingsVsNext: number | undefined;
-  if (alternatives.length > 1) {
-    savingsVsNext = (alternatives[1].total_cost_usd || 0) - 
-                    (alternatives[0].total_cost_usd || 0);
-  }
-  
-  return {
-    recommendedPort: best ? formatPort(best, true, savingsVsNext) : null,
-    alternativePorts: alternatives.slice(1).map((port, idx) => {
-      const savings = idx < alternatives.length - 2 ? 
-        (alternatives[idx + 2].total_cost_usd || 0) - 
-        (port.total_cost_usd || 0) : undefined;
-      return formatPort(port, false, savings);
-    }),
-  };
-}
+// Re-export from client-safe module (avoids pulling template/fs deps into client)
+export { formatBunkerTable } from './format-bunker-table';
 
 /**
  * Format timeline data
@@ -681,9 +612,9 @@ function generateRecommendations(state: MultiAgentState): string[] {
 }
 
 /**
- * Format map overlays data
+ * Format map overlays data (ECA zones, switching points, fuel-type route segments)
  */
-function formatMapOverlays(state: MultiAgentState): MapOverlaysData | null {
+export function formatMapOverlays(state: MultiAgentState): MapOverlaysData | null {
   if (!state.compliance_data?.eca_zones || !state.route_data) {
     return null;
   }

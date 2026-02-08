@@ -11,12 +11,12 @@ import {
   Trophy
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { ResultsTable } from './results-table';
+import { ResultsTable } from '../results-table';
 import portsData from '@/lib/data/ports.json';
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewerDynamic = dynamic(
-  () => import('./map-viewer').then((mod) => mod.MapViewer),
+  () => import('../map-viewer').then((mod) => mod.MapViewer),
   { 
     ssr: false,
     loading: () => (
@@ -281,4 +281,3 @@ export function MultiAgentAnalysisDisplay({ data, mapOverlays }: AnalysisDisplay
     </div>
   );
 }
-
