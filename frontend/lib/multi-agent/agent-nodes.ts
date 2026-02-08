@@ -91,6 +91,7 @@ import type { SynthesizedResponse, ViewConfig } from '@/lib/synthesis';
 import type { FormattedResponse } from '../formatters/response-formatter';
 import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import type { Port } from '@/lib/types';
+import type { MatchedComponent } from '@/lib/types/component-registry';
 
 // Import tool schemas
 import { routeCalculatorInputSchema } from '@/lib/tools/route-calculator';
@@ -4619,6 +4620,105 @@ function deriveViewConfig(matchedIntent: string | undefined): ViewConfig {
   return { show_map: false };
 }
 
+/**
+ * LLM synthesizes text-only response when no components available
+ */
+async function synthesizeTextOnlyResponse(
+  state: MultiAgentState,
+  llmConfig?: { model: string; temperature: number; max_tokens: number }
+): Promise<string> {
+  const modelName = llmConfig?.model || 'claude-sonnet-4';
+  const temperature = llmConfig?.temperature ?? 0.3;
+  const maxTokens = llmConfig?.max_tokens ?? 2000;
+
+  const llm = new ChatAnthropic({
+    model: modelName,
+    temperature,
+    maxTokens,
+  });
+
+  const relevantData = extractRelevantStateData(state);
+  const firstMsg = state.messages?.[0];
+  const userQuery = firstMsg?.content?.toString?.() ?? 'Unknown query';
+
+  const prompt = `You're assisting a maritime professional. They asked a question and our system processed it, but we don't have specific UI components to visualize the answer.
+
+User's original query: "${userQuery}"
+
+Available data from agents:
+${JSON.stringify(relevantData, null, 2)}
+
+Provide a clear, professional response in markdown format. Be concise but complete. Use bullet points where appropriate. Focus on actionable insights.`;
+
+  try {
+    const response = await llm.invoke([new HumanMessage({ content: prompt })]);
+    return (response.content as string) || '';
+  } catch (error) {
+    console.error('[FINALIZE] LLM synthesis failed:', error);
+    return `I've processed your request, but encountered an issue generating the response. Please try again.`;
+  }
+}
+
+/**
+ * Generate contextual text to introduce components
+ */
+async function generateContextualText(
+  state: MultiAgentState,
+  components: MatchedComponent[],
+  queryType: string
+): Promise<string> {
+  const llm = LLMFactory.getLLMForAgent('finalize');
+
+  const componentDescriptions = components
+    .map((c) => `- ${c.component} (tier ${c.tier}): Visualizes ${c.id}`)
+    .join('\n');
+
+  const prompt = `The user will see these interactive visualizations:
+
+${componentDescriptions}
+
+Write 2-3 sentences introducing the results and highlighting 1-2 key insights. Don't describe what's IN the components - the user will see that. Just provide context.
+
+Query type: ${queryType}
+
+Keep it professional and concise. Use markdown formatting.`;
+
+  try {
+    const response = await llm.invoke([new HumanMessage({ content: prompt })]);
+    return (response.content as string) || 'Here are the results for your query:';
+  } catch (error) {
+    console.error('[FINALIZE] Contextual text generation failed:', error);
+    return 'Here are the results for your query:';
+  }
+}
+
+/**
+ * Extract relevant state data for LLM synthesis
+ */
+function extractRelevantStateData(state: MultiAgentState): Record<string, unknown> {
+  const relevant: Record<string, unknown> = {};
+
+  const fieldsToExtract = [
+    'route_data',
+    'bunker_analysis',
+    'weather_forecast',
+    'eca_segments',
+    'compliance_data',
+    'vessel_consumption',
+    'final_recommendation',
+    'agent_errors',
+  ];
+
+  for (const field of fieldsToExtract) {
+    const value = state[field as keyof MultiAgentState];
+    if (value !== undefined && value !== null) {
+      relevant[field] = value;
+    }
+  }
+
+  return relevant;
+}
+
 export async function finalizeNode(state: MultiAgentState) {
   const cid = extractCorrelationId(state);
   logAgentExecution('finalize', cid, 0, 'started', { input: summarizeInputForLog(state) });
@@ -4689,58 +4789,6 @@ export async function finalizeNode(state: MultiAgentState) {
     // Reasoning chain will be included in synthesis/formatting
   }
   
-  // === DEBUG: State inspection ===
-  console.log('🔍 [FINALIZE-DEBUG] State inspection:');
-  console.log(`  - rob_tracking: ${state.rob_tracking ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - rob_waypoints: ${state.rob_waypoints ? `✅ EXISTS (${state.rob_waypoints.length} waypoints)` : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - rob_safety_status: ${state.rob_safety_status ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - eca_consumption: ${state.eca_consumption ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - eca_summary: ${state.eca_summary ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - vessel_profile: ${state.vessel_profile ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - bunker_analysis: ${state.bunker_analysis ? '✅ EXISTS' : '❌ NULL/UNDEFINED'}`);
-  console.log(`  - agent_status: ${state.agent_status ? `✅ EXISTS (${Object.keys(state.agent_status).length} agents)` : '❌ NULL/UNDEFINED'}`);
-  
-  if (state.rob_tracking) {
-    console.log('📊 [FINALIZE-DEBUG] ROB Tracking Details:');
-    
-    // Handle both old and new (P0-5 enhanced) ROB tracking structures
-    const robTracking = state.rob_tracking as any;
-    
-    // Check for new P0-5 enhanced structure
-    if (robTracking.with_bunker || robTracking.without_bunker) {
-      // New enhanced structure
-      const withBunker = robTracking.with_bunker;
-      const withoutBunker = robTracking.without_bunker;
-      
-      if (withoutBunker?.final_rob) {
-        console.log(`  - Without Bunker Final ROB: ${withoutBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withoutBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
-        console.log(`  - Without Bunker Safe: ${withoutBunker.overall_safe}`);
-      }
-      if (withBunker?.final_rob) {
-        console.log(`  - With Bunker Final ROB: ${withBunker.final_rob.VLSFO?.toFixed(1)} MT VLSFO, ${withBunker.final_rob.LSMGO?.toFixed(1)} MT LSMGO`);
-        console.log(`  - With Bunker Safe: ${withBunker.overall_safe}`);
-      }
-      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
-      console.log(`  - Still Unsafe After Bunker: ${robTracking.with_bunker_still_unsafe}`);
-    } else if (robTracking.final_rob) {
-      // Old structure (backwards compatibility)
-      console.log(`  - Final ROB: ${robTracking.final_rob.VLSFO} MT VLSFO, ${robTracking.final_rob.LSMGO} MT LSMGO`);
-      console.log(`  - Overall Safe: ${robTracking.overall_safe}`);
-      console.log(`  - Waypoints: ${robTracking.waypoints?.length || 0}`);
-    } else {
-      console.log(`  - Structure: Unknown (keys: ${Object.keys(robTracking).join(', ')})`);
-    }
-  }
-
-  if (state.rob_waypoints) {
-    console.log('📍 [FINALIZE-DEBUG] ROB Waypoints:');
-    state.rob_waypoints.forEach((wp, idx) => {
-      const vlsfo = wp.rob_after_action?.VLSFO;
-      console.log(`  ${idx + 1}. ${wp.location}: ${vlsfo !== undefined ? vlsfo.toFixed(1) : 'N/A'} MT VLSFO, ${wp.is_safe ? '✅' : '⚠️'}`);
-    });
-  }
-  // === END DEBUG ===
-
   try {
     // ========================================================================
     // VESSEL INFORMATION (Phase 1) - Entity extraction only, Phase 2 coming
@@ -4840,280 +4888,89 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     }
     
     // ========================================================================
-    // PHASE 1: DECOUPLED SYNTHESIS (NEW)
+    // COMPONENT REGISTRY: Match state to renderable components
     // ========================================================================
     
-    console.log('🧠 [FINALIZE] Phase 1: Decoupled synthesis');
-    
-    // Create mutable state copy for adding synthesis
-    let updatedState = { ...state };
-    let synthesizedResponse: SynthesizedResponse | null = null;
-    let autoSynthesisResult: AutoSynthesisResult | null = null;
-    
-    // Check if we're in plan execution mode (via _stage_context from plan executor)
-    const isPlanExecution = !!(state as any)._stage_context;
-    
-    if (isPlanExecution) {
-      // During plan execution, skip LLM-based synthesis to avoid LLM calls
-      // Use auto-discovery synthesis (no LLM calls) - discovers data from agent outputs
-      console.log('⏭️  [FINALIZE] Plan execution mode detected - using auto-discovery synthesis (no LLM calls)');
-      
-      const synthesis = AutoSynthesisEngine.synthesizeResponse(state);
-      autoSynthesisResult = synthesis;
-      const routingCtx = state.routing_metadata
-        ? {
-            classification_method: state.routing_metadata.classification_method,
-            confidence: state.routing_metadata.confidence,
-            primary_agent: state.routing_metadata.target_agent,
-            matched_intent: state.routing_metadata.matched_intent,
-            cache_hit: state.routing_metadata.cache_hit,
-          }
-        : undefined;
-      if (routingCtx) {
-        console.log('📋 [FINALIZE] Including routing_context in synthesis:', routingCtx);
-      }
-      synthesizedResponse = {
-        synthesizedAt: new Date(),
-        correlationId: extractCorrelationId(state),
-        queryType: synthesis.context.query_type,
-        success: true,
-        data: synthesis.context.available_data as Record<string, unknown>,
-        insights: synthesis.insights as SynthesizedResponse['insights'],
-        recommendations: synthesis.recommendations as SynthesizedResponse['recommendations'],
-        warnings: synthesis.warnings as SynthesizedResponse['warnings'],
-        alerts: state.needs_clarification ? [{
-          level: 'high',
-          type: 'clarification',
-          title: 'Clarification Needed',
-          message: state.clarification_question || 'Additional information required',
-          action_required: 'Please provide additional details',
-          urgency: 'medium',
-        }] : [],
-        metrics: {
-          duration_ms: 0,
-          stages_completed: synthesis.context.agents_executed.length,
-          stages_failed: 0,
-          stages_skipped: 0,
-          llm_calls: 0,
-          api_calls: 0,
-          total_cost_usd: 0,
-          success_rate: 1.0,
-          classification_confidence: state.routing_metadata?.confidence,
-          routing_method: state.routing_metadata?.classification_method,
-        },
-        reasoning: routingCtx
-          ? `Routed via ${routingCtx.classification_method} to ${routingCtx.primary_agent} (confidence: ${routingCtx.confidence}%). Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`
-          : `Auto-discovered from ${synthesis.context.agents_executed.length} agents (plan execution mode)`,
-        nextSteps: [],
-        routing_context: routingCtx,
-        view_config: deriveViewConfig(state.routing_metadata?.matched_intent),
-      };
+    console.log('📝 [FINALIZE] Starting finalization with Component Registry...');
 
-      updatedState.synthesized_response = synthesizedResponse;
-    } else {
-      // Normal execution mode - use auto-discovering synthesis engine
-      // Automatically discovers data from ANY agent output (no manual updates when adding agents)
-      try {
-        const synthesis = AutoSynthesisEngine.synthesizeResponse(state);
-        autoSynthesisResult = synthesis;
-        
-        console.log('✅ [FINALIZE] Auto-synthesis complete:');
-        console.log(`   Primary domain: ${synthesis.context.primary_domain}`);
-        console.log(`   Query type: ${synthesis.context.query_type}`);
-        console.log(`   Agents executed: ${synthesis.context.agents_executed.join(', ') || '(none)'}`);
-        console.log(`   Data extracted: ${synthesis.extracted_data.length} items`);
-        console.log(`   Insights: ${synthesis.insights.length}`);
-        
-        // Adapt AutoSynthesisResult to SynthesizedResponse-like format for template engine
-        const routingCtx = state.routing_metadata
-          ? {
-              classification_method: state.routing_metadata.classification_method,
-              confidence: state.routing_metadata.confidence,
-              primary_agent: state.routing_metadata.target_agent,
-              matched_intent: state.routing_metadata.matched_intent,
-              cache_hit: state.routing_metadata.cache_hit,
-            }
-          : undefined;
-        if (routingCtx) {
-          console.log('📋 [FINALIZE] Including routing_context in synthesis:', routingCtx);
-        }
-        synthesizedResponse = {
-          synthesizedAt: new Date(),
-          correlationId: extractCorrelationId(state),
-          queryType: synthesis.context.query_type,
-          success: true,
-          data: synthesis.context.available_data as Record<string, unknown>,
-          insights: synthesis.insights as SynthesizedResponse['insights'],
-          recommendations: synthesis.recommendations as SynthesizedResponse['recommendations'],
-          warnings: synthesis.warnings as SynthesizedResponse['warnings'],
-          alerts: [],
-          metrics: {
-            duration_ms: 0,
-            stages_completed: synthesis.context.agents_executed.length,
-            stages_failed: 0,
-            stages_skipped: 0,
-            llm_calls: 0,
-            api_calls: 0,
-            total_cost_usd: 0,
-            success_rate: 1.0,
-            classification_confidence: state.routing_metadata?.confidence,
-            routing_method: state.routing_metadata?.classification_method,
-          },
-          reasoning: routingCtx
-            ? `Routed via ${routingCtx.classification_method} to ${routingCtx.primary_agent} (confidence: ${routingCtx.confidence}%). Auto-discovered from ${synthesis.context.agents_executed.length} agents`
-            : `Auto-discovered from ${synthesis.context.agents_executed.length} agents`,
-          nextSteps: [],
-          routing_context: routingCtx,
-          view_config: deriveViewConfig(state.routing_metadata?.matched_intent),
-        };
+    const { loadComponentRegistry } = await import('@/lib/config/component-loader');
+    const { ComponentMatcherService } = await import('@/lib/services/component-matcher.service');
 
-        // Store synthesized response in state (separate from formatting)
-        updatedState.synthesized_response = synthesizedResponse;
-        
-        // Note: synthesized_insights is a legacy field with a different structure
-        // We're using synthesized_response instead, which contains insights in a different format
-        
-      } catch (synthesisError: unknown) {
-        logError(extractCorrelationId(state), synthesisError, { agent: 'finalize', step: 'decoupledSynthesis' });
-        const message = synthesisError instanceof Error ? synthesisError.message : String(synthesisError);
-        console.error('❌ [FINALIZE] Decoupled synthesis error (non-fatal):', message);
-        
-        // Fallback to legacy synthesis if available
-        try {
-          const legacySynthesisResult = await generateSynthesis(state);
-          if (legacySynthesisResult.success && legacySynthesisResult.synthesized_insights) {
-            updatedState.synthesized_insights = legacySynthesisResult.synthesized_insights;
-            console.log('✅ [FINALIZE] Fallback to legacy synthesis successful');
-          }
-        } catch (legacyError) {
-          console.warn('⚠️  Legacy synthesis also failed, continuing without synthesis');
-        }
-      }
-    }
-    
-    // ========================================================================
-    // PHASE 2: RESPONSE RENDERING (Hybrid: known→template, unknown→LLM Content Architect)
-    // ========================================================================
+    const registry = loadComponentRegistry();
+    const matcher = new ComponentMatcherService(registry);
 
-    console.log('🎨 [FINALIZE] Phase 2: Response rendering');
-    const useLLMFirst = isFeatureEnabled('LLM_FIRST_SYNTHESIS');
-    const useContentArchitect = isFeatureEnabled('USE_LLM_CONTENT_ARCHITECT');
-    let outputSource: 'template' | 'llm' = 'template';
+    // Determine query type from synthesized insights or routing metadata
+    const queryType =
+      state.synthesized_insights?.query_type ||
+      state.routing_metadata?.matched_intent ||
+      'unknown';
+
+    console.log(`[FINALIZE] Query type: ${queryType}`);
+
+    // Match components to state
+    const matchedComponents = matcher.matchComponents(state, queryType);
+
+    console.log(`📦 [FINALIZE] Matched ${matchedComponents.length} components:`);
+    matchedComponents.forEach((comp) => {
+      const status = comp.canRender ? '✅' : '❌';
+      const missing = comp.missingFields ? ` (missing: ${comp.missingFields.join(', ')})` : '';
+      console.log(`   ${status} ${comp.component} (tier ${comp.tier})${missing}`);
+    });
+
+    // Separate renderable components
+    const renderableComponents = matchedComponents.filter((c) => c.canRender);
 
     let finalTextOutput: string;
+    let formattedResponse: {
+      type: 'text_only' | 'hybrid';
+      content?: string;
+      text?: string;
+      components: Array<{ id: string; component: string; props: Record<string, unknown>; tier: number; priority: number }>;
+      query_type: string;
+    };
 
-    if (autoSynthesisResult) {
-      if (useLLMFirst && !isPlanExecution) {
-        // LLM-first: try LLM first, template fallback on failure
-        try {
-          finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
-          outputSource = 'llm';
-          console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
-        } catch (llmError: unknown) {
-          const message = llmError instanceof Error ? llmError.message : String(llmError);
-          console.warn(`⚠️ [FINALIZE] LLM response failed: ${message}`);
-          console.log('🎨 [FINALIZE] Falling back to template rendering');
-          logError(extractCorrelationId(state), llmError, { agent: 'finalize', step: 'llmResponse' });
-          try {
-            const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
-            const loadResult = getTemplateLoader().loadTemplate(templateName);
-            if (loadResult.exists && loadResult.template) {
-              finalTextOutput = await templateRender(loadResult, {
-                synthesis: autoSynthesisResult,
-                state: updatedState,
-              });
-              outputSource = 'template';
-              console.log(`✅ [FINALIZE] Template fallback rendered successfully (${finalTextOutput.length} chars)`);
-            } else {
-              throw new Error(`Template not found: ${templateName}`);
-            }
-          } catch (templateError: unknown) {
-            const tMsg = templateError instanceof Error ? templateError.message : String(templateError);
-            console.error(`❌ [FINALIZE] Template fallback also failed: ${tMsg}`);
-            throw templateError;
-          }
-        }
-      } else if (useContentArchitect && !isPlanExecution) {
-        // Hybrid: known patterns → template, unknown patterns → LLM Content Architect
-        const patternType = classifyQueryPattern(autoSynthesisResult, updatedState);
-        console.log(`🔍 [FINALIZE] Query pattern: ${patternType}`);
+    if (renderableComponents.length === 0) {
+      // ======================================================================
+      // NO COMPONENTS AVAILABLE - Use LLM synthesis fallback
+      // ======================================================================
+      console.log('🔄 [FINALIZE] No components available, using LLM synthesis...');
 
-        if (patternType === 'known') {
-          try {
-            const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
-            console.log(`🎨 [FINALIZE] Known pattern → template: ${templateName}`);
-            const loadResult = getTemplateLoader().loadTemplate(templateName);
-            if (loadResult.exists && loadResult.template) {
-              finalTextOutput = await templateRender(loadResult, {
-                synthesis: autoSynthesisResult,
-                state: updatedState,
-              });
-              outputSource = 'template';
-              console.log(`✅ [FINALIZE] Template rendered (${finalTextOutput.length} chars)`);
-            } else {
-              throw new Error(`Template not found: ${templateName}`);
-            }
-          } catch (templateError: unknown) {
-            const message = templateError instanceof Error ? templateError.message : String(templateError);
-            console.warn(`⚠️ [FINALIZE] Template failed: ${message}, falling back to LLM`);
-            finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
-            outputSource = 'llm';
-          }
-        } else {
-          // Unknown pattern: LLM Content Architect → Dynamic Renderer
-          try {
-            console.log('🤖 [FINALIZE] Unknown pattern → LLM Content Architect');
-            const userQuery = state.messages?.[0]?.content?.toString() || '';
-            const structureDecision = await analyzeQueryStructure(userQuery, autoSynthesisResult, updatedState);
-            console.log('📋 [FINALIZE] Structure decision:', structureDecision.reasoning);
-            finalTextOutput = await renderWithStructure(structureDecision, autoSynthesisResult, updatedState);
-            outputSource = 'template';
-            console.log(`✅ [FINALIZE] Dynamic render complete (${finalTextOutput.length} chars)`);
-          } catch (architectError: unknown) {
-            const message = architectError instanceof Error ? architectError.message : String(architectError);
-            console.warn(`⚠️ [FINALIZE] Content Architect failed: ${message}, falling back to LLM`);
-            logError(extractCorrelationId(state), architectError, { agent: 'finalize', step: 'contentArchitect' });
-            finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
-            outputSource = 'llm';
-          }
-        }
-      } else {
-        // Template-first (legacy when USE_LLM_CONTENT_ARCHITECT disabled)
-        try {
-          const templateName = ContextAwareTemplateSelector.selectTemplate(autoSynthesisResult.context);
-          console.log(`🎨 [FINALIZE] Attempting template: ${templateName}`);
-          const loadResult = getTemplateLoader().loadTemplate(templateName);
-          if (loadResult.exists && loadResult.template) {
-            console.log(`✅ [FINALIZE] Using template: ${loadResult.template.template.name}`);
-            finalTextOutput = await templateRender(loadResult, {
-              synthesis: autoSynthesisResult,
-              state: updatedState,
-            });
-            outputSource = 'template';
-            console.log(`✅ [FINALIZE] Template rendered successfully (${finalTextOutput.length} chars)`);
-          } else {
-            throw new Error(`Template not found: ${templateName}`);
-          }
-        } catch (templateError: unknown) {
-          const message = templateError instanceof Error ? templateError.message : String(templateError);
-          console.warn(`⚠️ [FINALIZE] Template rendering failed: ${message}`);
-          console.log('🤖 [FINALIZE] Falling back to LLM response generation');
-          logError(extractCorrelationId(state), templateError, { agent: 'finalize', step: 'templateRendering' });
-          finalTextOutput = await generateLLMResponse(autoSynthesisResult, updatedState);
-          outputSource = 'llm';
-          console.log(`✅ [FINALIZE] LLM response generated (${finalTextOutput.length} chars)`);
-        }
-      }
+      finalTextOutput = await synthesizeTextOnlyResponse(state, matcher.getFallbackLLMConfig());
+      formattedResponse = {
+        type: 'text_only',
+        content: finalTextOutput,
+        components: [],
+        query_type: queryType,
+      };
     } else {
-      // No synthesis (e.g. synthesis failed) - use legacy formatting
-      finalTextOutput = await generateLegacyTextOutput(updatedState);
-      outputSource = 'llm';
+      // ======================================================================
+      // HAS COMPONENTS - Build hybrid response (text + components)
+      // ======================================================================
+      console.log(`🎨 [FINALIZE] Building hybrid response with ${renderableComponents.length} components...`);
+
+      const componentManifest = renderableComponents.map((comp) => ({
+        id: comp.id,
+        component: comp.component,
+        props: comp.props,
+        tier: comp.tier,
+        priority: comp.priority,
+      }));
+
+      finalTextOutput = await generateContextualText(state, renderableComponents, queryType);
+
+      formattedResponse = {
+        type: 'hybrid',
+        text: finalTextOutput,
+        components: componentManifest,
+        query_type: queryType,
+      };
     }
-    
+
     // Add degradation warning if system is in degraded mode
     if (isDegraded && missingData.length > 0) {
-      const degradationWarning = `\n\n⚠️ **Analysis completed with limited data**\n\n` +
-        `The following data components were unavailable: ${missingData.map(d => `\`${d}\``).join(', ')}. ` +
+      const degradationWarning =
+        `\n\n⚠️ **Analysis completed with limited data**\n\n` +
+        `The following data components were unavailable: ${missingData.map((d) => `\`${d}\``).join(', ')}. ` +
         `Recommendations may be less accurate than usual.\n\n` +
         `**What this means:**\n` +
         `- The system attempted to retrieve data from external APIs but encountered failures\n` +
@@ -5124,36 +4981,28 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         `- If the issue persists, contact support with your correlation ID: \`${cid}\`\n` +
         `- For critical decisions, verify data independently\n\n` +
         `---\n\n`;
-      
+
       finalTextOutput = degradationWarning + finalTextOutput;
     }
-    
-    // ========================================================================
-    // PHASE 3: RETURN RESULTS
-    // ========================================================================
 
-    // Sanitize LLM output only; template output may contain safe HTML (details/summary)
-    const sanitizedOutput =
-      outputSource === 'llm' ? sanitizeMarkdownForDisplay(finalTextOutput) : finalTextOutput;
-    
+    const sanitizedOutput = sanitizeMarkdownForDisplay(finalTextOutput);
+
     const agentDuration = Date.now() - agentStartTime;
     recordAgentTime('finalize', agentDuration);
     recordAgentExecution('finalize', agentDuration, true);
     logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
 
     console.log('✅ [FINALIZE] Node: Final recommendation generated');
-    
+
     return {
-      final_recommendation: sanitizedOutput,  // Template-rendered or LLM fallback or legacy
-      formatted_response: null,               // Single template pass in Phase 2
-      synthesized_insights: updatedState.synthesized_insights, // Legacy format (backwards compatible)
-      synthesized_response: synthesizedResponse, // NEW: Decoupled synthesis (format-agnostic)
-      synthesis_data: synthesizedResponse, // Alias for API responses
-      messages: [
-        new AIMessage({
-          content: sanitizedOutput  // Use template-rendered or legacy for message
-        })
-      ],
+      final_recommendation: sanitizedOutput,
+      formatted_response: formattedResponse,
+      synthesized_insights: state.synthesized_insights,
+      messages: [new AIMessage({ content: sanitizedOutput })],
+      agent_status: {
+        ...(state.agent_status || {}),
+        finalize: 'success',
+      },
     };
     
   } catch (error) {

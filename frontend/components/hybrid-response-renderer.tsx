@@ -1,0 +1,249 @@
+'use client';
+
+import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+import { RouteMap } from './ui/route-map';
+import { CostComparison } from './ui/cost-comparison';
+import { ComplianceCard } from './compliance-card';
+import { VoyageTimeline } from './voyage-timeline';
+import { WeatherCard } from './weather-card';
+import type { ComplianceCardData } from '@/lib/formatters/response-formatter';
+import type { TimelineData } from '@/lib/formatters/response-formatter';
+
+// Component registry - maps component names to actual React components
+const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
+  RouteMap,
+  CostComparison,
+  ECAComplianceCard: ComplianceCard,
+  ComplianceCard,
+  WeatherTimeline: VoyageTimeline,
+  VoyageTimeline,
+  WeatherCard,
+};
+
+interface ComponentManifest {
+  id: string;
+  component: string;
+  props: Record<string, unknown>;
+  tier: number;
+  priority: number;
+}
+
+interface HybridResponseRendererProps {
+  response: {
+    type: 'text_only' | 'hybrid';
+    text?: string;
+    content?: string;
+    components?: ComponentManifest[];
+    query_type?: string;
+  };
+  className?: string;
+}
+
+/**
+ * Adapt registry props to RouteMap component props
+ */
+function adaptRouteMapProps(props: Record<string, unknown>) {
+  return {
+    routeData: {
+      route: props.route,
+      originPort: props.originPort,
+      destinationPort: props.destinationPort,
+      bunkerPorts: props.bunkerPorts ?? [],
+    },
+    mapOverlays: props.showECAZones ? { ecaSegments: props.showECAZones } : null,
+  };
+}
+
+/**
+ * Adapt registry props to CostComparison component props
+ */
+function adaptCostComparisonProps(props: Record<string, unknown>) {
+  const options = (props.options as unknown[]) ?? [];
+  const recommendation = props.recommendation;
+  return {
+    data: {
+      ports: options,
+      recommendations: options,
+      best_option: recommendation ?? options[0],
+    },
+  };
+}
+
+/**
+ * Adapt registry props to ComplianceCard (ECAComplianceCard) component props
+ */
+function adaptECAComplianceProps(props: Record<string, unknown>) {
+  const ecaSegments = (props.ecaSegments as unknown[]) ?? [];
+  const switchingPoints = (props.switchingPoints as unknown[]) ?? [];
+
+  if (!ecaSegments.length) return { data: null };
+
+  const complianceData: ComplianceCardData = {
+    hasECAZones: true,
+    severity: 'info',
+    ecaDetails: {
+      zonesCount: ecaSegments.length,
+      zones: ecaSegments.map((seg: any, i: number) => ({
+        name: seg.name ?? `Zone ${i + 1}`,
+        code: seg.code ?? '',
+        distanceNM: seg.distance_nm ?? ((seg.end_nm ?? 0) - (seg.start_nm ?? 0)),
+        durationHours: seg.duration_hours ?? 0,
+        percentOfRoute: seg.percent_of_route ?? 0,
+        mgoRequiredMT: seg.mgo_required_mt ?? 0,
+      })),
+      totalMGOMT: 0,
+      complianceCostUSD: 0,
+      switchingPoints: switchingPoints.map((sp: any) => ({
+        action: sp.action ?? 'SWITCH_TO_MGO',
+        timeFromStartHours: sp.time_from_start_hours ?? 0,
+        timeFromStartFormatted: sp.time_from_start_formatted ?? '',
+        location: sp.location ?? { lat: 0, lon: 0 },
+        locationFormatted: sp.location_formatted ?? '',
+      })),
+      warnings: (props.violations as string[]) ?? [],
+    },
+  };
+
+  return { data: complianceData };
+}
+
+/**
+ * Adapt registry props to VoyageTimeline (WeatherTimeline) component props
+ */
+function adaptWeatherTimelineProps(props: Record<string, unknown>) {
+  const forecast = props.forecast as Record<string, unknown> | undefined;
+  const vesselTimeline = props.vesselTimeline as Array<Record<string, unknown>> | undefined;
+
+  const timeline = forecast?.timeline ?? vesselTimeline;
+  if (!timeline || !Array.isArray(timeline)) return { data: null };
+
+  const events: TimelineData['events'] = timeline.map((entry: any, i: number) => ({
+    hourFromStart: entry.hour_from_start ?? entry.hour ?? i,
+    hourFormatted: entry.hour_formatted ?? `${entry.hour ?? i}h`,
+    type: (entry.type ?? 'ARRIVAL') as 'DEPARTURE' | 'BUNKER' | 'SWITCH_FUEL' | 'ARRIVAL',
+    icon: entry.icon ?? '📍',
+    title: entry.title ?? entry.description ?? `Waypoint ${i + 1}`,
+    description: entry.description ?? '',
+    location: entry.location,
+    locationFormatted: entry.location_formatted,
+    actionRequired: entry.action_required ?? false,
+  }));
+
+  return { data: { events } };
+}
+
+/**
+ * Get adapted props for a component based on its type
+ */
+function getAdaptedProps(componentName: string, props: Record<string, unknown>) {
+  switch (componentName) {
+    case 'RouteMap':
+      return adaptRouteMapProps(props);
+    case 'CostComparison':
+      return adaptCostComparisonProps(props);
+    case 'ECAComplianceCard':
+    case 'ComplianceCard':
+      return adaptECAComplianceProps(props);
+    case 'WeatherTimeline':
+    case 'VoyageTimeline':
+      return adaptWeatherTimelineProps(props);
+    default:
+      return props;
+  }
+}
+
+export function HybridResponseRenderer({
+  response,
+  className = '',
+}: HybridResponseRendererProps) {
+  if (!response) {
+    return (
+      <div className="text-muted-foreground text-sm">No response available</div>
+    );
+  }
+
+  // TEXT-ONLY RESPONSE
+  if (response.type === 'text_only') {
+    const content = response.content ?? response.text ?? '';
+    return (
+      <div className={`prose prose-sm max-w-none dark:prose-invert ${className}`}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    );
+  }
+
+  // HYBRID RESPONSE: text + components
+  const sortedComponents = (response.components ?? []).sort(
+    (a, b) => a.tier - b.tier || a.priority - b.priority
+  );
+
+  return (
+    <div className={`space-y-6 ${className}`}>
+      {/* LLM-generated context text */}
+      {response.text && (
+        <div className="prose prose-sm max-w-none dark:prose-invert">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{response.text}</ReactMarkdown>
+        </div>
+      )}
+
+      {/* Dynamic components by tier */}
+      {sortedComponents.map((componentDef, index) => {
+        const Component = COMPONENT_MAP[componentDef.component];
+
+        if (!Component) {
+          return (
+            <div
+              key={componentDef.id ?? index}
+              className="border border-dashed border-yellow-500 p-4 rounded-lg bg-yellow-50/30 dark:bg-yellow-950/20"
+            >
+              <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                ⚠️ Component &quot;{componentDef.component}&quot; is not available yet.
+              </p>
+            </div>
+          );
+        }
+
+        const adaptedProps = getAdaptedProps(componentDef.component, componentDef.props);
+
+        return (
+          <div
+            key={componentDef.id ?? index}
+            className={`component-tier-${componentDef.tier} w-full`}
+            data-component-id={componentDef.id}
+          >
+            <Component {...adaptedProps} />
+          </div>
+        );
+      })}
+
+      {/* Debug info in development */}
+      {process.env.NODE_ENV === 'development' && sortedComponents.length > 0 && (
+        <details className="mt-4 p-3 bg-muted/50 rounded text-xs">
+          <summary className="cursor-pointer font-medium">Debug: Component Manifest</summary>
+          <pre className="mt-2 overflow-auto max-h-48">{JSON.stringify(sortedComponents, null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wrapper for backward compatibility with old response format
+ */
+export function ResponseRenderer({
+  content,
+  className = '',
+}: {
+  content: string;
+  className?: string;
+}) {
+  return (
+    <HybridResponseRenderer
+      response={{ type: 'text_only', content }}
+      className={className}
+    />
+  );
+}

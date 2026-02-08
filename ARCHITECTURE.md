@@ -56,6 +56,7 @@ block-beta
     block:registries["REGISTRIES"]
         AgentRegistry["Agent Registry"]
         ToolRegistry["Tool Registry"]
+        ComponentRegistry["Component Registry"]
     end
 ```
 
@@ -69,7 +70,7 @@ User Query → API → Supervisor (LLM) → Entity Extractor
                  → Bunker Agent
                  → Compliance Agent
                  → Vessel Selection Agent
-                 → Finalize → AutoSynthesis → Template (or LLM fallback) → Response
+                 → Finalize → ComponentMatcher → HybridResponse (text + components) or LLM synthesis → Response
 ```
 
 ## Query Routing (AI-FIRST 3-Tier Framework)
@@ -112,49 +113,45 @@ Tier 3:  LLM Reasoning (complex queries)
 | vessel_selection_agent | Deterministic | (calls services directly) | vessel_comparison_analysis |
 | finalize | LLM / Template | - | final_recommendation, synthesized_response |
 
-## Finalize Response Flow (Template-First, LLM Fallback)
+## Finalize Response Flow (Component Registry)
 
-The Finalize agent uses a **template-first, LLM fallback** strategy so users always receive a response. When `LLM_FIRST_SYNTHESIS=true`, it uses **LLM-first** with template fallback.
+The Finalize agent uses a **Component Registry** to map agent state to renderable React components. Data flows from state → Component Matcher → formatted response → HybridResponseRenderer.
 
-### Default (Template-First)
+### Component Registry Flow
 
 ```
-Phase 1: AutoSynthesisEngine.synthesizeResponse(state)
-         → AutoSynthesisResult (context, extracted_data, insights, recommendations, warnings)
+Phase 1: Load component registry
+         → loadComponentRegistry() from lib/config/component-registry.yaml
+         → ComponentMatcherService(registry)
 
-Phase 2: Response rendering
-         ├─ Has autoSynthesisResult?
-         │   ├─ Template path: ContextAwareTemplateSelector.selectTemplate(context)
-         │   │   → TemplateLoader.loadTemplate(name) returns { exists, name, template?, error? }
-         │   │   → if exists: formatResponseWithTemplate(state, name)
-         │   │   → if !exists or error: generateLLMResponse(synthesis, state)
-         │   └─ LLM fallback: full synthesis context → Claude → markdown response
-         └─ No synthesis: generateLegacyTextOutput(state) (direct formatting)
+Phase 2: Match components to state
+         → Query type from routing_metadata.matched_intent or synthesized_insights.query_type
+         → matcher.matchComponents(state, queryType)
+         → Filters by query_type_mappings (bunker_planning, route_calculation, weather_analysis, compliance_check)
+         → Checks required_state_fields, render_conditions, resolves props via props_mapping
+
+Phase 3: Build response
+         ├─ Renderable components?
+         │   ├─ Yes: componentManifest + generateContextualText() → type: 'hybrid'
+         │   └─ No: synthesizeTextOnlyResponse() → type: 'text_only'
+         └─ formatted_response: { type, text?, content?, components? }
 ```
 
-### LLM-First Synthesis (Feature-Flagged)
+### Component Registry Config (`lib/config/component-registry.yaml`)
 
-When `LLM_FIRST_SYNTHESIS=true`:
+- **Components**: RouteMap, CostComparison, ECAComplianceCard, WeatherTimeline with `required_state_fields`, `props_mapping`, `render_conditions`
+- **Query type mappings**: bunker_planning → route_map, bunker_comparison, weather_timeline, eca_compliance; route_calculation → route_map; etc.
+- **Fallback**: `llm_synthesis` when no components match; configurable model, temperature, max_tokens
 
-1. **Context Builder** produces compact, token-bounded summaries from synthesis data.
-2. **LLM** generates response first (intent-aware: full list vs count, filter by type, etc.).
-3. **Template fallback** if LLM fails.
-4. Plan execution mode: unchanged (template-only, no LLM calls).
+### HybridResponseRenderer (`components/hybrid-response-renderer.tsx`)
 
-- **Context Builder** (`lib/multi-agent/synthesis/context-builder.ts`): Builds compact summaries per field (vessel, route, bunker, weather, etc.); caps total context at ~4K tokens.
-- **TemplateLoader**: Returns status object `{ exists, name, template?, error? }` instead of throwing. Callers check `exists` before rendering.
-- **LLM Response Generator** (`lib/multi-agent/llm-response-generator.ts`): Uses Context Builder for compact context; intent-aware prompt interprets user query for level of detail.
-- **ContextAwareTemplateSelector**: Selects templates from synthesis context (primary_domain, query_type); extensible via `DOMAIN_TEMPLATES` and `QUERY_TYPE_TEMPLATES`.
+- **Text-only**: Renders markdown via ReactMarkdown
+- **Hybrid**: Renders context text + components from manifest; adapts registry props to component props (RouteMap, CostComparison, ComplianceCard, VoyageTimeline)
+- **Unknown components**: Shows graceful degradation placeholder
 
 ### View Config (Map Hints)
 
-`synthesized_response.view_config` signals when the frontend should show a map:
-
-- `show_map: true`, `map_type: 'route'` – route intents (route_calculation, route_analysis)
-- `show_map: true`, `map_type: 'bunker_ports'` – bunker intents
-- `show_map: true`, `map_type: 'weather'` – weather intents (port_weather, route_weather)
-
-Data for maps flows via `route_data`, `weather_data`, `bunker_data` SSE events; `synthesis_data` is included in `final_complete` payload.
+`formatted_response` now carries `type` and `components` for the frontend. `synthesized_response.view_config` (legacy) signals map hints when available.
 
 ## Registry-Driven Design
 
@@ -162,6 +159,7 @@ Data for maps flows via `route_data`, `weather_data`, `bunker_data` SSE events; 
 - **Tool binding**: Agent definitions specify tool IDs; `AgentRegistry.getToolsForAgent(agentName)` returns executors
 - **YAML config**: `config/agents/*.yaml` defines agent metadata; `loadAgentsFromYamlDirectory()` loads from YAML
 - **Capability mapping**: `CAPABILITY_TOOL_MAP` maps capability names to tool IDs
+- **Component Registry**: `lib/config/component-registry.yaml` maps state fields → React components; `ComponentMatcherService` matches state to components; `HybridResponseRenderer` renders text + dynamic components
 
 ## Component Locations
 
@@ -183,6 +181,10 @@ Data for maps flows via `route_data`, `weather_data`, `bunker_data` SSE events; 
 | Context-Aware Template Selector | `frontend/lib/formatters/context-aware-template-selector.ts` |
 | Template-Aware Formatter | `frontend/lib/formatters/template-aware-formatter.ts` |
 | Service Container | `frontend/lib/repositories/service-container.ts` |
+| Component Registry Config | `frontend/lib/config/component-registry.yaml` |
+| Component Loader | `frontend/lib/config/component-loader.ts` |
+| Component Matcher Service | `frontend/lib/services/component-matcher.service.ts` |
+| HybridResponseRenderer | `frontend/components/hybrid-response-renderer.tsx` |
 
 ## Data Flow
 

@@ -43,6 +43,12 @@ export {
   convertToolConfigToDefinition,
 } from './registry-loader';
 
+// Component Registry
+export {
+  loadComponentRegistry,
+  clearComponentRegistryCache,
+} from './component-loader';
+
 // Schemas
 export {
   agentConfigSchema,

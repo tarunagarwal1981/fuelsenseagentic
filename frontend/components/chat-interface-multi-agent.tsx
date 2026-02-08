@@ -49,6 +49,7 @@ import rehypeSanitize from "rehype-sanitize";
 import type { FormattedResponse } from "@/lib/formatters/response-formatter";
 import { TemplateResponseContainer } from './template-response';
 import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-formatter';
+import { HybridResponseRenderer } from './hybrid-response-renderer';
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
@@ -110,7 +111,9 @@ export function ChatInterfaceMultiAgent() {
   const [performanceMetrics, setPerformanceMetrics] =
     useState<PerformanceMetrics | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
-  const [structuredData, setStructuredData] = useState<TemplateFormattedResponse | null>(null);
+  const [structuredData, setStructuredData] = useState<
+    TemplateFormattedResponse | { type: 'text_only' | 'hybrid'; text?: string; content?: string; components?: Array<{ id: string; component: string; props: Record<string, unknown>; tier: number; priority: number }>; query_type?: string }
+  | null>(null);
 
   // Debug logging for feature flags
   useEffect(() => {
@@ -594,7 +597,11 @@ export function ChatInterfaceMultiAgent() {
               </div>
             )}
             <div className="space-y-0.5">
-              {messages.map((message, index) => (
+              {messages.map((message, index) => {
+                const isLastAssistant = message.role === 'assistant' && index === messages.length - 1;
+                const useHybridRenderer = isLastAssistant && structuredData && 'type' in structuredData && (structuredData.type === 'text_only' || structuredData.type === 'hybrid');
+
+                return (
                 <div
                   key={index}
                   className={`group flex gap-2 py-1 ${
@@ -617,6 +624,9 @@ export function ChatInterfaceMultiAgent() {
                     }`}
                   >
                       <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
+                        {useHybridRenderer ? (
+                          <HybridResponseRenderer response={structuredData} className="[&_*]:text-inherit" />
+                        ) : (
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           remarkRehypeOptions={{ allowDangerousHtml: true }}
@@ -687,6 +697,7 @@ export function ChatInterfaceMultiAgent() {
                       >
                         {message.content}
                       </ReactMarkdown>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -696,11 +707,12 @@ export function ChatInterfaceMultiAgent() {
                     </div>
                   )}
                 </div>
-              ))}
-              {!isLoading && structuredData?.sections_by_tier && (
+              );
+              })}
+              {!isLoading && structuredData && 'sections_by_tier' in structuredData && structuredData.sections_by_tier && (
                 <div className="mt-4 p-[1px] rounded-xl bg-gradient-to-r from-teal-200 via-teal-100 to-green-200 dark:from-teal-800/50 dark:via-teal-900/30 dark:to-green-800/50">
                   <div className="rounded-xl bg-white dark:bg-gray-800/95 p-4">
-                    <TemplateResponseContainer response={structuredData} />
+                    <TemplateResponseContainer response={structuredData as TemplateFormattedResponse} />
                   </div>
                 </div>
               )}
@@ -734,7 +746,7 @@ export function ChatInterfaceMultiAgent() {
             </div>
             {analysisData && (
               <>
-                {isFeatureEnabled("USE_RESPONSE_FORMATTER") && structuredData ? (
+                {isFeatureEnabled("USE_RESPONSE_FORMATTER") && structuredData && 'structured' in structuredData && structuredData.structured ? (
                   <div className="space-y-4 mt-4">
                     {analysisData.route && (
                       <MultiAgentAnalysisDisplay
@@ -744,7 +756,7 @@ export function ChatInterfaceMultiAgent() {
                           prices: analysisData.prices,
                           analysis: analysisData.analysis,
                         }}
-                        mapOverlays={structuredData.mapOverlays}
+                        mapOverlays={'mapOverlays' in structuredData ? structuredData.mapOverlays : undefined}
                       />
                     )}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

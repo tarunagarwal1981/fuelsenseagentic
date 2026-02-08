@@ -145,3 +145,17 @@
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
 }
+
+/* Component tier styling for HybridResponseRenderer */
+.component-tier-0 {
+  @apply w-full;
+}
+.component-tier-1 {
+  @apply w-full;
+}
+.component-tier-2 {
+  @apply w-full;
+}
+.component-tier-3 {
+  @apply w-full;
+}

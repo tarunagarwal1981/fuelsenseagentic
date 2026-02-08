@@ -14,6 +14,7 @@ AI-powered maritime bunker optimization and voyage planning. Multi-agent system 
 - **Template-First with LLM Fallback**: Finalize uses templates when available; falls back to LLM-generated responses when templates fail or don't exist (user always gets a response)
 - **LLM-First Synthesis (optional)**: When `LLM_FIRST_SYNTHESIS=true`, Finalize uses LLM to generate intent-aware responses from compact context; templates remain fallback. Scalable for 25+ agents.
 - **Registry-Driven**: Agent and tool registries; valid agents derived from registry (scalable to 25+ agents)
+- **Component Registry**: YAML-based mapping of agent state outputs → React UI components; decouples data from presentation; supports text-only and hybrid (text + interactive components) responses
 
 ## Project Structure
 
@@ -30,9 +31,9 @@ FuelSense/
 │   │   ├── tools/           # Route, weather, bunker, vessel tools
 │   │   ├── engines/         # ECA, ROB, capacity, etc.
 │   │   ├── registry/        # Agent, tool, workflow registries
-│   │   ├── services/        # Route, bunker, weather services
+│   │   ├── services/        # Route, bunker, weather, component-matcher
 │   │   └── repositories/    # Port, price, vessel repos
-│   ├── config/              # YAML (agents, templates, workflows)
+│   ├── config/              # YAML (agents, templates, component-registry)
 │   └── tests/               # Integration, unit, e2e tests
 ├── config/                  # Prompts, insights, templates
 └── scripts/                 # Utilities
@@ -108,18 +109,17 @@ npm run test:e2e:essential  # E2E essential queries
 | entity_extractor | - | Extract vessel/port entities |
 | finalize | - | Synthesize response (template-first, LLM fallback) |
 
-## Finalize Response Flow
+## Finalize Response Flow (Component Registry)
 
-The Finalize agent uses a **template-first, LLM fallback** strategy (or **LLM-first** when `LLM_FIRST_SYNTHESIS=true`):
+The Finalize agent uses a **Component Registry** to map agent state to renderable React components:
 
-1. **Phase 1 – Synthesis**: Auto-discovery synthesis (`AutoSynthesisEngine`) extracts data from executed agents.
-2. **Phase 2 – Rendering**:
-   - **LLM-first** (when `LLM_FIRST_SYNTHESIS=true`): Context Builder produces compact summaries; LLM generates response first; template fallback on failure.
-   - **Template-first** (default): `ContextAwareTemplateSelector` picks a template; `TemplateLoader` loads it.
-   - **LLM fallback**: If the template is missing or fails, `generateLLMResponse` uses the LLM.
-3. **Legacy fallback**: When synthesis fails, `generateLegacyTextOutput` uses direct formatting.
+1. **Component Matching**: `ComponentMatcherService` loads `lib/config/component-registry.yaml`, matches state fields to components (RouteMap, CostComparison, ECAComplianceCard, WeatherTimeline), and resolves props via `props_mapping`.
+2. **Response Types**:
+   - **Hybrid** (components available): LLM generates contextual intro text; `formatted_response` includes `type: 'hybrid'`, `text`, and `components` manifest for frontend.
+   - **Text-only** (no components match): LLM synthesizes full response; `formatted_response` has `type: 'text_only'` and `content`.
+3. **Frontend**: `HybridResponseRenderer` renders text + dynamic components; unknown components show graceful degradation.
 
-Key modules: `lib/multi-agent/llm-response-generator.ts`, `lib/multi-agent/synthesis/context-builder.ts`, `lib/config/template-loader.ts`, `lib/formatters/context-aware-template-selector.ts`.
+Key modules: `lib/config/component-registry.yaml`, `lib/config/component-loader.ts`, `lib/services/component-matcher.service.ts`, `components/hybrid-response-renderer.tsx`.
 
 ## Deployment
 

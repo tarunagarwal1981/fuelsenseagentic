@@ -2,6 +2,7 @@
  * Services exports
  */
 
+export { ComponentMatcherService } from './component-matcher.service';
 export { RouteService } from './route.service';
 export { BunkerService } from './bunker.service';
 export { WeatherService } from './weather.service';

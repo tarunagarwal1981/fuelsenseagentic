@@ -1,0 +1,165 @@
+# ============================================================================
+# Component Registry Configuration
+# Maps agent state outputs → React UI components
+# ============================================================================
+
+components:
+  # ========================================
+  # Map Component - Route Visualization
+  # ========================================
+  - id: route_map
+    name: "Route Map Viewer"
+    component: "RouteMap"
+    description: "Interactive maritime route map with waypoints"
+    
+    required_state_fields:
+      - route_data.waypoints
+      - route_data.origin_port_code
+      - route_data.destination_port_code
+    
+    optional_state_fields:
+      - bunker_ports
+      - eca_segments
+      - weather_forecast
+      - rob_waypoints
+    
+    render_conditions:
+      - "route_data && route_data.waypoints && route_data.waypoints.length > 0"
+    
+    produced_by:
+      - route_agent
+    
+    priority: 0
+    tier: 0
+    
+    props_mapping:
+      route: "route_data"
+      originPort: "route_data.origin_port_code"
+      destinationPort: "route_data.destination_port_code"
+      bunkerPorts: "bunker_ports"
+      showECAZones: "eca_segments"
+
+  # ========================================
+  # Bunker Cost Comparison
+  # ========================================
+  - id: bunker_comparison
+    name: "Bunker Cost Comparison"
+    component: "CostComparison"
+    description: "Compare bunker costs across ports"
+    
+    required_state_fields:
+      - bunker_analysis.port_options
+    
+    optional_state_fields:
+      - bunker_analysis.recommendation
+    
+    render_conditions:
+      - "bunker_analysis && bunker_analysis.port_options && bunker_analysis.port_options.length >= 2"
+    
+    produced_by:
+      - bunker_agent
+    
+    priority: 1
+    tier: 1
+    
+    props_mapping:
+      options: "bunker_analysis.port_options"
+      recommendation: "bunker_analysis.recommendation"
+
+  # ========================================
+  # ECA Compliance Card
+  # ========================================
+  - id: eca_compliance
+    name: "ECA Compliance Overview"
+    component: "ECAComplianceCard"
+    description: "ECA zone compliance and fuel switching"
+    
+    required_state_fields:
+      - eca_segments
+    
+    optional_state_fields:
+      - compliance_data.eca_violations
+      - compliance_data.fuel_switching_points
+    
+    render_conditions:
+      - "eca_segments && eca_segments.length > 0"
+    
+    produced_by:
+      - compliance_agent
+      - route_agent
+    
+    priority: 2
+    tier: 2
+    
+    props_mapping:
+      ecaSegments: "eca_segments"
+      violations: "compliance_data.eca_violations"
+      switchingPoints: "compliance_data.fuel_switching_points"
+
+  # ========================================
+  # Weather Timeline
+  # ========================================
+  - id: weather_timeline
+    name: "Weather Timeline"
+    component: "WeatherTimeline"
+    description: "Weather forecast along route over time"
+    
+    required_state_fields:
+      - weather_forecast
+      - vessel_timeline
+    
+    render_conditions:
+      - "weather_forecast && weather_forecast.timeline && weather_forecast.timeline.length > 0"
+    
+    produced_by:
+      - weather_agent
+    
+    priority: 3
+    tier: 2
+    
+    props_mapping:
+      forecast: "weather_forecast"
+      vesselTimeline: "vessel_timeline"
+
+# ============================================================================
+# Query Type → Component Mappings
+# ============================================================================
+
+query_type_mappings:
+  bunker_planning:
+    components:
+      - route_map
+      - bunker_comparison
+      - weather_timeline
+      - eca_compliance
+    
+  route_calculation:
+    components:
+      - route_map
+    
+  weather_analysis:
+    components:
+      - route_map
+      - weather_timeline
+    
+  compliance_check:
+    components:
+      - route_map
+      - eca_compliance
+
+# ============================================================================
+# Fallback Strategy
+# ============================================================================
+
+fallback:
+  strategy: llm_synthesis
+  
+  llm_config:
+    model: claude-sonnet-4
+    temperature: 0.3
+    max_tokens: 2000
+    
+  always_show_as_text:
+    - final_recommendation
+    - agent_errors
+    - clarification_question

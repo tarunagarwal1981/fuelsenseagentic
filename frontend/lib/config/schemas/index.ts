@@ -9,3 +9,9 @@ export { toolConfigSchema } from './tool-schema';
 export { workflowConfigSchema } from './workflow-schema';
 export { businessRuleSchema, businessRulesFileSchema } from './business-rule-schema';
 export { featureFlagSchema, featureFlagsFileSchema } from './feature-flag-schema';
+export {
+  componentDefinitionSchema,
+  componentRegistrySchema,
+  type ComponentDefinition,
+  type ComponentRegistryConfig,
+} from './component-schema';

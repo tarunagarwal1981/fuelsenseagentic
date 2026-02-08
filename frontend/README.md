@@ -22,7 +22,7 @@ frontend/
 │   ├── ui/                      # Shadcn UI components
 │   └── *.tsx                    # Feature components
 ├── lib/                         # Core libraries
-│   ├── config/                  # Configuration loaders
+│   ├── config/                  # Configuration loaders, component-registry.yaml
 │   ├── data/                    # Static data (ports, prices, vessels)
 │   ├── engines/                 # Business logic engines
 │   ├── formatters/              # Response formatters
@@ -30,6 +30,7 @@ frontend/
 │   ├── registry/                # Agent/tool registries
 │   ├── tools/                   # Agent tools
 │   ├── utils/                   # Utilities
+│   ├── services/                # Route, bunker, weather, component-matcher
 │   └── validators/              # Input validation
 ├── config/                      # YAML configurations
 │   ├── agents/                  # Agent configs
@@ -155,6 +156,14 @@ npm run test:baseline           # Baseline integration tests
 npm run build
 npm start
 ```
+
+## Component Registry
+
+Response rendering uses a **Component Registry** (`lib/config/component-registry.yaml`) that maps agent state to React components:
+
+- **ComponentMatcherService** matches state fields to components (RouteMap, CostComparison, ECAComplianceCard, WeatherTimeline)
+- **HybridResponseRenderer** renders text + dynamic components; text-only when no components match
+- Add new components by updating the YAML—no code changes required for new visualizations
 
 ## Query Routing (AI-FIRST)
 
