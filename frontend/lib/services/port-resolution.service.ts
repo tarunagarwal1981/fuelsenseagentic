@@ -119,6 +119,69 @@ export class PortResolutionService {
   }
 
   /**
+   * Resolve origin and destination port NAMES to codes + coordinates.
+   * Use when supervisor/AI extracts port names (e.g. "Singapore", "Fujairah") that must be
+   * converted to UN/LOCODE before route calculation.
+   */
+  async resolvePortsByName(
+    origin: string | null | undefined,
+    destination: string | null | undefined
+  ): Promise<ResolvePortsResult> {
+    const result: ResolvePortsResult = {
+      origin: null,
+      destination: null,
+    };
+
+    if (origin && typeof origin === 'string' && origin.trim()) {
+      try {
+        const w = await this.worldPortRepo.findByName(origin.trim());
+        if (w?.coordinates) {
+          result.origin = w.code ?? w.id;
+          result.origin_coordinates = [w.coordinates[0], w.coordinates[1]];
+          console.log(`✅ [PORT-RESOLUTION] World Port origin: ${result.origin} (${w.name})`);
+        } else if (this.useApiFallback) {
+          const code = await resolvePortNameToCode(origin.trim());
+          if (code) {
+            result.origin = code;
+            const entry = await this.worldPortRepo.findByCode(code);
+            if (entry?.coordinates && entry.coordinates.length >= 2) {
+              result.origin_coordinates = [entry.coordinates[0], entry.coordinates[1]];
+            }
+            console.log(`✅ [PORT-RESOLUTION] API fallback origin: ${code}`);
+          }
+        }
+      } catch (e) {
+        console.warn('[PORT-RESOLUTION] findByName(origin) failed:', e instanceof Error ? e.message : e);
+      }
+    }
+
+    if (destination && typeof destination === 'string' && destination.trim()) {
+      try {
+        const w = await this.worldPortRepo.findByName(destination.trim());
+        if (w?.coordinates) {
+          result.destination = w.code ?? w.id;
+          result.destination_coordinates = [w.coordinates[0], w.coordinates[1]];
+          console.log(`✅ [PORT-RESOLUTION] World Port destination: ${result.destination} (${w.name})`);
+        } else if (this.useApiFallback) {
+          const code = await resolvePortNameToCode(destination.trim());
+          if (code) {
+            result.destination = code;
+            const entry = await this.worldPortRepo.findByCode(code);
+            if (entry?.coordinates && entry.coordinates.length >= 2) {
+              result.destination_coordinates = [entry.coordinates[0], entry.coordinates[1]];
+            }
+            console.log(`✅ [PORT-RESOLUTION] API fallback destination: ${code}`);
+          }
+        }
+      } catch (e) {
+        console.warn('[PORT-RESOLUTION] findByName(destination) failed:', e instanceof Error ? e.message : e);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Get coordinates for a port code (UN/LOCODE or WPI_*). Used by route-validator.
    */
   async getCoordinatesForPort(code: string): Promise<{ lat: number; lon: number } | null> {

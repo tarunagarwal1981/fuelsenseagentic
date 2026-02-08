@@ -123,29 +123,44 @@ function cleanCache(): void {
 // ============================================================================
 
 /**
+ * Options for entity resolution (internal)
+ */
+interface ResolveEntitiesOptions {
+  /** When true, skip resolving origin/destination - route_agent handles port resolution internally (port_name_resolution capability) */
+  skipOriginDestination?: boolean;
+}
+
+/**
  * Resolve extracted entity names to port codes using WorldPortIndex API
  * 
  * This function takes port names extracted by the LLM (e.g., "Dubai", "Tokyo")
  * and resolves them to UN/LOCODE codes using the WorldPortRepository.
  * 
+ * When route_agent is in the execution plan, pass skipOriginDestination: true
+ * so the supervisor does NOT resolve origin/destination - route_agent handles
+ * port name resolution internally (port_name_resolution capability in route-agent.yaml).
+ * 
  * @param entities - Extracted entities with port names
+ * @param options - Resolution options (e.g. skipOriginDestination when route_agent runs)
  * @returns Resolved UN/LOCODE codes for each port
  */
 async function resolveEntitiesToCodes(
-  entities: ExtractedEntities | undefined
+  entities: ExtractedEntities | undefined,
+  options: ResolveEntitiesOptions = {}
 ): Promise<ResolvedEntityCodes> {
   if (!entities) {
     return {};
   }
 
+  const { skipOriginDestination = false } = options;
   const resolved: ResolvedEntityCodes = {};
   
   // Dynamically import ServiceContainer to avoid circular dependencies
   const { ServiceContainer } = await import('@/lib/repositories/service-container');
   const portRepo = ServiceContainer.getInstance().getPortRepository();
   
-  // Resolve origin port name to UN/LOCODE and coordinates
-  if (entities.origin) {
+  // Resolve origin port name to UN/LOCODE and coordinates (skip if route_agent has port_name_resolution)
+  if (entities.origin && !skipOriginDestination) {
     try {
       console.log(`🔍 [SUPERVISOR-RESOLVER] Resolving origin: "${entities.origin}"`);
       const port = await portRepo.findByName(entities.origin);
@@ -164,8 +179,8 @@ async function resolveEntitiesToCodes(
     }
   }
   
-  // Resolve destination port name to UN/LOCODE and coordinates
-  if (entities.destination) {
+  // Resolve destination port name to UN/LOCODE and coordinates (skip if route_agent has port_name_resolution)
+  if (entities.destination && !skipOriginDestination) {
     try {
       console.log(`🔍 [SUPERVISOR-RESOLVER] Resolving destination: "${entities.destination}"`);
       const port = await portRepo.findByName(entities.destination);
@@ -612,12 +627,21 @@ For vessel-only queries (position, ROB, noon reports, vessel status), use execut
     
     // ========================================================================
     // Entity Resolution: Convert extracted names to UN/LOCODE codes
+    // route_agent has port_name_resolution capability - skip origin/destination
+    // so it handles resolution internally (avoids port_overrides state conflicts).
     // ========================================================================
     if (plan.extracted_entities) {
-      console.log('🔧 [SUPERVISOR-PLANNER] Resolving extracted entities to port codes...');
+      const routeAgentHandlesPorts = plan.execution_order?.includes('route_agent') ?? false;
+      if (routeAgentHandlesPorts) {
+        console.log('🔧 [SUPERVISOR-PLANNER] route_agent in plan - skipping origin/destination resolution (handles port_name_resolution internally)');
+      } else {
+        console.log('🔧 [SUPERVISOR-PLANNER] Resolving extracted entities to port codes...');
+      }
       
       try {
-        const resolvedCodes = await resolveEntitiesToCodes(plan.extracted_entities);
+        const resolvedCodes = await resolveEntitiesToCodes(plan.extracted_entities, {
+          skipOriginDestination: routeAgentHandlesPorts,
+        });
         plan.resolved_codes = resolvedCodes;
         
         // Log resolution results
@@ -626,7 +650,7 @@ For vessel-only queries (position, ROB, noon reports, vessel status), use execut
             origin: resolvedCodes.origin ? `${plan.extracted_entities.origin} → ${resolvedCodes.origin}` : 'not resolved',
             destination: resolvedCodes.destination ? `${plan.extracted_entities.destination} → ${resolvedCodes.destination}` : 'not resolved',
           });
-        } else {
+        } else if (!routeAgentHandlesPorts) {
           console.warn('⚠️  [SUPERVISOR-PLANNER] No entities were resolved - agents will use fallback extraction');
         }
       } catch (resolutionError) {

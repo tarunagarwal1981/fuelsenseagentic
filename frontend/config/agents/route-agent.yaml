@@ -3,7 +3,11 @@
 
 id: route_agent
 name: Route Calculator Agent
-description: Calculates maritime routes between ports using Maritime Route API and generates vessel position timeline for weather analysis. Deterministic workflow - no LLM tool-calling.
+description: >
+  Calculates optimal maritime routes between ports. Accepts port names in natural
+  language and internally resolves them to UN/LOCODE codes and coordinates using
+  the WorldPortIndex database. Returns route with waypoints, distance, and vessel
+  timeline. No port pre-processing required - handles all port resolution internally.
 type: specialist
 
 domain:
@@ -18,6 +22,8 @@ capabilities:
   - calculate_weather_timeline
   - estimate_travel_time
   - identify_eca_zones
+  - port_name_resolution
+  - coordinate_extraction
 
 intents:
   - plan_route
@@ -56,18 +62,21 @@ produces:
     - waypoints
     - total_distance
     - eca_zones
+    - resolved_ports
   messageTypes:
     - route_calculated
     - route_error
 
 consumes:
   required:
-    - messages
+    - messages   # We can parse port names from natural language in message content
   optional:
-    - origin
-    - destination
+    - origin_port_name
+    - destination_port_name
+    - origin_port_code
+    - destination_port_code
     - vessel_speed
-    - departure_datetime
+    - departure_date
 
 validation:
   preExecution:
@@ -81,7 +90,13 @@ validation:
 enabled: true
 
 metadata:
-  version: "1.0.0"
-  lastUpdated: "2025-01-24"
+  version: "2.0.0"
+  lastUpdated: "2025-02-08"
   maintainer: FuelSense Team
   documentation: docs/agents/route-agent.md
+  internal_capabilities:
+    - "Accepts port names in natural language (e.g., 'Singapore', 'Fujairah')"
+    - "Uses WorldPortIndex (Pub150) for port resolution"
+    - "Converts port names to UN/LOCODE codes and coordinates"
+    - "Calls SeaRoute API with validated coordinates"
+    - "No external port resolution required from supervisor"

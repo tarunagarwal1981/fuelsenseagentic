@@ -1964,107 +1964,108 @@ export async function routeAgentNode(
       
       let origin: string | undefined;
       let destination: string | undefined;
-      /** Coordinates from PortResolutionService when ports were extracted from query (fallback path). */
-      let extractedOriginCoords: [number, number] | undefined;
-      let extractedDestCoords: [number, number] | undefined;
+      let originCoords: [number, number] | undefined;
+      let destCoords: [number, number] | undefined;
       
-      // Get user query (needed for validation logging)
+      // Get user query (needed for extraction fallback)
       const userMessage = state.messages.find(msg => msg instanceof HumanMessage);
       const userQuery = userMessage?.content?.toString() || '';
       
       // ======================================================================
-      // PARAMETER EXTRACTION PRIORITY
+      // STEP 1: Get port NAMES from any source (may be names like "Singapore")
       // ======================================================================
-      // 1. routing_metadata.extracted_params (from AI - HIGHEST PRIORITY)
-      // 2. agent_context (from supervisor)
-      // 3. state port_overrides (from error recovery)
-      // 4. Legacy extraction from query (FALLBACK ONLY)
-      // ======================================================================
-      const originFromAI = state.routing_metadata?.extracted_params?.origin_port;
-      const destFromAI = state.routing_metadata?.extracted_params?.destination_port;
-      const dateFromAI = state.routing_metadata?.extracted_params?.date;
-
-      if (originFromAI || destFromAI) {
-        console.log('🎯 [ROUTE-WORKFLOW] Using ports from routing_metadata (AI extraction)');
-        if (originFromAI && !origin) {
-          origin = originFromAI;
-          console.log(`   ✅ Origin: ${origin}`);
-        }
-        if (destFromAI && !destination) {
-          destination = destFromAI;
-          console.log(`   ✅ Destination: ${destination}`);
-        }
-      }
-
-      // PRIORITY 2: agent context port overrides (from supervisor)
-      const agentContext = state.agent_context?.route_agent;
-      if (agentContext?.port_overrides) {
-        if (agentContext.port_overrides.origin && !origin) {
-          origin = agentContext.port_overrides.origin;
-          console.log(`   ✅ Origin (context): ${origin}`);
-        }
-        if (agentContext.port_overrides.destination && !destination) {
-          destination = agentContext.port_overrides.destination;
-          console.log(`   ✅ Destination (context): ${destination}`);
-        }
-      }
-
-      // PRIORITY 3: state port overrides (from error recovery/agentic supervisor)
-      if (state.port_overrides) {
-        if (state.port_overrides.origin && !origin) {
-          origin = state.port_overrides.origin;
-          console.log(`   ✅ Origin (state override): ${origin}`);
-        }
-        if (state.port_overrides.destination && !destination) {
-          destination = state.port_overrides.destination;
-          console.log(`   ✅ Destination (state override): ${destination}`);
-        }
-      }
-
-      // PRIORITY 4: Legacy extraction via PortResolutionService
-      if (!origin || !destination) {
-        console.warn('⚠️ [ROUTE-WORKFLOW] Falling back to legacy extraction - some ports still missing');
-        console.log(`📋 [ROUTE-WORKFLOW] Parameter sources: origin=${originFromAI ? 'AI' : 'fallback'}, destination=${destFromAI ? 'AI' : 'fallback'}`);
-        if (!origin) console.log('   ❓ Missing: origin');
-        if (!destination) console.log('   ❓ Missing: destination');
-        
+      let originName = state.routing_metadata?.extracted_params?.origin_port
+        ?? state.agent_context?.route_agent?.port_overrides?.origin
+        ?? state.port_overrides?.origin;
+      let destName = state.routing_metadata?.extracted_params?.destination_port
+        ?? state.agent_context?.route_agent?.port_overrides?.destination
+        ?? state.port_overrides?.destination;
+      
+      if (originName) console.log(`📋 [ROUTE-WORKFLOW] Origin candidate: "${originName}"`);
+      if (destName) console.log(`📋 [ROUTE-WORKFLOW] Destination candidate: "${destName}"`);
+      
+      // If we don't have both from metadata/overrides, extract from user query
+      if (!originName || !destName) {
         const { ServiceContainer } = await import('@/lib/repositories/service-container');
         const portResolutionService = ServiceContainer.getInstance().getPortResolutionService();
-        const resolved = await portResolutionService.resolvePortsFromQuery(userQuery);
-        
-        // Merge resolved ports with what we already have from overrides
-        if (resolved.origin && !origin) {
-          origin = resolved.origin;
-          extractedOriginCoords = resolved.origin_coordinates;
-          console.log(`✅ [PORT-EXTRACTION] Extracted origin: ${origin}`);
+        const fromQuery = await portResolutionService.resolvePortsFromQuery(userQuery);
+        if (fromQuery.origin && !originName) originName = fromQuery.origin;
+        if (fromQuery.destination && !destName) destName = fromQuery.destination;
+        if (fromQuery.origin && fromQuery.destination) {
+          origin = fromQuery.origin;
+          destination = fromQuery.destination;
+          originCoords = fromQuery.origin_coordinates;
+          destCoords = fromQuery.destination_coordinates;
+          console.log(`✅ [PORT-RESOLUTION] Resolved from query: ${origin} → ${destination}`);
         }
-        if (resolved.destination && !destination) {
-          destination = resolved.destination;
-          extractedDestCoords = resolved.destination_coordinates;
-          console.log(`✅ [PORT-EXTRACTION] Extracted destination: ${destination}`);
-        }
-        
-        // Check if we now have both ports
-        if (origin && destination) {
-          console.log(`✅ [PORT-RESOLUTION] Success: ${origin} → ${destination}`);
+      }
+      
+      // ======================================================================
+      // STEP 2: Resolve names → UN/LOCODE + coordinates (REQUIRED for SeaRoute API)
+      // ======================================================================
+      // Port names like "Singapore" or "Fujairah" must be converted to codes (SGSIN, AEFJR)
+      // before route calculation. Zod validation requires 5-char UN/LOCODE.
+      const isValidUnLoCode = (s: string) => /^[A-Z0-9]{5}$/.test(String(s).replace(/\s/g, '').toUpperCase());
+      
+      if (originName && destName && (!origin || !destination)) {
+        const needsResolution = !isValidUnLoCode(originName) || !isValidUnLoCode(destName);
+        if (needsResolution) {
+          console.log('🔄 [ROUTE-WORKFLOW] Resolving port names via PortResolutionService...');
+          const { ServiceContainer } = await import('@/lib/repositories/service-container');
+          const portResolutionService = ServiceContainer.getInstance().getPortResolutionService();
+          const resolved = await portResolutionService.resolvePortsByName(originName, destName);
+          if (resolved.origin) {
+            origin = resolved.origin;
+            originCoords = resolved.origin_coordinates;
+            console.log(`   Origin: "${originName}" → ${origin} ${originCoords ? `[${originCoords[0]}, ${originCoords[1]}]` : ''}`);
+          }
+          if (resolved.destination) {
+            destination = resolved.destination;
+            destCoords = resolved.destination_coordinates;
+            console.log(`   Destination: "${destName}" → ${destination} ${destCoords ? `[${destCoords[0]}, ${destCoords[1]}]` : ''}`);
+          }
         } else {
-          // Still missing ports - throw error with helpful message
-          if (!origin && destination) {
-            const errorMsg = `Could not identify origin port from query: "${userQuery}". Destination found: ${destination}. Please specify origin (e.g. "from Singapore to ${destination}").`;
-            console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
-            throw new Error(errorMsg);
-          }
-          if (origin && !destination) {
-            const errorMsg = `Could not identify destination port from query: "${userQuery}". Origin found: ${origin}. Please specify destination (e.g. "${origin} to Singapore").`;
-            console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
-            throw new Error(errorMsg);
-          }
-          const errorMsg = `Could not identify origin or destination from query: "${userQuery}". Use format "from [ORIGIN] to [DESTINATION]" or "between X and Y".`;
+          origin = String(originName).replace(/\s/g, '').toUpperCase().slice(0, 5);
+          destination = String(destName).replace(/\s/g, '').toUpperCase().slice(0, 5);
+          // Resolve coordinates for valid codes
+          const { ServiceContainer } = await import('@/lib/repositories/service-container');
+          const portResolutionService = ServiceContainer.getInstance().getPortResolutionService();
+          const oCoord = await portResolutionService.getCoordinatesForPort(origin);
+          const dCoord = await portResolutionService.getCoordinatesForPort(destination);
+          if (oCoord) originCoords = [oCoord.lat, oCoord.lon];
+          if (dCoord) destCoords = [dCoord.lat, dCoord.lon];
+        }
+      }
+      
+      // Use coordinates from port_overrides only if we don't have them from resolution
+      if (!originCoords && state.port_overrides?.origin_coordinates) {
+        originCoords = state.port_overrides.origin_coordinates as [number, number];
+      }
+      if (!destCoords && state.port_overrides?.destination_coordinates) {
+        destCoords = state.port_overrides.destination_coordinates as [number, number];
+      }
+      if (!originCoords && state.agent_context?.route_agent?.port_overrides?.origin_coordinates) {
+        originCoords = state.agent_context.route_agent.port_overrides.origin_coordinates as [number, number];
+      }
+      if (!destCoords && state.agent_context?.route_agent?.port_overrides?.destination_coordinates) {
+        destCoords = state.agent_context.route_agent.port_overrides.destination_coordinates as [number, number];
+      }
+      
+      // Validate we have both ports
+      if (!origin || !destination) {
+        if (!origin && destination) {
+          const errorMsg = `Could not identify origin port from: "${originName || userQuery}". Destination: ${destination}. Try "from Singapore to Fujairah".`;
           console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
           throw new Error(errorMsg);
         }
-      } else {
-        console.log(`✅ [PORT-RESOLUTION] Using supervisor overrides: ${origin} → ${destination}`);
+        if (origin && !destination) {
+          const errorMsg = `Could not identify destination port from: "${destName || userQuery}". Origin: ${origin}. Try "from Singapore to Fujairah".`;
+          console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+        const errorMsg = `Could not identify origin or destination. Use "from [ORIGIN] to [DESTINATION]" or "between X and Y".`;
+        console.error(`❌ [PORT-EXTRACTION] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
       
       if (typeof origin !== 'string' || typeof destination !== 'string') {
@@ -2101,16 +2102,13 @@ export async function routeAgentNode(
         origin_port_code: origin, 
         destination_port_code: destination, 
         vessel_speed_knots: 14,
-        // Pass coordinates: supervisor overrides first, then from PortResolutionService (fallback path)
-        origin_coordinates: state.port_overrides?.origin_coordinates ?? agentContext?.port_overrides?.origin_coordinates ?? extractedOriginCoords,
-        destination_coordinates: state.port_overrides?.destination_coordinates ?? agentContext?.port_overrides?.destination_coordinates ?? extractedDestCoords,
+        origin_coordinates: originCoords,
+        destination_coordinates: destCoords,
       };
       
-      // Log coordinate availability
+      // Log coordinate availability (SeaRoute API prefers coordinates for reliable routing)
       if (routeInput.origin_coordinates && routeInput.destination_coordinates) {
-        console.log(`🌐 [ROUTE-WORKFLOW] Coordinates available for route calculation`);
-        console.log(`   Origin: [${routeInput.origin_coordinates[0]}, ${routeInput.origin_coordinates[1]}]`);
-        console.log(`   Destination: [${routeInput.destination_coordinates[0]}, ${routeInput.destination_coordinates[1]}]`);
+        console.log(`✅ [ROUTE-SERVICE] Calling SeaRoute API with coordinates: origin=[${routeInput.origin_coordinates[0]}, ${routeInput.origin_coordinates[1]}], dest=[${routeInput.destination_coordinates[0]}, ${routeInput.destination_coordinates[1]}]`);
       }
       
       const t0Route = Date.now();
