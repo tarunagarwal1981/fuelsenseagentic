@@ -134,9 +134,16 @@ const BUNKER_PATTERNS = [
 ];
 
 /**
- * Bunker with route patterns - Bunker queries that include route info
+ * Bunker with route patterns - Bunker queries that include route info.
+ * Checked BEFORE route patterns so we preserve original intent (bunker_planning, not route_calculation).
  */
 const BUNKER_WITH_ROUTE_PATTERNS = [
+  // "bunker options between [ORIGIN] and [DEST]" or "give me bunker options between X and Y"
+  /bunker\s+options?\s+between\s+([A-Za-z\s]+?)\s+and\s+([A-Za-z\s]+?)(?:\s|$|,|\?)/i,
+  // "bunker options from [ORIGIN] to [DEST]"
+  /bunker\s+options?\s+(?:from\s+)?([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+?)(?:\s|$|,|\?)/i,
+  // "give me bunker options [ORIGIN] to [DEST]"
+  /(?:give\s+me|get|show|find)\s+bunker\s+options?\s+([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+?)(?:\s|$|,|\?)/i,
   // "cheapest bunker from [ORIGIN] to [DEST]"
   /(?:cheapest|best|optimal)\s+bunker(?:ing)?\s+(?:from\s+)?([A-Za-z\s]+?)\s+to\s+([A-Za-z\s]+)/i,
   // "bunker for voyage from [ORIGIN] to [DEST]"
@@ -326,7 +333,7 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
   }
   
   // ============================================================================
-  // Pattern 2: Bunker with Route (before general bunker, to extract route info)
+  // Pattern 2: Bunker with Route (BEFORE route patterns - preserves bunker_planning intent)
   // ============================================================================
   
   for (const pattern of BUNKER_WITH_ROUTE_PATTERNS) {
@@ -342,10 +349,10 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
       return {
         matched: true,
         type: 'bunker_planning',
-        agent: 'route_agent', // Start with route, bunker will follow
+        agent: 'route_agent', // Start with route, bunker_agent will follow
         confidence,
         extracted_data: { origin, destination },
-        reason: `Bunker query with route: ${origin} → ${destination}, need route first`,
+        reason: `Bunker planning with route: ${origin} → ${destination}, need route first then bunker analysis`,
       };
     }
   }

@@ -645,6 +645,17 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   }),
 
   /**
+   * Original user intent extracted from their query.
+   * Persists through entire workflow to track what user actually wants.
+   * Examples: 'bunker_planning', 'route_calculation', 'weather_analysis', 'vessel_info'
+   * Used by isAllWorkComplete() to know when we're truly done (not just one step).
+   */
+  original_intent: Annotation<string | null>({
+    reducer: (current, update) => (current != null && current !== '' ? current : (update ?? current)),
+    default: () => null,
+  }),
+
+  /**
    * Routing metadata from intent classification (optional).
    * Won't exist in old state objects. Set when query is classified for observability.
    */

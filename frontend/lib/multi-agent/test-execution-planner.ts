@@ -88,6 +88,7 @@ function createEmptyState(): MultiAgentState {
     degraded_mode: false,
     missing_data: [],
     routing_metadata: undefined,
+    original_intent: null,
   };
 }
 

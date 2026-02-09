@@ -124,6 +124,7 @@ async function testComplianceIntegration() {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       console.log('🚀 Starting multi-agent workflow...\n');

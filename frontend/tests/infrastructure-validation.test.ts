@@ -188,6 +188,7 @@ export async function testHappyPath(): Promise<TestResult> {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
@@ -317,6 +318,7 @@ export async function testTransientFailure(): Promise<TestResult> {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
@@ -423,6 +425,7 @@ export async function testPersistentFailure(): Promise<TestResult> {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
@@ -586,6 +589,7 @@ export async function testCheckpointRecovery(): Promise<TestResult> {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const config = { 
@@ -700,6 +704,7 @@ export async function testCorrelationIdPropagation(): Promise<TestResult> {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });

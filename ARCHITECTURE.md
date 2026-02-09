@@ -86,18 +86,24 @@ Tier 1a: LLM Intent Classification (AI-FIRST)
 
 Tier 1b: Regex Pattern Matching (fallback)
          → When LLM fails, low confidence, or unavailable
+         → BUNKER_WITH_ROUTE_PATTERNS (checked before route) for "bunker options between X and Y"
          → PORT_WEATHER_PATTERNS, ROUTE_PATTERNS, BUNKER_PATTERNS, etc.
          → Deterministic extraction (ports, dates, origin/destination)
 
-Tier 2:  Decision Framework
+Tier 2:  Decision Framework (Intent-Aware)
          → Confidence thresholds (80% act, 30–80% judgment, <30% clarify)
+         → original_intent stored on first match; persists through workflow
+         → isAllWorkComplete() uses original_intent (not current pattern.type)
+         → determineNextAgent() routes multi-step workflows (route → bunker → finalize)
 
 Tier 3:  LLM Reasoning (complex queries)
          → When neither Tier 1a nor 1b matches
          → Full Claude reasoning for ambiguous queries
 ```
 
-**Benefits**: Handles natural language variations ("give me vessel names"), extracts parameters via LLM, regex fallback when LLM unavailable. Cost: ~$0.0001/query (GPT-4o-mini) with 7-day caching.
+**Intent-aware workflow**: For "give me bunker options between Tokyo and Rotterdam", pattern matcher returns `type: bunker_planning`, `agent: route_agent`. State stores `original_intent: bunker_planning`. After route_agent completes, `isAllWorkComplete()` checks intent requirements (route_data + bunker_analysis) → false → `determineNextAgent()` returns bunker_agent. After bunker_agent completes → finalize.
+
+**Benefits**: Handles natural language variations ("give me vessel names"), extracts parameters via LLM, regex fallback when LLM unavailable. Prevents premature finalization when user wants bunker options but only route was computed. Cost: ~$0.0001/query (GPT-4o-mini) with 7-day caching.
 
 ## Agents & Tools
 
@@ -139,14 +145,15 @@ Phase 3: Build response
 
 ### Component Registry Config (`lib/config/component-registry.yaml`)
 
-- **Components**: RouteMap, CostComparison, ECAComplianceCard, WeatherTimeline with `required_state_fields`, `props_mapping`, `render_conditions`
+- **Components**: RichMap (bunker ports, ECA overlays, tooltips), CostComparison, ECAComplianceCard, WeatherTimeline, EnhancedBunkerTable with `required_state_fields`, `props_mapping`, `render_conditions`
 - **Query type mappings**: bunker_planning → route_map, bunker_comparison, weather_timeline, eca_compliance; route_calculation → route_map; etc.
 - **Fallback**: `llm_synthesis` when no components match; configurable model, temperature, max_tokens
 
 ### HybridResponseRenderer (`components/hybrid-response-renderer.tsx`)
 
 - **Text-only**: Renders markdown via ReactMarkdown
-- **Hybrid**: Renders context text + components from manifest; adapts registry props to component props (RouteMap, CostComparison, ComplianceCard, VoyageTimeline)
+- **Hybrid**: Renders context text + components from manifest; adapts registry props to component props (RichMap, CostComparison, ComplianceCard, VoyageTimeline, EnhancedBunkerTable)
+- **mapOverlays**: Finalize includes `formatMapOverlays(state)` in formatted_response for ECA zones, switching points, fuel-type route segments
 - **Unknown components**: Shows graceful degradation placeholder
 
 ### View Config (Map Hints)
@@ -167,6 +174,7 @@ Phase 3: Build response
 |-----------|----------|
 | LangGraph | `frontend/lib/multi-agent/graph.ts` |
 | Pattern Matcher (AI-FIRST routing) | `frontend/lib/multi-agent/pattern-matcher.ts` |
+| Decision Framework (intent-aware) | `frontend/lib/multi-agent/decision-framework.ts` |
 | Intent Classifier (GPT-4o-mini) | `frontend/lib/multi-agent/intent-classifier.ts` |
 | Agent Registry (multi-agent) | `frontend/lib/multi-agent/registry.ts` |
 | Agent Registry (lib) | `frontend/lib/registry/agent-registry.ts` |

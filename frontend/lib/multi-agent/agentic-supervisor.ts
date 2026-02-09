@@ -245,6 +245,12 @@ export async function reasoningSupervisor(
   console.log(`\n🔍 [TIER-1] Pattern Matcher analyzing: "${query.substring(0, 80)}..."`);
   
   const patternMatch = await matchQueryPattern(query);
+
+  // Store original intent on first pass (persists through workflow for isAllWorkComplete)
+  const originalIntentUpdate =
+    !state.original_intent && patternMatch.type !== 'ambiguous'
+      ? { original_intent: patternMatch.type }
+      : {};
   
   logDecisionFlow('Pattern Match Results', {
     type: patternMatch.type,
@@ -292,6 +298,7 @@ export async function reasoningSupervisor(
     });
     
     return {
+      ...originalIntentUpdate,
       next_agent: decision.agent,
       current_thought: decision.reason,
       reasoning_history: [step],
@@ -325,6 +332,7 @@ export async function reasoningSupervisor(
     });
     
     return {
+      ...originalIntentUpdate,
       next_agent: 'finalize',
       current_thought: decision.reason,
       reasoning_history: [step],
@@ -358,6 +366,7 @@ export async function reasoningSupervisor(
     });
     
     return {
+      ...originalIntentUpdate,
       needs_clarification: true,
       clarification_question: decision.clarification_question,
       current_thought: decision.reason,
@@ -392,7 +401,8 @@ export async function reasoningSupervisor(
   };
   
   // Execute action (pass patternMatch for routing_metadata)
-  return executeReasoningAction(reasoning, state, step, patternMatch);
+  const tier3Result = executeReasoningAction(reasoning, state, step, patternMatch);
+  return { ...originalIntentUpdate, ...tier3Result };
 }
 
 // ============================================================================

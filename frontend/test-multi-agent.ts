@@ -105,6 +105,7 @@ async function testMultiAgent() {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        original_intent: null,
       };
       
       const result = await multiAgentApp.invoke(initialState, {

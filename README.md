@@ -14,7 +14,7 @@ AI-powered maritime bunker optimization and voyage planning. Multi-agent system 
 - **Template-First with LLM Fallback**: Finalize uses templates when available; falls back to LLM-generated responses when templates fail or don't exist (user always gets a response)
 - **LLM-First Synthesis (optional)**: When `LLM_FIRST_SYNTHESIS=true`, Finalize uses LLM to generate intent-aware responses from compact context; templates remain fallback. Scalable for 25+ agents.
 - **Registry-Driven**: Agent and tool registries; valid agents derived from registry (scalable to 25+ agents)
-- **Component Registry**: YAML-based mapping of agent state outputs → React UI components; decouples data from presentation; supports text-only and hybrid (text + interactive components) responses
+- **Component Registry**: YAML-based mapping of agent state outputs → React UI components; decouples data from presentation; supports text-only and hybrid (text + interactive components) responses; RichMap with bunker ports, ECA overlays, tooltips
 
 ## Project Structure
 
@@ -113,7 +113,7 @@ npm run test:e2e:essential  # E2E essential queries
 
 The Finalize agent uses a **Component Registry** to map agent state to renderable React components:
 
-1. **Component Matching**: `ComponentMatcherService` loads `lib/config/component-registry.yaml`, matches state fields to components (RouteMap, CostComparison, ECAComplianceCard, WeatherTimeline), and resolves props via `props_mapping`.
+1. **Component Matching**: `ComponentMatcherService` loads `lib/config/component-registry.yaml`, matches state fields to components (RichMap, CostComparison, ECAComplianceCard, WeatherTimeline, EnhancedBunkerTable), and resolves props via `props_mapping`.
 2. **Response Types**:
    - **Hybrid** (components available): LLM generates contextual intro text; `formatted_response` includes `type: 'hybrid'`, `text`, and `components` manifest for frontend.
    - **Text-only** (no components match): LLM synthesizes full response; `formatted_response` has `type: 'text_only'` and `content`.
@@ -131,6 +131,7 @@ Key modules: `lib/config/component-registry.yaml`, `lib/config/component-loader.
 See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 - **Query routing**: AI-FIRST 3-tier framework (LLM → regex fallback → Tier 3 reasoning)
+- **Intent-aware workflow**: `original_intent` tracks user goal across multi-step flows (e.g. bunker_planning → route_agent → bunker_agent → finalize)
 
 ## License
 

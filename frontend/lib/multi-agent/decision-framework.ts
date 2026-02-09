@@ -171,71 +171,73 @@ export function makeRoutingDecision(
 // ============================================================================
 
 /**
- * Check if all work is complete based on query type and available data
+ * Intent requirements: what data must exist for each user goal to be "complete".
+ * Uses original_intent when set (persists through workflow); falls back to pattern.type.
+ */
+const INTENT_REQUIREMENTS: Record<string, (state: MultiAgentState) => boolean> = {
+  port_weather: (s) => !!s.standalone_port_weather,
+  vessel_info: (s) =>
+    s.agent_status?.vessel_info_agent === 'success' && !!s.vessel_specs?.length,
+  route_calculation: (s) => !!s.route_data,
+  bunker_planning: (s) => !!s.route_data && !!s.bunker_analysis,
+  weather_analysis: (s) => !!s.route_data && !!s.weather_forecast,
+  compliance: (s) => !!s.route_data && !!s.compliance_data,
+};
+
+/**
+ * Check if all work is complete based on ORIGINAL USER INTENT and available data.
+ * Uses original_intent (set on first query) so we don't prematurely finalize
+ * when pattern.type is just the current step (e.g. route_calculation) but the
+ * user's goal was bunker_planning (needs route + bunker_analysis).
  */
 function isAllWorkComplete(match: PatternMatch, state: MultiAgentState): boolean {
-  switch (match.type) {
-    case 'port_weather':
-      // Port weather is complete if we have standalone_port_weather
-      return !!state.standalone_port_weather;
+  const intent = state.original_intent || match.type;
 
-    case 'vessel_info':
-      // Vessel info is complete if vessel_info_agent succeeded and we have vessel_specs
-      return (
-        state.agent_status?.vessel_info_agent === 'success' &&
-        !!state.vessel_specs?.length
-      );
-
-    case 'route_calculation':
-      // Route is complete if we have route_data
-      return !!state.route_data;
-
-    case 'bunker_planning':
-      // Bunker is complete if we have bunker_analysis
-      return !!state.bunker_analysis;
-
-    case 'compliance':
-      // Compliance is complete if we have compliance_data
-      return !!state.compliance_data;
-
-    default:
-      // For ambiguous queries, check if we have any final recommendation
-      if (state.final_recommendation) return true;
-      // Vessel info queries (how many vessels, list vessels) - if vessel_info_agent
-      // already succeeded and we have vessel_specs, we're done. Prevents infinite loop.
-      if (
-        state.agent_status?.vessel_info_agent === 'success' &&
-        state.vessel_specs?.length
-      ) {
-        return true;
-      }
-      return false;
+  const checkComplete = INTENT_REQUIREMENTS[intent];
+  if (checkComplete) {
+    return checkComplete(state);
   }
+
+  // Fallback for unknown or ambiguous intent
+  if (state.final_recommendation) return true;
+  if (
+    state.agent_status?.vessel_info_agent === 'success' &&
+    state.vessel_specs?.length
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
- * Determine next agent based on query type and current state
+ * Determine next agent based on ORIGINAL INTENT and current state.
+ * Routes through multi-step workflows (e.g. bunker_planning: route -> bunker).
  */
 function determineNextAgent(match: PatternMatch, state: MultiAgentState): string | null {
-  // For bunker planning, after route comes weather, then bunker
-  if (match.type === 'bunker_planning') {
-    if (state.agent_status?.['route_agent'] === 'success' && !state.weather_consumption) {
-      return 'weather_agent';
-    }
-    if (state.agent_status?.['weather_agent'] === 'success' && !state.bunker_analysis) {
-      return 'bunker_agent';
-    }
-    if (state.bunker_analysis) {
-      return null; // All done
-    }
-  }
-  
-  // For route queries that might need weather
-  if (match.type === 'route_calculation' && state.route_data) {
-    // Only proceed to weather if explicitly needed
+  const intent = state.original_intent || match.type;
+
+  // Bunker planning: route -> bunker (weather optional for richer analysis)
+  if (intent === 'bunker_planning') {
+    if (!state.route_data) return 'route_agent';
+    if (!state.bunker_analysis) return 'bunker_agent';
     return null;
   }
-  
+
+  // Weather analysis: route -> weather
+  if (intent === 'weather_analysis') {
+    if (!state.route_data) return 'route_agent';
+    if (!state.weather_forecast) return 'weather_agent';
+    return null;
+  }
+
+  // Compliance: route -> compliance
+  if (intent === 'compliance') {
+    if (!state.route_data) return 'route_agent';
+    if (!state.compliance_data) return 'compliance_agent';
+    return null;
+  }
+
+  // Route-only or other: no next step
   return null;
 }
 
