@@ -121,14 +121,10 @@ async function initializeSystem(): Promise<void> {
 }
 
 /**
- * Request body interface
+ * Request body interface (entity extraction handled by backend LLM)
  */
 interface MultiAgentRequest {
   message: string;
-  origin?: string;
-  destination?: string;
-  vessel_speed?: number;
-  departure_date?: string;
   selectedRouteId?: string;
   messages?: Array<{ role: string; content: string }>;
   /** For conversation continuity and checkpoint recovery. Omit for new conversation. */
@@ -169,7 +165,7 @@ export async function POST(req: Request) {
   try {
     // Parse request body
     const body: MultiAgentRequest = await req.json();
-    const { message, origin, destination, vessel_speed, departure_date, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId } = body;
+    const { message, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId } = body;
 
     correlation_id = bodyCorrelationId?.trim() || correlation_id;
     const thread_id = bodyThreadId?.trim() || randomUUID();
@@ -181,10 +177,7 @@ export async function POST(req: Request) {
     console.log(formatLogWithCorrelation(correlation_id, 'Request started', { message: message.substring(0, 80) }));
     console.log('📝 [MULTI-AGENT-API] Request details:');
     console.log(`   - Message: ${message.substring(0, 100)}...`);
-    console.log(`   - Origin: ${origin || 'not provided'}`);
-    console.log(`   - Destination: ${destination || 'not provided'}`);
-    console.log(`   - Vessel speed: ${vessel_speed || 'not provided'}`);
-    console.log(`   - Departure date: ${departure_date || 'not provided'}`);
+    console.log(`   - Selected Route: ${selectedRouteId || 'none'}`);
     console.log(`   - thread_id: ${thread_id} (${isContinuation ? 'continuation' : 'new'})`);
 
     // REMOVED: Context appending logic

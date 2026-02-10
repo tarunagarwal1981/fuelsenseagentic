@@ -274,11 +274,9 @@ export function ChatInterfaceMultiAgent() {
 
       console.log(`🌐 [MULTI-AGENT-FRONTEND] Fetching ${endpoint}...`);
       
-      // Build request body
+      // Build request body (entity extraction handled by backend LLM)
       const requestBody = {
         message: userMessage.content,
-        origin: extractPortCode(userMessage.content, "from"),
-        destination: extractPortCode(userMessage.content, "to"),
         ...(selectedRouteId && { selectedRouteId }),
       };
       
@@ -558,20 +556,6 @@ export function ChatInterfaceMultiAgent() {
       setCurrentAgent(null);
       setThinkingState(null);
     }
-  };
-
-  // Helper to extract port codes from message
-  const extractPortCode = (message: string, keyword: string): string | undefined => {
-    const lowerMessage = message.toLowerCase();
-    const keywordIndex = lowerMessage.indexOf(keyword);
-    if (keywordIndex === -1) return undefined;
-
-    const afterKeyword = message.substring(keywordIndex + keyword.length).trim();
-    const words = afterKeyword.split(/\s+/);
-    if (words.length > 0) {
-      return words[0];
-    }
-    return undefined;
   };
 
   // Chat body (messages + analysis + possible next actions) - shared by right card and expanded popup

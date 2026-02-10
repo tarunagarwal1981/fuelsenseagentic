@@ -15,18 +15,12 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { message, origin, destination, vessel_speed, departure_date, userId, sessionId } = body;
+    const { message, userId, sessionId } = body;
 
-    // Always use multi-agent (single implementation)
+    // Always use multi-agent (single implementation); entity extraction handled by backend LLM
     const variant = 'multi-agent' as const;
     const endpoint = '/api/chat-multi-agent';
-    const requestBody = {
-      message,
-      origin,
-      destination,
-      vessel_speed,
-      departure_date,
-    };
+    const requestBody = { message };
 
     // Make internal request to the appropriate endpoint
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';

@@ -259,7 +259,18 @@ export async function reasoningSupervisor(
     extracted_data: patternMatch.extracted_data || {},
     reason: patternMatch.reason || 'N/A',
   });
-  
+
+  if (patternMatch.extracted_data && Object.keys(patternMatch.extracted_data).length > 0) {
+    const ed = patternMatch.extracted_data;
+    const method = patternMatch.reason?.includes('LLM intent') ? 'llm_intent_classifier' : patternMatch.matched ? 'pattern_match' : 'unknown';
+    console.log('🧠 [LLM-EXTRACTION] Entities extracted by AI:');
+    console.log(`   - Origin: ${ed.origin ?? 'not found'}`);
+    console.log(`   - Destination: ${ed.destination ?? 'not found'}`);
+    console.log(`   - Date: ${ed.date ?? 'not found'}`);
+    console.log(`   - Port: ${ed.port ?? 'not found'}`);
+    console.log(`   - Method: ${method}`);
+  }
+
   // ============================================================================
   // TIER 2: DECISION FRAMEWORK (Confidence Routing)
   // ============================================================================
