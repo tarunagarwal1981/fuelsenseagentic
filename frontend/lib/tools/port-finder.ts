@@ -93,6 +93,51 @@ export class PortFinderError extends Error {
 }
 
 /**
+ * Geographic bounding box (lat/lon limits).
+ * Used to filter bunker ports to the route region and reduce distance calculations.
+ */
+export interface GeographicBounds {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+}
+
+/**
+ * Compute a bounding box from route waypoints with a buffer for max deviation.
+ * Used to geo-filter ports so only ports near the route are considered.
+ * @param waypoints - Route waypoints
+ * @param maxDeviationNm - Max deviation in nautical miles (buffer added to box)
+ * @returns Bounds clamped to valid lat/lon
+ */
+export function calculateRouteBounds(
+  waypoints: Coordinates[],
+  maxDeviationNm: number
+): GeographicBounds {
+  if (waypoints.length === 0) {
+    return { minLat: -90, maxLat: 90, minLon: -180, maxLon: 180 };
+  }
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  for (const wp of waypoints) {
+    minLat = Math.min(minLat, wp.lat);
+    maxLat = Math.max(maxLat, wp.lat);
+    minLon = Math.min(minLon, wp.lon);
+    maxLon = Math.max(maxLon, wp.lon);
+  }
+  // ~1 deg lat ≈ 60 nm; add buffer for max deviation
+  const bufferDeg = (maxDeviationNm / 60) * 1.2;
+  return {
+    minLat: Math.max(-90, minLat - bufferDeg),
+    maxLat: Math.min(90, maxLat + bufferDeg),
+    minLon: Math.max(-180, minLon - bufferDeg),
+    maxLon: Math.min(180, maxLon + bufferDeg),
+  };
+}
+
+/**
  * Calculate the distance between two points on Earth using the Haversine formula
  * 
  * The Haversine formula calculates the great-circle distance between two points
@@ -146,6 +191,48 @@ function looksLikeLOCODE(key: string): boolean {
 /** Max concurrent WPI API calls to avoid timeout (83 sequential calls exceeded 15s). */
 const WPI_LOOKUP_CONCURRENCY = 15;
 
+/** Safety limit: max ports to resolve via WPI after geo-filter (circuit breaker). */
+const MAX_PORTS_TO_RESOLVE = 40;
+
+/** Coordinate map for geo-filtering (port_code or name -> { lat, lon }). Built from ports.json. */
+let portsJsonCoordMap: Map<string, Coordinates> | null = null;
+
+/**
+ * Build coordinate map from ports.json for geo-filtering before WPI.
+ * Keys: port_code and name (so BunkerPricing identifiers match).
+ */
+async function getPortsJsonCoordMap(): Promise<Map<string, Coordinates>> {
+  if (portsJsonCoordMap) return portsJsonCoordMap;
+  const map = new Map<string, Coordinates>();
+  try {
+    const portsModule = await import('@/lib/data/ports.json');
+    const arr = portsModule.default ?? portsModule;
+    if (Array.isArray(arr)) {
+      for (const entry of arr as PortsJsonEntry[]) {
+        if (entry.coordinates) {
+          const coords = { lat: entry.coordinates.lat, lon: entry.coordinates.lon };
+          map.set(entry.port_code, coords);
+          if (entry.name?.trim()) map.set(entry.name.trim(), coords);
+        }
+      }
+    }
+    portsJsonCoordMap = map;
+  } catch {
+    console.warn('[port-finder] Could not load ports.json for coordinate map');
+  }
+  return map;
+}
+
+/** True if coords are inside the given bounds. */
+function isInBounds(coords: Coordinates, bounds: GeographicBounds): boolean {
+  return (
+    coords.lat >= bounds.minLat &&
+    coords.lat <= bounds.maxLat &&
+    coords.lon >= bounds.minLon &&
+    coords.lon <= bounds.maxLon
+  );
+}
+
 /**
  * Build Port[] from identifier (port code or name) -> fuel types map.
  * Resolves coordinates via ports.json or WPI (findByCode for LOCODE, findByName for port names).
@@ -191,18 +278,28 @@ async function buildPortsFromIdentifiers(
     needWpi.push({ identifier, fuelTypes });
   }
 
-  // Resolve WPI lookups in parallel batches to stay under port-finder timeout
+  // Resolve WPI lookups in parallel batches (Promise.allSettled so one failure doesn't fail the batch)
   for (let i = 0; i < needWpi.length; i += WPI_LOOKUP_CONCURRENCY) {
     const batch = needWpi.slice(i, i + WPI_LOOKUP_CONCURRENCY);
-    const results = await Promise.all(
-      batch.map(async ({ identifier, fuelTypes }) => {
+    const batchStart = Date.now();
+    const batchPromises = batch.map(async ({ identifier, fuelTypes }) => {
+      try {
         const wpiPort = looksLikeLOCODE(identifier)
           ? await portRepo.findByCode(identifier)
           : await portRepo.findByName(identifier);
         return { identifier, fuelTypes, wpiPort };
-      })
-    );
-    for (const { identifier, fuelTypes, wpiPort } of results) {
+      } catch (err) {
+        console.warn(`⚠️ [PORT-FINDER] Failed to resolve ${identifier}:`, err instanceof Error ? err.message : err);
+        return { identifier, fuelTypes, wpiPort: null };
+      }
+    });
+    const settled = await Promise.allSettled(batchPromises);
+    const duration = Date.now() - batchStart;
+    const batchNum = Math.floor(i / WPI_LOOKUP_CONCURRENCY) + 1;
+    console.log(`   🔄 [PORT-FINDER] Batch ${batchNum}: ${batch.length} ports in ${duration}ms`);
+    for (const result of settled) {
+      if (result.status !== 'fulfilled') continue;
+      const { identifier, fuelTypes, wpiPort } = result.value;
       if (wpiPort?.coordinates) {
         const code = 'code' in wpiPort && (wpiPort as { code?: string }).code
           ? (wpiPort as { code: string }).code
@@ -223,9 +320,10 @@ async function buildPortsFromIdentifiers(
 
 /**
  * Loads bunker-capable port data from BunkerPricing API only.
- * Enriches with coordinates from ports.json or World Port Index.
+ * When bounds are provided: filters identifiers by route bounds BEFORE WPI (using ports.json
+ * coords), then resolves only candidates via WPI. When bounds are omitted, resolves all.
  */
-async function loadPortsData(): Promise<Port[]> {
+async function loadPortsData(bounds?: GeographicBounds): Promise<Port[]> {
   const container = ServiceContainer.getInstance();
   const portRepo = container.getPortRepository();
 
@@ -247,7 +345,53 @@ async function loadPortsData(): Promise<Port[]> {
     portCodeToFuelTypes.get(key)!.add(p.fuelType);
   }
 
-  return buildPortsFromIdentifiers(portCodeToFuelTypes, portRepo);
+  const allIdentifiers = Array.from(portCodeToFuelTypes.keys());
+  let candidateIdentifiers: string[];
+
+  if (bounds) {
+    const coordMap = await getPortsJsonCoordMap();
+    // Include: (in coord map and inside bounds) OR (not in coord map — must resolve via WPI)
+    candidateIdentifiers = allIdentifiers.filter((id) => {
+      const coords = coordMap.get(id);
+      if (!coords) return true; // unknown coords, need WPI
+      return isInBounds(coords, bounds);
+    });
+    console.log(`   🎯 [PORT-FINDER] Geo-filter: ${allIdentifiers.length} → ${candidateIdentifiers.length} ports in route bounds`);
+  } else {
+    candidateIdentifiers = allIdentifiers;
+  }
+
+  // Circuit breaker: cap candidates by distance to route midpoint if over limit
+  if (bounds && candidateIdentifiers.length > MAX_PORTS_TO_RESOLVE) {
+    const coordMap = await getPortsJsonCoordMap();
+    const midLat = (bounds.minLat + bounds.maxLat) / 2;
+    const midLon = (bounds.minLon + bounds.maxLon) / 2;
+    const midpoint: Coordinates = { lat: midLat, lon: midLon };
+    const withCoords: { id: string; distance: number }[] = [];
+    const noCoords: string[] = [];
+    for (const id of candidateIdentifiers) {
+      const c = coordMap.get(id);
+      if (c) withCoords.push({ id, distance: haversineDistance(c, midpoint) });
+      else noCoords.push(id);
+    }
+    withCoords.sort((a, b) => a.distance - b.distance);
+    const take = Math.max(0, MAX_PORTS_TO_RESOLVE - noCoords.length);
+    const beforeCap = candidateIdentifiers.length;
+    candidateIdentifiers = [
+      ...withCoords.slice(0, take).map((x) => x.id),
+      ...noCoords,
+    ].slice(0, MAX_PORTS_TO_RESOLVE);
+    console.warn(`   ⚠️ [PORT-FINDER] Limiting candidates: ${beforeCap} → ${candidateIdentifiers.length}`);
+  }
+
+  const filteredMap = new Map<string, Set<string>>();
+  for (const id of candidateIdentifiers) {
+    const fuelSet = portCodeToFuelTypes.get(id);
+    if (fuelSet) filteredMap.set(id, fuelSet);
+  }
+
+  const ports = await buildPortsFromIdentifiers(filteredMap, portRepo);
+  return ports;
 }
 
 /**
@@ -313,9 +457,11 @@ export async function findPortsNearRoute(
   console.log(`   Max deviation: ${max_deviation_nm} nm`);
 
   try {
-    // Load port data
-    const ports = await loadPortsData();
-    console.log(`   Available ports: ${ports.length}`);
+    // Geo-filter: only load ports within route bounding box for fewer distance calculations
+    const bounds = calculateRouteBounds(route_waypoints, max_deviation_nm);
+    console.log(`   📍 Route bounds: lat ${bounds.minLat.toFixed(1)}°–${bounds.maxLat.toFixed(1)}°, lon ${bounds.minLon.toFixed(1)}°–${bounds.maxLon.toFixed(1)}°`);
+    const ports = await loadPortsData(bounds);
+    console.log(`   Available ports (in bounds): ${ports.length}`);
 
     // Track found ports with their minimum distance
     const portMap = new Map<string, FoundPort>();

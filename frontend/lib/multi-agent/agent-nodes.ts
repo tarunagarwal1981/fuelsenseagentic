@@ -11,7 +11,7 @@
 
 import { ChatAnthropic } from '@langchain/anthropic';
 import { SystemMessage, AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
-import type { MultiAgentState } from './state';
+import type { MultiAgentState, AgentContext } from './state';
 import { tool } from '@langchain/core/tools';
 import {
   withTimeout,
@@ -207,6 +207,26 @@ function applySafetyValidation(
     };
   }
   return update;
+}
+
+/** Build supervisor return to finalize with bunker error context (no re-route to bunker). */
+function buildBunkerErrorFinalizeReturn(
+  state: MultiAgentState,
+  agentContext: AgentContext
+): Partial<MultiAgentState> {
+  const hasBunkerError = state.agent_errors?.bunker_agent;
+  const finalizeContext: AgentContext['finalize'] = {
+    ...agentContext.finalize,
+    error_mode: true,
+    error_type: 'bunker_timeout',
+    error_message: hasBunkerError?.error ?? 'Bunker agent failed',
+    partial_data_available: !!state.route_data,
+  };
+  return {
+    next_agent: 'finalize',
+    agent_context: { ...agentContext, finalize: finalizeContext },
+    messages: [],
+  };
 }
 
 function countAgentCalls(messages: any[]): Record<string, number> {
@@ -1067,6 +1087,14 @@ export async function supervisorAgentNode(
     };
   }
 
+  // Bunker agent error recovery: if bunker failed 2+ times, route to finalize with error (no re-route to bunker)
+  const bunkerCallCount = state.agent_call_counts?.bunker_agent ?? 0;
+  const hasBunkerError = state.agent_errors?.bunker_agent;
+  if (hasBunkerError && bunkerCallCount >= 2) {
+    console.error('🚨 [SUPERVISOR] Bunker agent failed 2+ times, routing to finalize with error');
+    return buildBunkerErrorFinalizeReturn(state, agentContext);
+  }
+
   // Additional check: If we have 40+ messages but NO progress, something is stuck
   if (messageCount > 40) {
     // Check if we have ANY data
@@ -1243,6 +1271,10 @@ export async function supervisorAgentNode(
         }
       }
       
+      if (hasBunkerError) {
+        console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+        return buildBunkerErrorFinalizeReturn(state, agentContext);
+      }
       return applyCircuitBreaker("bunker_agent", state, {
         next_agent: "bunker_agent",
         agent_context: agentContext,
@@ -1265,6 +1297,10 @@ export async function supervisorAgentNode(
   if (weatherAgentPartial && needsWeather && state.weather_forecast) {
     // Weather agent has partial data, continue to next step if needed
     if (needsBunker && !state.bunker_analysis) {
+      if (hasBunkerError) {
+        console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+        return buildBunkerErrorFinalizeReturn(state, agentContext);
+      }
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
       return applyCircuitBreaker("bunker_agent", state, {
         next_agent: "bunker_agent",
@@ -1545,6 +1581,10 @@ export async function supervisorAgentNode(
         
         // Skip to bunker if needed, otherwise finalize
         if (needsBunker && !state.bunker_analysis) {
+          if (hasBunkerError) {
+            console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+            return buildBunkerErrorFinalizeReturn(state, agentContext);
+          }
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, go to bunker');
           return applyCircuitBreaker("bunker_agent", state, {
             next_agent: 'bunker_agent',
@@ -1593,6 +1633,10 @@ export async function supervisorAgentNode(
         // Check if weather_agent has failed
         if (state.agent_status?.weather_agent === 'failed') {
           console.warn('⚠️ [SUPERVISOR] Weather agent failed, skipping consumption calculation and going to bunker');
+          if (hasBunkerError) {
+            console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+            return buildBunkerErrorFinalizeReturn(state, agentContext);
+          }
           // Skip weather consumption, go directly to bunker
           return applySafetyValidation(state, {
             next_agent: 'bunker_agent',
@@ -1628,6 +1672,10 @@ export async function supervisorAgentNode(
           console.warn(`⚠️ [SUPERVISOR] Cannot route to bunker_agent - missing prerequisites: ${validation.missing.join(', ')}`);
           // Skip bunker agent, finalize with available data
         } else {
+          if (hasBunkerError) {
+            console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+            return buildBunkerErrorFinalizeReturn(state, agentContext);
+          }
           console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent (prerequisites validated)');
           return applyCircuitBreaker("bunker_agent", state, {
             next_agent: "bunker_agent",
@@ -1662,6 +1710,10 @@ export async function supervisorAgentNode(
           console.warn(`⚠️ [SUPERVISOR] Cannot route to bunker_agent - missing prerequisites: ${validation.missing.join(', ')}`);
           // Skip bunker agent, finalize with available data
         } else {
+          if (hasBunkerError) {
+            console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
+            return buildBunkerErrorFinalizeReturn(state, agentContext);
+          }
           console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent (prerequisites validated)');
           return applyCircuitBreaker("bunker_agent", state, {
             next_agent: "bunker_agent",

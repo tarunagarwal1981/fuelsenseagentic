@@ -177,6 +177,11 @@ export interface AgentContext {
     needs_weather_analysis: boolean;
     /** Whether bunker analysis is needed in final response */
     needs_bunker_analysis: boolean;
+    /** Set when supervisor routes to finalize after bunker/timeout failure */
+    error_mode?: boolean;
+    error_type?: string;
+    error_message?: string;
+    partial_data_available?: boolean;
   };
 }
 

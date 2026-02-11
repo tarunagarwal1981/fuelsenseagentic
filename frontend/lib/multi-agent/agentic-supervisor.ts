@@ -1067,6 +1067,51 @@ function handleCallAgent(
     };
   }
 
+  // Bunker error recovery: do not re-route to bunker_agent after failure (same as legacy supervisor)
+  if (agentName === 'bunker_agent') {
+    const hasBunkerError = state.agent_errors?.bunker_agent;
+    const bunkerCallCount = state.agent_call_counts?.bunker_agent ?? 0;
+    const bunkerErrorFinalizeContext = {
+      complexity: (state.agent_context?.finalize?.complexity ?? 'high') as 'low' | 'medium' | 'high',
+      needs_weather_analysis: state.agent_context?.finalize?.needs_weather_analysis ?? false,
+      needs_bunker_analysis: state.agent_context?.finalize?.needs_bunker_analysis ?? true,
+      error_mode: true as const,
+      error_type: 'bunker_timeout' as const,
+      error_message: hasBunkerError?.error ?? 'Bunker agent failed',
+      partial_data_available: !!state.route_data,
+    };
+    if (hasBunkerError && bunkerCallCount >= 2) {
+      console.error('🚨 [AGENTIC-SUPERVISOR] Bunker agent failed 2+ times, routing to finalize with error');
+      step.observation = 'Bunker agent failed repeatedly, finalizing with error';
+      return {
+        next_agent: 'finalize',
+        current_thought: reasoning.thought,
+        reasoning_history: [step],
+        needs_clarification: false,
+        routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
+        agent_context: {
+          ...state.agent_context,
+          finalize: bunkerErrorFinalizeContext,
+        },
+      };
+    }
+    if (hasBunkerError) {
+      console.warn('⚠️ [AGENTIC-SUPERVISOR] Blocking re-route to bunker_agent after failure');
+      step.observation = 'Bunker agent previously failed, finalizing with partial data';
+      return {
+        next_agent: 'finalize',
+        current_thought: reasoning.thought,
+        reasoning_history: [step],
+        needs_clarification: false,
+        routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
+        agent_context: {
+          ...state.agent_context,
+          finalize: bunkerErrorFinalizeContext,
+        },
+      };
+    }
+  }
+
   console.log(`🎯 [AGENTIC-SUPERVISOR] Routing to: ${agentName}`);
   step.observation = `Routing to ${agentName}`;
 
