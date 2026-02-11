@@ -216,10 +216,20 @@ export async function calculateRoute(
       lat: wp.coordinates[0],
       lon: wp.coordinates[1],
     }));
-    
+
+    // Normalize coordinates from route service (returns object { lat, lon } or array [lat, lon]) for map/UI
+    const toLatLon = (
+      c: [number, number] | { lat: number; lon: number } | undefined
+    ): { lat: number; lon: number } | undefined => {
+      if (c == null) return undefined;
+      if (Array.isArray(c) && c.length >= 2) return { lat: c[0], lon: c[1] };
+      if (typeof c === 'object' && typeof (c as { lat: number }).lat === 'number' && typeof (c as { lon: number }).lon === 'number') {
+        return { lat: (c as { lat: number }).lat, lon: (c as { lon: number }).lon };
+      }
+      return undefined;
+    };
+
     // Format output for agent consumption (include names and coordinates for UI/map when using WPI_* etc.)
-    const routeOriginCoords = routeData.origin.coordinates;
-    const routeDestCoords = routeData.destination.coordinates;
     const result: RouteCalculatorOutput = {
       distance_nm: routeData.totalDistanceNm,
       estimated_hours: Math.round(routeData.estimatedHours * 100) / 100, // Round to 2 decimal places
@@ -229,14 +239,8 @@ export async function calculateRoute(
       destination_port_code: routeData.destination.port_code,
       origin_port_name: routeData.origin.name ?? undefined,
       destination_port_name: routeData.destination.name ?? undefined,
-      origin_coordinates:
-        Array.isArray(routeOriginCoords) && routeOriginCoords.length >= 2
-          ? { lat: routeOriginCoords[0], lon: routeOriginCoords[1] }
-          : undefined,
-      destination_coordinates:
-        Array.isArray(routeDestCoords) && routeDestCoords.length >= 2
-          ? { lat: routeDestCoords[0], lon: routeDestCoords[1] }
-          : undefined,
+      origin_coordinates: toLatLon(routeData.origin.coordinates as [number, number] | { lat: number; lon: number }),
+      destination_coordinates: toLatLon(routeData.destination.coordinates as [number, number] | { lat: number; lon: number }),
     };
     
     PortLogger.logRouteCalculation(
