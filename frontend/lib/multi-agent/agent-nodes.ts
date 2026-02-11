@@ -635,6 +635,18 @@ function mapQueryIntentToCapabilityIntent(
   return 'bunker_planning'; // default for maritime queries
 }
 
+/**
+ * Map QueryIntent to component-registry query_type (for finalize component matching).
+ */
+function mapIntentToRegistryQueryType(
+  intent: import('./intent-analyzer').QueryIntent
+): 'bunker_planning' | 'route_calculation' | 'weather_analysis' | 'compliance_check' {
+  if (intent.needs_bunker) return 'bunker_planning';
+  if (intent.needs_weather) return 'weather_analysis';
+  if (intent.needs_route) return 'route_calculation';
+  return 'route_calculation';
+}
+
 // ============================================================================
 // Agent Node Implementations
 // ============================================================================
@@ -934,7 +946,11 @@ export async function supervisorAgentNode(
   
   // Analyze intent (needed for both paths)
   const intent = analyzeQueryIntent(userQuery);
-  
+
+  // Persist original intent for finalize component matching (legacy path; agentic sets it on first pass)
+  const legacyOriginalIntentUpdate =
+    !state.original_intent ? { original_intent: mapIntentToRegistryQueryType(intent) } : {};
+
   // Build agent context from plan OR legacy
   let agentContext: import('./state').AgentContext;
   
@@ -1070,6 +1086,7 @@ export async function supervisorAgentNode(
   if (messageCount > 15 && weatherAgentFailedStatus && !hasWeatherData && queryNeedsWeather) {
     console.log("⚠️ [SUPERVISOR] Weather agent failed loop detected (15+ messages, agent failed) - forcing finalize");
     return {
+      ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
@@ -1081,6 +1098,7 @@ export async function supervisorAgentNode(
   if (messageCount > 60) {  // Increased from 25 to 60
     console.error('❌ [SUPERVISOR] Hard limit reached (60+ messages) - forcing finalize');
     return {
+      ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
@@ -1092,7 +1110,7 @@ export async function supervisorAgentNode(
   const hasBunkerError = state.agent_errors?.bunker_agent;
   if (hasBunkerError && bunkerCallCount >= 2) {
     console.error('🚨 [SUPERVISOR] Bunker agent failed 2+ times, routing to finalize with error');
-    return buildBunkerErrorFinalizeReturn(state, agentContext);
+    return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
   }
 
   // Additional check: If we have 40+ messages but NO progress, something is stuck
@@ -1110,6 +1128,7 @@ export async function supervisorAgentNode(
       console.error('📊 [SUPERVISOR] Last 5 messages:', state.messages.slice(-5).map(m => m.constructor.name));
       
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1129,6 +1148,7 @@ export async function supervisorAgentNode(
     if (queryNeedsWeatherCheck && !queryNeedsBunkerCheck) {
       console.log("⚠️ [SUPERVISOR] Early detection: Weather stuck (10+ messages, no weather data) - finalizing");
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1233,6 +1253,7 @@ export async function supervisorAgentNode(
       const intent = analyzeQueryIntent(userQuery);
       const agentContext = generateAgentContext(intent, state);
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1276,6 +1297,7 @@ export async function supervisorAgentNode(
         return buildBunkerErrorFinalizeReturn(state, agentContext);
       }
       return applyCircuitBreaker("bunker_agent", state, {
+        ...legacyOriginalIntentUpdate,
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
@@ -1286,6 +1308,7 @@ export async function supervisorAgentNode(
       const intent = analyzeQueryIntent(userQuery);
       const agentContext = generateAgentContext(intent, state);
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1299,10 +1322,11 @@ export async function supervisorAgentNode(
     if (needsBunker && !state.bunker_analysis) {
       if (hasBunkerError) {
         console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
-        return buildBunkerErrorFinalizeReturn(state, agentContext);
+        return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
       }
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
       return applyCircuitBreaker("bunker_agent", state, {
+        ...legacyOriginalIntentUpdate,
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
@@ -1310,6 +1334,7 @@ export async function supervisorAgentNode(
     } else {
       console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1458,6 +1483,7 @@ export async function supervisorAgentNode(
     // All agents in plan are done, finalize
     console.log('🎯 [SUPERVISOR] Execution plan complete → finalize');
     return {
+      ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
@@ -1478,6 +1504,7 @@ export async function supervisorAgentNode(
     if (!state.standalone_port_weather && state.agent_status?.weather_agent !== 'success') {
       console.log('🎯 [SUPERVISOR] Decision: Standalone port weather → weather_agent (direct)');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: 'weather_agent',
         agent_context: agentContext,
         messages: [],
@@ -1488,6 +1515,7 @@ export async function supervisorAgentNode(
     if (state.standalone_port_weather || state.agent_status?.weather_agent === 'success') {
       console.log('🎯 [SUPERVISOR] Decision: Port weather complete → finalize');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: 'finalize',
         agent_context: agentContext,
         messages: [],
@@ -1498,6 +1526,7 @@ export async function supervisorAgentNode(
     if (state.agent_status?.weather_agent === 'failed') {
       console.log('⚠️ [SUPERVISOR] Port weather failed → finalize with error');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: 'finalize',
         agent_context: agentContext,
         messages: [],
@@ -1517,6 +1546,7 @@ export async function supervisorAgentNode(
     if (state.agent_status?.route_agent === 'failed') {
       console.log('⚠️ [SUPERVISOR] Route needed but route_agent has failed - finalizing with error');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1529,6 +1559,7 @@ export async function supervisorAgentNode(
       console.warn(`⚠️ [SUPERVISOR] Cannot route to route_agent - missing prerequisites: ${validation.missing.join(', ')}`);
       // Try to finalize with error
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1537,6 +1568,7 @@ export async function supervisorAgentNode(
     
     console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent (prerequisites validated)');
     return applyCircuitBreaker("route_agent", state, {
+      ...legacyOriginalIntentUpdate,
       next_agent: "route_agent",
       agent_context: agentContext,
       messages: [],
@@ -1555,6 +1587,7 @@ export async function supervisorAgentNode(
     if (needsCompliance) {
       console.log('🎯 [SUPERVISOR] Decision: Route complete → compliance_agent for ECA zone validation');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: 'compliance_agent' as const,
         agent_context: {
           ...agentContext,
@@ -1587,6 +1620,7 @@ export async function supervisorAgentNode(
           }
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, go to bunker');
           return applyCircuitBreaker("bunker_agent", state, {
+            ...legacyOriginalIntentUpdate,
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
@@ -1594,6 +1628,7 @@ export async function supervisorAgentNode(
         } else {
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, finalize with partial data');
           return {
+            ...legacyOriginalIntentUpdate,
             next_agent: 'finalize',
             agent_context: agentContext,
             messages: [],
@@ -1609,6 +1644,7 @@ export async function supervisorAgentNode(
       } else {
         console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent (prerequisites validated)');
         return applyCircuitBreaker("weather_agent", state, {
+          ...legacyOriginalIntentUpdate,
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
@@ -1622,6 +1658,7 @@ export async function supervisorAgentNode(
       if (!needsBunker) {
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, no bunker needed → finalize');
         return {
+          ...legacyOriginalIntentUpdate,
           next_agent: "finalize",
           agent_context: agentContext,
           messages: [],
@@ -1639,6 +1676,7 @@ export async function supervisorAgentNode(
           }
           // Skip weather consumption, go directly to bunker
           return applySafetyValidation(state, {
+            ...legacyOriginalIntentUpdate,
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
@@ -1648,6 +1686,7 @@ export async function supervisorAgentNode(
         // Consumption is needed for bunker planning
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
         return applyCircuitBreaker("weather_agent", state, {
+          ...legacyOriginalIntentUpdate,
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
@@ -1660,6 +1699,7 @@ export async function supervisorAgentNode(
         if (state.agent_status?.bunker_agent === 'failed') {
           console.warn('⚠️ [SUPERVISOR] Bunker agent failed, finalizing with available data');
           return {
+            ...legacyOriginalIntentUpdate,
             next_agent: 'finalize',
             agent_context: agentContext,
             messages: [],
@@ -1674,10 +1714,11 @@ export async function supervisorAgentNode(
         } else {
           if (hasBunkerError) {
             console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
-            return buildBunkerErrorFinalizeReturn(state, agentContext);
+            return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
           }
           console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent (prerequisites validated)');
           return applyCircuitBreaker("bunker_agent", state, {
+            ...legacyOriginalIntentUpdate,
             next_agent: "bunker_agent",
             agent_context: agentContext,
             messages: [],
@@ -1698,6 +1739,7 @@ export async function supervisorAgentNode(
         if (state.agent_status?.bunker_agent === 'failed') {
           console.warn('⚠️ [SUPERVISOR] Bunker agent failed, finalizing with available data');
           return {
+            ...legacyOriginalIntentUpdate,
             next_agent: 'finalize',
             agent_context: agentContext,
             messages: [],
@@ -1712,10 +1754,11 @@ export async function supervisorAgentNode(
         } else {
           if (hasBunkerError) {
             console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
-            return buildBunkerErrorFinalizeReturn(state, agentContext);
+            return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
           }
           console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent (prerequisites validated)');
           return applyCircuitBreaker("bunker_agent", state, {
+            ...legacyOriginalIntentUpdate,
             next_agent: "bunker_agent",
             agent_context: agentContext,
             messages: [],
@@ -1746,6 +1789,7 @@ export async function supervisorAgentNode(
       ) {
         console.log('🎯 [SUPERVISOR] Routing to vessel_selection_agent for multi-vessel comparison');
         const vesselSelectionUpdate = {
+          ...legacyOriginalIntentUpdate,
           next_agent: 'vessel_selection_agent' as const,
           vessel_names: vesselNames,
           next_voyage_details: state.next_voyage_details ?? extractedNextVoyage,
@@ -1768,6 +1812,7 @@ export async function supervisorAgentNode(
       }
       console.log('🎯 [SUPERVISOR] Decision: All requested work complete → finalize');
       return {
+        ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
@@ -1780,6 +1825,7 @@ export async function supervisorAgentNode(
     // This shouldn't happen, but if it does, finalize with what we have
     console.log('🎯 [SUPERVISOR] Decision: Route complete, finalizing with available data');
     return {
+      ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
@@ -1792,6 +1838,7 @@ export async function supervisorAgentNode(
   if (state.agent_status?.route_agent === 'failed') {
     console.log('⚠️ [SUPERVISOR] Fallback: Route agent has failed - finalizing with error');
     return {
+      ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
@@ -1807,6 +1854,7 @@ export async function supervisorAgentNode(
       `🎯 [SUPERVISOR] Capability resolver suggests: ${suggestedAgent} (intent: ${capabilityIntent})`
     );
     return applyCircuitBreaker(suggestedAgent, state, {
+      ...legacyOriginalIntentUpdate,
       next_agent: suggestedAgent,
       agent_context: agentContext,
       messages: [],
@@ -1816,6 +1864,7 @@ export async function supervisorAgentNode(
   // 4c. Ultimate fallback: route_agent when capability resolver has no suggestion
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
   return applyCircuitBreaker("route_agent", state, {
+    ...legacyOriginalIntentUpdate,
     next_agent: "route_agent",
     agent_context: agentContext,
     messages: [],
@@ -4951,11 +5000,20 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
     const registry = loadComponentRegistry();
     const matcher = new ComponentMatcherService(registry);
 
-    // Determine query type from synthesized insights or routing metadata
-    const queryType =
+    // Prefer original user intent so component selection matches what the user asked for,
+    // not the last internal message (e.g. safety validator text classified as route_calculation).
+    const REGISTRY_QUERY_TYPES = ['bunker_planning', 'route_calculation', 'weather_analysis', 'compliance_check'] as const;
+    const intentFromUser = state.original_intent && REGISTRY_QUERY_TYPES.includes(state.original_intent as typeof REGISTRY_QUERY_TYPES[number])
+      ? state.original_intent
+      : null;
+    let queryType =
+      intentFromUser ||
       state.synthesized_insights?.query_type ||
       state.routing_metadata?.matched_intent ||
       'unknown';
+    if (queryType === 'unknown' && state.bunker_analysis?.recommendations?.length) {
+      queryType = 'bunker_planning';
+    }
 
     console.log(`[FINALIZE] Query type: ${queryType}`);
 

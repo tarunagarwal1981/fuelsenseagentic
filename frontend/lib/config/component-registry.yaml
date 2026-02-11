@@ -43,13 +43,13 @@ components:
     description: "Compare bunker costs across ports"
     
     required_state_fields:
-      - bunker_analysis.port_options
+      - bunker_analysis.recommendations
     
     optional_state_fields:
-      - bunker_analysis.recommendation
+      - bunker_analysis.best_option
     
     render_conditions:
-      - "bunker_analysis && bunker_analysis.port_options && bunker_analysis.port_options.length >= 2"
+      - "bunker_analysis && bunker_analysis.recommendations && bunker_analysis.recommendations.length >= 1"
     
     produced_by:
       - bunker_agent
@@ -58,8 +58,8 @@ components:
     tier: 1
     
     props_mapping:
-      options: "bunker_analysis.port_options"
-      recommendation: "bunker_analysis.recommendation"
+      options: "bunker_analysis.recommendations"
+      recommendation: "bunker_analysis.best_option"
 
   # ========================================
   # ECA Compliance Card
