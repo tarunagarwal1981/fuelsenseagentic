@@ -231,16 +231,17 @@ export class WorldPortRepositoryAPI implements IWorldPortRepository {
   }
 
   /**
-   * Normalize port name for consistent searching and comparison
+   * Normalize port name for consistent searching and comparison.
+   * Only removes the phrase "port of " so "Port Said" stays "port said" (resolves to Egypt, not Sayda).
    * @param name - Port name to normalize
    * @returns Normalized port name
    * @example normalizeName("Port of Singapore") => "singapore"
+   * @example normalizeName("Port Said") => "port said"
    */
   private normalizeName(name: string): string {
     return name
       .toLowerCase() // Convert to lowercase
-      .replace(/\bport\s+of\b/gi, '') // Remove "port of" (case-insensitive)
-      .replace(/\bport\b/gi, '') // Remove "port" (case-insensitive)
+      .replace(/\bport\s+of\s+/gi, '') // Remove "port of " only; do not strip "port" alone (e.g. Port Said)
       .replace(/\bharbor\b/gi, '') // Remove "harbor" (case-insensitive)
       .replace(/\s+/g, ' ') // Collapse multiple spaces to single space
       .trim(); // Trim whitespace
