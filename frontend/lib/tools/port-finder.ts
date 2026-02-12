@@ -462,6 +462,10 @@ export async function findPortsNearRoute(
     console.log(`   📍 Route bounds: lat ${bounds.minLat.toFixed(1)}°–${bounds.maxLat.toFixed(1)}°, lon ${bounds.minLon.toFixed(1)}°–${bounds.maxLon.toFixed(1)}°`);
     const ports = await loadPortsData(bounds);
     console.log(`   Available ports (in bounds): ${ports.length}`);
+    if (ports.length === 0) {
+      console.warn('⚠️ [PORT-FINDER] No ports found within route bounds');
+      console.warn(`   Bounds: lat ${bounds.minLat.toFixed(1)}°–${bounds.maxLat.toFixed(1)}°, lon ${bounds.minLon.toFixed(1)}°–${bounds.maxLon.toFixed(1)}°`);
+    }
 
     // Track found ports with their minimum distance
     const portMap = new Map<string, FoundPort>();

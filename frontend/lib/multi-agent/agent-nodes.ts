@@ -3433,8 +3433,16 @@ export async function bunkerAgentNode(
           console.log(`🔍 [BUNKER-WORKFLOW] Adding MGO to port finder fuel types for ECA compliance`);
         }
         
+        // Normalize waypoints to { lat, lon } for port finder (handles API vs cache formats)
+        const normalizedWaypoints = state.route_data.waypoints.map((wp: { lat: number; lon: number } | [number, number]) => {
+          if (Array.isArray(wp)) {
+            return { lat: wp[0], lon: wp[1] };
+          }
+          return { lat: wp.lat, lon: wp.lon };
+        });
+
         const portFinderInput = {
-          route_waypoints: state.route_data.waypoints,
+          route_waypoints: normalizedWaypoints,
           max_deviation_nm: 150, // Standard deviation limit
           fuel_types: fuelTypesForPorts,
         };
@@ -3449,6 +3457,15 @@ export async function bunkerAgentNode(
         
         if (bunkerPorts.total_ports_found === 0) {
           console.warn('⚠️ [BUNKER-WORKFLOW] No bunker ports found along route');
+          const lats = normalizedWaypoints.map((wp) => wp.lat);
+          const lons = normalizedWaypoints.map((wp) => wp.lon);
+          const bounds = {
+            minLat: Math.min(...lats),
+            maxLat: Math.max(...lats),
+            minLon: Math.min(...lons),
+            maxLon: Math.max(...lons),
+          };
+          console.warn(`   Waypoints: ${normalizedWaypoints.length}, route bounds: lat ${bounds.minLat.toFixed(1)}°–${bounds.maxLat.toFixed(1)}°, lon ${bounds.minLon.toFixed(1)}°–${bounds.maxLon.toFixed(1)}° (ports in bounds: check port-finder logs)`);
           const noPortsMessage: any = {
             type: 'bunker_workflow_complete',
             message: 'No suitable bunker ports found within 150 nautical miles of the route. Consider increasing deviation limit or choosing an alternative route.',

@@ -421,17 +421,34 @@ export async function reasoningSupervisor(
 // ============================================================================
 
 /**
- * Extract the user query from state
+ * Extract the user query from state for pattern matching.
+ * When the last HumanMessage is from the safety validator, use the first
+ * HumanMessage so we don't re-classify the safety text as the user's intent.
  */
 function extractQuery(state: MultiAgentState): string {
   // Find the last HumanMessage
+  let lastContent = '';
   for (let i = state.messages.length - 1; i >= 0; i--) {
     const msg = state.messages[i];
     if (msg instanceof HumanMessage || msg._getType?.() === 'human') {
-      return typeof msg.content === 'string' ? msg.content : String(msg.content);
+      lastContent = typeof msg.content === 'string' ? msg.content : String(msg.content);
+      break;
     }
   }
-  return '';
+  if (!lastContent) return '';
+
+  // If last message is from safety validator, use first user message for intent
+  if (lastContent.includes('[SAFETY VALIDATOR]')) {
+    for (let i = 0; i < state.messages.length; i++) {
+      const msg = state.messages[i];
+      if (msg instanceof HumanMessage || msg._getType?.() === 'human') {
+        const firstContent = typeof msg.content === 'string' ? msg.content : String(msg.content);
+        return firstContent;
+      }
+    }
+  }
+
+  return lastContent;
 }
 
 // ============================================================================
