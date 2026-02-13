@@ -8,3 +8,7 @@
 export {
   entityExtractorAgentNode,
 } from './entity-extractor-agent';
+
+export {
+  hullPerformanceAgentNode,
+} from './hull-performance-agent';

@@ -9,6 +9,8 @@ export { createSupabaseClient, getSupabaseClient } from './db-client';
 export { PortRepository } from './port-repository';
 export { PriceRepository } from './price-repository';
 export { VesselRepository } from './vessel-repository';
+export { HullPerformanceRepository } from './hull-performance-repository';
+export type { GetVesselPerformanceDataResult } from './hull-performance-repository';
 export { WorldPortRepositoryCSV } from './world-port-repository';
 export { ServiceContainer } from './service-container';
 export type {

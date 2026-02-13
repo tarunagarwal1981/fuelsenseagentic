@@ -1,0 +1,94 @@
+## Hull Performance Analysis
+============================
+
+### 1. Vessel identification
+{{#if vessel}}
+**Vessel:** {{vessel.name}} (IMO: {{vessel.imo}})
+{{else}}
+**Vessel:** — 
+{{/if}}
+
+---
+
+### 2. Current condition
+
+{{#if (eq hull_condition "GOOD")}}🟢{{/if}}{{#if (eq hull_condition "AVERAGE")}}🟡{{/if}}{{#if (eq hull_condition "POOR")}}🔴{{/if}} **{{hull_condition}}** — {{condition_message}}
+
+---
+
+### 3. KPI summary (latest report)
+
+| Metric | Value |
+|--------|--------|
+| **Excess power** | {{number latest_metrics.excess_power_pct 1}}% |
+| **Speed loss** | {{number latest_metrics.speed_loss_pct 1}}% |
+| **Excess fuel (pct)** | {{number latest_metrics.excess_fuel_consumption_pct 1}}% |
+| **Excess fuel (MTD)** | {{number latest_metrics.excess_fuel_consumption_mtd 1}} |
+| **Actual consumption** | {{number latest_metrics.actual_consumption 1}} MT/day |
+| **Predicted consumption** | {{number latest_metrics.predicted_consumption 1}} MT/day |
+| **Actual speed** | {{number latest_metrics.actual_speed 1}} kts |
+| **Report date** | {{date latest_metrics.report_date long}} |
+
+---
+
+### 4. Performance trends
+
+{{embed_chart hull_performance_charts.excess_power_trend}}
+
+{{embed_chart hull_performance_charts.consumption_comparison}}
+
+{{#if hull_performance_charts.baseline_comparison}}
+{{embed_chart hull_performance_charts.baseline_comparison}}
+{{/if}}
+
+---
+
+### 5. Component breakdown
+
+| Component | Power loss (%) |
+|-----------|-----------------|
+| Hull | {{number component_breakdown.hull_power_loss 1}}% |
+| Engine | {{number component_breakdown.engine_power_loss 1}}% |
+| Propeller | {{number component_breakdown.propeller_power_loss 1}}% |
+
+---
+
+### 6. Cost impact (estimate)
+
+Excess fuel (MTD) from hull/engine/propeller losses can be converted to cost using current fuel price. Use **excess fuel (pct)** and **actual consumption** above to estimate daily and voyage cost impact.
+
+---
+
+### 7. CII impact
+
+| Source | Impact |
+|--------|--------|
+| Hull | {{number cii_impact.hull_impact 2}} |
+| Engine | {{number cii_impact.engine_impact 2}} |
+| Propeller | {{number cii_impact.propeller_impact 2}} |
+| **Total** | **{{number cii_impact.total_impact 2}}** |
+
+---
+
+### 8. Recommendations
+
+{{#if (eq hull_condition "GOOD")}}
+- No immediate action required. Continue routine monitoring.
+{{/if}}
+{{#if (eq hull_condition "AVERAGE")}}
+- Monitor hull condition closely. Plan for hull cleaning in the next suitable port.
+- Review speed and consumption trends weekly.
+{{/if}}
+{{#if (eq hull_condition "POOR")}}
+- Schedule hull cleaning as soon as operationally possible.
+- Consider in-water cleaning or dry-dock slot; excess fuel cost will remain high until cleaning.
+- Escalate to technical superintendent for cleaning approval and scheduling.
+{{/if}}
+
+---
+
+### 9. Metadata
+
+**Analysis period:** {{analysis_period.days}} days ({{analysis_period.start_date}} to {{analysis_period.end_date}}) · {{analysis_period.total_records}} records  
+**Source:** {{metadata.data_source}}{{#if metadata.cache_hit}} (cached){{/if}}  
+**Generated:** {{date metadata.fetched_at long}}

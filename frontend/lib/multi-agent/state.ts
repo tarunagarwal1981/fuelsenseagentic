@@ -1031,6 +1031,24 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     default: () => undefined,
   }),
 
+  /**
+   * Hull performance analysis (condition, metrics, trends, baseline).
+   * Populated by Hull Performance Agent via fetch_hull_performance tool.
+   */
+  hull_performance: Annotation<any | null>({
+    reducer: (_, value) => value ?? null,
+    default: () => null,
+  }),
+
+  /**
+   * Chart data for hull performance visualization (excess power trend, consumption comparison, baselines).
+   * Populated by Finalize Agent when formatting hull performance response.
+   */
+  hull_performance_charts: Annotation<any | null>({
+    reducer: (_, value) => value ?? null,
+    default: () => null,
+  }),
+
   // ========================================================================
   // Vessel Selection Agent State
   // ========================================================================

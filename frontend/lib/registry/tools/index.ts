@@ -31,6 +31,8 @@ import {
   fetchConsumptionProfileTool,
 } from './vessel-performance-tools';
 
+import { fetchHullPerformanceTool } from './hull-performance-tools';
+
 /**
  * Register all tools with the Tool Registry
  * 
@@ -64,6 +66,9 @@ export function registerAllTools(): void {
     fetchNoonReportTool,
     fetchVesselSpecsTool,
     fetchConsumptionProfileTool,
+
+    // Hull performance tools
+    fetchHullPerformanceTool,
   ];
   
   let registeredCount = 0;
@@ -91,6 +96,7 @@ export function registerAllTools(): void {
   console.log(`   Weather: 3 tools`);
   console.log(`   Bunker: 3 tools`);
   console.log(`   Vessel Performance: 3 tools`);
+  console.log(`   Hull Performance: 1 tool`);
 }
 
 /**
@@ -128,6 +134,7 @@ export function verifyToolRegistration(): {
     'fetch_noon_report',
     'fetch_vessel_specs',
     'fetch_consumption_profile',
+    'fetch_hull_performance',
   ];
   
   const expectedSet = new Set(expectedTools);
@@ -154,4 +161,5 @@ export {
   fetchNoonReportTool,
   fetchVesselSpecsTool,
   fetchConsumptionProfileTool,
+  fetchHullPerformanceTool,
 };

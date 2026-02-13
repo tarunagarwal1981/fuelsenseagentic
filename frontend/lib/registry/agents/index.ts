@@ -22,6 +22,7 @@ import { bunkerAgent } from './bunker-agent';
 import { vesselSelectionAgent } from './vessel-selection-agent';
 import { vesselInfoAgent } from './vessel-info-agent';
 import { robTrackingAgent } from './rob-tracking-agent';
+import { hullPerformanceAgent } from './hull-performance-agent';
 import { finalizeAgent } from './finalize-agent';
 
 /**
@@ -150,6 +151,7 @@ export function registerAllAgents(): void {
     weatherAgent,           // Weather analysis
     bunkerAgent,            // Bunker port planning
     vesselSelectionAgent,   // Multi-vessel comparison and selection
+    hullPerformanceAgent,   // Hull performance analysis
 
     // Finalizer
     finalizeAgent,
@@ -177,7 +179,7 @@ export function registerAllAgents(): void {
   
   console.log(`✅ [AGENT-REGISTRY] Successfully registered ${registeredCount} agents`);
   console.log(`   Supervisor: 1 agent`);
-  console.log(`   Specialists: 7 agents (vessel_info, rob_tracking, route, compliance, weather, bunker, vessel_selection)`);
+  console.log(`   Specialists: 8 agents (vessel_info, rob_tracking, route, compliance, weather, bunker, vessel_selection, hull_performance)`);
   console.log(`   Finalizer: 1 agent`);
 }
 
@@ -246,6 +248,7 @@ export function verifyAgentRegistration(): {
     'weather_agent',
     'bunker_agent',
     'vessel_selection_agent',
+    'hull_performance_agent',
     'finalize',
   ];
   
@@ -277,13 +280,14 @@ export function getAgentExecutionOrder(): string[] {
     return [
       'supervisor',
       'vessel_info_agent',
-      'rob_tracking_agent', 
+      'rob_tracking_agent',
       'route_agent',
       'compliance_agent',
       'weather_agent',
       'bunker_agent',
       'vessel_selection_agent',
-      'finalize'
+      'hull_performance_agent',
+      'finalize',
     ];
   }
 }
@@ -316,5 +320,6 @@ export {
   weatherAgent,
   bunkerAgent,
   vesselSelectionAgent,
+  hullPerformanceAgent,
   finalizeAgent,
 };

@@ -4908,9 +4908,100 @@ export async function finalizeNode(state: MultiAgentState) {
   }
   
   try {
-    // ========================================================================
-    // VESSEL INFORMATION (Phase 1) - Entity extraction only, Phase 2 coming
-    // ========================================================================
+  // ========================================================================
+  // HULL PERFORMANCE - Format hull analysis and chart data
+  // ========================================================================
+
+  if (state.hull_performance) {
+    console.log('🛥️ [FINALIZE] Hull performance response');
+
+    const {
+      prepareExcessPowerTrendChart,
+      prepareConsumptionComparisonChart,
+      prepareBaselineComparisonChart,
+    } = await import('@/lib/multi-agent/helpers/hull-performance-charts');
+
+    const hp = state.hull_performance as {
+      vessel?: { imo: string; name: string };
+      hull_condition?: string;
+      condition_indicator?: string;
+      condition_message?: string;
+      latest_metrics?: Record<string, unknown>;
+      trend_data?: Array<{
+        date: string;
+        excess_power_pct: number;
+        speed_loss_pct: number;
+        excess_fuel_mtd: number;
+        consumption: number;
+        predicted_consumption: number;
+        speed: number;
+      }>;
+      baseline_curves?: {
+        laden: Array<{ speed: number; consumption: number; power: number }>;
+        ballast: Array<{ speed: number; consumption: number; power: number }>;
+      };
+      analysis_period?: { days: number; start_date: string; end_date: string; total_records: number };
+      metadata?: { fetched_at: string; data_source: string; cache_hit: boolean };
+    };
+
+    const chartData = {
+      excess_power_trend: prepareExcessPowerTrendChart(hp.trend_data),
+      consumption_comparison: prepareConsumptionComparisonChart(hp.trend_data),
+      baseline_comparison: hp.baseline_curves
+        ? prepareBaselineComparisonChart(hp.trend_data, hp.baseline_curves)
+        : null,
+    };
+
+    const lm = hp.latest_metrics ?? {};
+    const period = hp.analysis_period ?? { days: 0, start_date: '', end_date: '', total_records: 0 };
+    const vesselLabel = hp.vessel ? `${hp.vessel.name || 'Vessel'} (IMO ${hp.vessel.imo || '—'})` : 'Vessel';
+
+    const hullPerformanceResponse = `
+## Hull Performance Analysis – ${vesselLabel}
+
+${hp.condition_indicator ?? '🟢'} **Condition:** ${hp.hull_condition ?? '—'}  
+${hp.condition_message ?? ''}
+
+### Latest metrics (${typeof lm.report_date === 'string' ? lm.report_date : 'latest'})
+| Metric | Value |
+|--------|--------|
+| Excess power | ${Number(lm.excess_power_pct ?? 0).toFixed(1)}% |
+| Speed loss | ${Number(lm.speed_loss_pct ?? 0).toFixed(1)}% |
+| Excess fuel (pct) | ${Number(lm.excess_fuel_consumption_pct ?? 0).toFixed(1)}% |
+| Excess fuel (MTD) | ${Number(lm.excess_fuel_consumption_mtd ?? 0).toFixed(1)} |
+| Actual consumption | ${Number(lm.actual_consumption ?? 0).toFixed(1)} MT/day |
+| Predicted consumption | ${Number(lm.predicted_consumption ?? 0).toFixed(1)} MT/day |
+| Actual speed | ${Number(lm.actual_speed ?? 0).toFixed(1)} kts |
+
+### Analysis period
+${period.days} days (${period.start_date} to ${period.end_date}) · ${period.total_records} records  
+*Source: ${hp.metadata?.data_source ?? 'api'}${hp.metadata?.cache_hit ? ' (cached)' : ''}*
+
+---
+*Hull performance data from Hull Performance Engine. Chart data is available in the response payload for visualization.*
+    `.trim();
+
+    const agentDuration = Date.now() - agentStartTime;
+    recordAgentTime('finalize', agentDuration);
+    recordAgentExecution('finalize', agentDuration, true);
+    logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
+
+    return {
+      hull_performance_charts: chartData,
+      final_recommendation: sanitizeMarkdownForDisplay(hullPerformanceResponse),
+      formatted_response: null,
+      synthesized_insights: null,
+      messages: [new AIMessage({ content: hullPerformanceResponse })],
+      agent_status: {
+        ...(state.agent_status || {}),
+        finalize: 'success',
+      },
+    };
+  }
+
+  // ========================================================================
+  // VESSEL INFORMATION (Phase 1) - Entity extraction only, Phase 2 coming
+  // ========================================================================
     
     if (state.vessel_identifiers && !state.route_data && !state.bunker_analysis) {
       console.log('🚢 [FINALIZE] Vessel information query (Phase 1 - entity extraction only)');

@@ -433,10 +433,20 @@ export const StateSchemaV3: StateSchema = {
     hull_performance: {
       name: 'hull_performance',
       type: 'object',
-      description: 'Hull performance analysis',
+      description:
+        'Hull performance analysis data including condition, metrics, trends, and baselines',
       required: false,
       nullable: true,
-      size: { current: 1200, max: 2500 },
+      size: { current: 3000, max: 5000 },
+    },
+    hull_performance_charts: {
+      name: 'hull_performance_charts',
+      type: 'object',
+      description:
+        'Chart data for hull performance visualization (excess power trends, consumption comparison, baselines)',
+      required: false,
+      nullable: true,
+      size: { current: 2000, max: 4000 },
     },
     fouling_assessment: {
       name: 'fouling_assessment',

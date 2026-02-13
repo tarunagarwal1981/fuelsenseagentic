@@ -34,7 +34,11 @@ export interface ExtractedEntities {
   /** Bunker ports if specifically mentioned */
   bunker_ports?: string[];
   /** Query type classification */
-  query_type?: 'route_calculation' | 'bunker_planning' | 'weather_analysis' | 'compliance_check' | 'vessel_information' | 'informational' | 'multi_objective';
+  query_type?: 'route_calculation' | 'bunker_planning' | 'weather_analysis' | 'compliance_check' | 'vessel_information' | 'hull_performance' | 'informational' | 'multi_objective';
+  /** Vessel IMO (for hull performance / vessel-specific queries) */
+  vessel_imo?: string;
+  /** Time period in days (e.g. for hull performance "last 30 days") */
+  time_period_days?: number;
 }
 
 /**
@@ -289,6 +293,8 @@ export async function generateExecutionPlan(
     has_bunker_ports: !!currentState.bunker_ports,
     has_port_prices: !!currentState.port_prices,
     has_bunker_analysis: !!currentState.bunker_analysis,
+    has_hull_performance: !!currentState.hull_performance,
+    has_vessel_identifiers: !!(currentState.vessel_identifiers && ((currentState.vessel_identifiers as any).names?.length || (currentState.vessel_identifiers as any).imos?.length)),
     agent_errors: Object.keys(currentState.agent_errors || {}),
     agent_status: currentState.agent_status || {},
   };
@@ -333,6 +339,7 @@ Extract the following entities from the user's query:
    - weather_analysis: User wants weather forecasts or conditions
    - compliance_check: User asks about ECA zones, regulations
    - vessel_information: User asks about vessel position, ROB, noon reports, vessel status
+   - hull_performance: User asks about hull condition, fouling, excess power, performance trends (requires vessel identifier)
    - informational: General questions about ports, vessels, etc.
    - multi_objective: Combines multiple objectives
 
@@ -432,6 +439,20 @@ Extract: {
 }
 Note: Missing origin - extraction is still valid, downstream will handle error.
 
+**Hull Performance Queries** – Route to hull_performance_agent when:
+- User mentions "hull performance", "hull condition", "performance", "fouling", or similar
+- A vessel identifier is present (name or IMO)
+Examples:
+- "What is hull performance of OCEAN PRIDE?"
+- "Show hull performance for IMO 9876543"
+- "Hull performance of OCEAN PRIDE for last 30 days"
+- "Show me hull trends for IMO 9876543 this month"
+- "How is the vessel performing?"
+- "Check hull condition of [vessel]"
+
+→ Route to: entity_extractor → hull_performance_agent → finalize
+→ Extraction: query_type "hull_performance", vessel_identifier (imo and/or name), time_period (days from query or default 90)
+
 **Vessel Information Queries** (Foundation - entities extracted, detailed analysis coming soon):
 Examples:
 - "What's the current position of OCEAN PRIDE?"
@@ -471,19 +492,24 @@ next development phase."
 
 **Routing Decision Tree:**
 
-1. **Vessel Information Queries** (position, ROB, noon reports, vessel status):
+1. **Hull Performance Queries** (hull condition, fouling, excess power, performance trends):
+   - When: User mentions "hull performance", "hull condition", "performance", "fouling", or similar AND vessel identifier (name or IMO) is present
+   - Route to: entity_extractor → hull_performance_agent → finalize
+   - hull_performance_agent uses tool fetch_hull_performance with vessel_identifier and optional time_period (days)
+
+2. **Vessel Information Queries** (position, ROB, noon reports, vessel status):
    - Route to: entity_extractor
    - Phase: Foundation (Phase 1)
-   - Next phase: Will route to hull_performance or machinery_performance
+   - Next phase: Will route to machinery_performance for other vessel analytics
 
-2. **Bunker Planning** (port comparison, costs, availability):
+3. **Bunker Planning** (port comparison, costs, availability):
    - Route to: route_agent → bunker_agent → finalize
    - Can also use entity_extractor if specific vessel mentioned
 
-3. **Route Optimization** (distance, ETA, waypoints):
+4. **Route Optimization** (distance, ETA, waypoints):
    - Route to: route_agent → weather_agent → finalize
 
-4. **Compliance Queries** (CII, EU ETS, emissions):
+5. **Compliance Queries** (CII, EU ETS, emissions):
    - Route to: compliance_agent → finalize
 
 **Parallel Execution:**
@@ -499,6 +525,8 @@ Current State:
 - Bunker ports: ${stateAnalysis.has_bunker_ports ? '✅ Available' : '❌ Missing'}
 - Port prices: ${stateAnalysis.has_port_prices ? '✅ Available' : '❌ Missing'}
 - Bunker analysis: ${stateAnalysis.has_bunker_analysis ? '✅ Available' : '❌ Missing'}
+- Vessel identifiers: ${stateAnalysis.has_vessel_identifiers ? '✅ Available' : '❌ Missing'}
+- Hull performance: ${stateAnalysis.has_hull_performance ? '✅ Available' : '❌ Missing'}
 
 Agent Status:
 ${Object.entries(stateAnalysis.agent_status)
@@ -601,8 +629,59 @@ Example for vessel-only query ("What's the position of OCEAN PRIDE?"):
   "critical_path": ["entity_extractor"]
 }
 
+Example for hull performance query ("What is hull performance of OCEAN PRIDE for last 30 days?"):
+{
+  "extracted_entities": {
+    "query_type": "hull_performance",
+    "origin": null,
+    "destination": null,
+    "vessel_name": "OCEAN PRIDE",
+    "vessel_imo": null,
+    "vessel_speed": null,
+    "fuel_types": [],
+    "departure_date": null,
+    "bunker_ports": [],
+    "time_period_days": 30
+  },
+  "execution_order": ["entity_extractor", "hull_performance_agent", "finalize"],
+  "agent_tool_assignments": {
+    "entity_extractor": [],
+    "hull_performance_agent": ["fetch_hull_performance"],
+    "finalize": []
+  },
+  "reasoning": "Hull performance query - extract vessel (OCEAN PRIDE), run hull_performance_agent with fetch_hull_performance for last 30 days",
+  "estimated_total_time": 8,
+  "critical_path": ["entity_extractor", "hull_performance_agent"]
+}
+
+Example for hull performance by IMO ("Show hull performance for IMO 9876543"):
+{
+  "extracted_entities": {
+    "query_type": "hull_performance",
+    "origin": null,
+    "destination": null,
+    "vessel_name": null,
+    "vessel_imo": "9876543",
+    "vessel_speed": null,
+    "fuel_types": [],
+    "departure_date": null,
+    "bunker_ports": [],
+    "time_period_days": 90
+  },
+  "execution_order": ["entity_extractor", "hull_performance_agent", "finalize"],
+  "agent_tool_assignments": {
+    "entity_extractor": [],
+    "hull_performance_agent": ["fetch_hull_performance"],
+    "finalize": []
+  },
+  "reasoning": "Hull performance by IMO - entity_extractor validates IMO, hull_performance_agent fetches analysis (default 90 days)",
+  "estimated_total_time": 8,
+  "critical_path": ["entity_extractor", "hull_performance_agent"]
+}
+
 IMPORTANT: The extracted_entities field is MANDATORY. Always extract port names, query type, and other entities from the user's natural language query.
-For vessel-only queries (position, ROB, noon reports, vessel status), use execution_order: ["entity_extractor", "finalize"].`;
+For vessel-only queries (position, ROB, noon reports, vessel status), use execution_order: ["entity_extractor", "finalize"].
+For hull performance queries (hull condition, fouling, performance trends), use execution_order: ["entity_extractor", "hull_performance_agent", "finalize"] and assign fetch_hull_performance to hull_performance_agent.`;
 
   try {
     // Call LLM with structured output

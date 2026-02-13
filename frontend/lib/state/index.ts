@@ -73,6 +73,8 @@ export type {
   StateDeltaResult,
 } from './state-delta';
 
+export type { HullPerformanceState } from './state-types';
+
 // ============================================================================
 // Convenience Functions
 // ============================================================================
