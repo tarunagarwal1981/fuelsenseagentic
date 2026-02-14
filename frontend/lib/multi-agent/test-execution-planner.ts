@@ -49,6 +49,8 @@ function createEmptyState(): MultiAgentState {
     eca_summary: null,
     vessel_name: null,
     vessel_profile: null,
+    hull_performance: null,
+    hull_performance_charts: null,
     // Vessel performance (Hull/Machinery agents)
     vessel_identifiers: undefined,
     noon_reports: undefined,

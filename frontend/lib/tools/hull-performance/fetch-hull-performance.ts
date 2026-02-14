@@ -11,12 +11,18 @@
 
 import { z } from 'zod';
 import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
-import { HullPerformanceClient } from '@/lib/api-clients/hull-performance-client';
+import {
+  HullPerformanceClient,
+  type IHullPerformanceDataSource,
+} from '@/lib/api-clients/hull-performance-client';
+import { HullPerformanceDbClient } from '@/lib/api-clients/hull-performance-db-client';
 import { HullPerformanceRepository } from '@/lib/repositories/hull-performance-repository';
 import { HullPerformanceService } from '@/lib/services/hull-performance-service';
 import { ServiceContainer } from '@/lib/repositories/service-container';
 import { RedisCache } from '@/lib/repositories/cache-client';
 import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
+import path from 'path';
+import { config as loadEnv } from 'dotenv';
 
 // ============================================================================
 // Input schema
@@ -81,6 +87,20 @@ export async function fetchHullPerformance(
   input: FetchHullPerformanceInput,
   correlationId: string
 ): Promise<FetchHullPerformanceOutput> {
+  // Runtime fallback: ensure hull DB env is loaded (same as test script)
+  if (typeof process !== 'undefined' && process.cwd) {
+    const cwd = process.cwd();
+    const hasHullEnv = process.env.HULL_PERFORMANCE_SOURCE != null || process.env.HULL_PERFORMANCE_DB_HOST != null;
+    if (!hasHullEnv) {
+      try {
+        loadEnv({ path: path.resolve(cwd, '.env') });
+        loadEnv({ path: path.resolve(cwd, '..', '.env') });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   const vesselIdentifier = {
     imo: input.vessel_identifier.imo,
     name: input.vessel_identifier.name,
@@ -104,7 +124,16 @@ export async function fetchHullPerformance(
 
   const container = ServiceContainer.getInstance();
   const cache = container.getCache() as RedisCache;
-  const client = new HullPerformanceClient(correlationId);
+  const useDb = process.env.HULL_PERFORMANCE_SOURCE === 'db';
+  const table = process.env.HULL_PERFORMANCE_DB_TABLE ?? 'NewTable';
+  if (useDb) {
+    console.log(`[Hull] Using DB (${table})`);
+  } else {
+    console.log('[Hull] Using API (HULL_PERFORMANCE_SOURCE not "db")');
+  }
+  const client: IHullPerformanceDataSource = useDb
+    ? new HullPerformanceDbClient(correlationId)
+    : new HullPerformanceClient(correlationId);
   const repository = new HullPerformanceRepository(correlationId, {
     client,
     redis: cache,

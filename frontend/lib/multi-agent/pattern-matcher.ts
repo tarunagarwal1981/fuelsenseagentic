@@ -28,6 +28,7 @@ export interface PatternMatch {
     | 'bunker_planning'
     | 'compliance'
     | 'vessel_info'
+    | 'hull_analysis'
     | 'ambiguous';
   /** Recommended agent to call */
   agent?:
@@ -38,6 +39,7 @@ export interface PatternMatch {
     | 'vessel_info_agent'
     | 'vessel_selection_agent'
     | 'rob_tracking_agent'
+    | 'hull_performance_agent'
     | 'entity_extractor'
     | string;
   /** Confidence score 0-100 */
@@ -195,6 +197,7 @@ function intentToPatternType(agent_id: string): PatternMatch['type'] {
     compliance_agent: 'compliance',
     vessel_selection_agent: 'vessel_info', // vessel-related, closest match
     rob_tracking_agent: 'bunker_planning', // ROB/fuel related
+    hull_performance_agent: 'hull_analysis',
     entity_extractor: 'vessel_info', // fallback for entity extraction
   };
   return mapping[agent_id] ?? 'ambiguous';

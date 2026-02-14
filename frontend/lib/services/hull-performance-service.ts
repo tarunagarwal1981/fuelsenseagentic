@@ -173,9 +173,12 @@ export class HullPerformanceService {
 
       const records = result.data;
       const { metadata } = result;
-      const totalRecords = records.length;
 
-      if (records.length === 0) {
+      // Filter to only records that match the requested vessel (avoid showing another vessel's data)
+      const recordsForVessel = this.filterRecordsByVessel(records, vesselIdentifier);
+      const totalRecords = recordsForVessel.length;
+
+      if (recordsForVessel.length === 0) {
         const durationMs = Date.now() - startMs;
         logCustomEvent(
           'hull_performance_analysis_complete',
@@ -186,18 +189,52 @@ export class HullPerformanceService {
             duration_ms: durationMs,
             total_records: 0,
             cache_hit: metadata.cache_hit,
+            filtered_out: records.length - recordsForVessel.length,
           },
           'info'
         );
         return null;
       }
 
-      const sorted = [...records].sort(
+      if (recordsForVessel.length < records.length) {
+        logCustomEvent(
+          'hull_performance_vessel_filter',
+          this.correlationId,
+          {
+            vessel_imo: vesselIdentifier.imo ?? undefined,
+            vessel_name: vesselIdentifier.name ?? undefined,
+            requested: records.length,
+            after_filter: recordsForVessel.length,
+          },
+          'info'
+        );
+      }
+
+      const sorted = [...recordsForVessel].sort(
         (a, b) => new Date(b.report_date).getTime() - new Date(a.report_date).getTime()
       );
-      const latestRecord = sorted[0];
-      const imoStr = String(latestRecord.vessel_imo ?? vesselIdentifier.imo ?? '');
-      const nameStr = latestRecord.vessel_name || vesselIdentifier.name || '';
+      // Use latest record that has at least one non-zero/non-null key metric (avoid all-zero stubs)
+      const latestRecord = this.findLatestMeaningfulRecord(sorted) ?? sorted[0];
+      if (!this.hasMeaningfulMetrics(latestRecord)) {
+        const durationMs = Date.now() - startMs;
+        logCustomEvent(
+          'hull_performance_analysis_complete',
+          this.correlationId,
+          {
+            vessel_imo: vesselIdentifier.imo ?? undefined,
+            vessel_name: vesselIdentifier.name ?? undefined,
+            duration_ms: durationMs,
+            total_records: totalRecords,
+            cache_hit: metadata.cache_hit,
+            reason: 'no_meaningful_metrics',
+          },
+          'info'
+        );
+        return null;
+      }
+      // Prefer requested identifier for display so output matches what the user asked for
+      const imoStr = String(vesselIdentifier.imo ?? latestRecord.vessel_imo ?? '');
+      const nameStr = vesselIdentifier.name || latestRecord.vessel_name || '';
 
       const { condition, indicator, message } = this.determineHullCondition(
         latestRecord.hull_roughness_power_loss
@@ -215,7 +252,7 @@ export class HullPerformanceService {
         'info'
       );
 
-      const trendData = this.transformToTrendData(records);
+      const trendData = this.transformToTrendData(recordsForVessel);
       logCustomEvent(
         'trend_data_transformed',
         this.correlationId,
@@ -240,7 +277,7 @@ export class HullPerformanceService {
         hull_condition: condition,
         condition_indicator: indicator,
         condition_message: message,
-        latest_metrics: this.extractLatestMetrics(latestRecord),
+        latest_metrics: this.buildLatestMetricsFromNonZero(sorted),
         component_breakdown: {
           hull_power_loss: latestRecord.hull_roughness_power_loss,
           engine_power_loss: latestRecord.engine_power_loss,
@@ -302,6 +339,66 @@ export class HullPerformanceService {
       });
       return null;
     }
+  }
+
+  /**
+   * Filter records to only those for the requested vessel (by IMO or normalized name).
+   * Ensures we never show another vessel's metrics when the API returns mixed/wrong data.
+   */
+  private filterRecordsByVessel(
+    records: HullPerformanceRecord[],
+    vesselIdentifier: { imo?: string; name?: string }
+  ): HullPerformanceRecord[] {
+    const requestedImo =
+      vesselIdentifier.imo != null && vesselIdentifier.imo !== ''
+        ? parseInt(String(vesselIdentifier.imo).replace(/\D/g, ''), 10)
+        : null;
+    const requestedNameNorm =
+      vesselIdentifier.name != null && vesselIdentifier.name.trim() !== ''
+        ? this.normalizeVesselName(vesselIdentifier.name)
+        : '';
+
+    if (requestedImo == null && !requestedNameNorm) return records;
+
+    return records.filter((r) => {
+      if (requestedImo != null && Number(r.vessel_imo) === requestedImo) return true;
+      if (requestedNameNorm && this.normalizeVesselName(r.vessel_name) === requestedNameNorm)
+        return true;
+      return false;
+    });
+  }
+
+  /** Normalize vessel name for comparison: trim, uppercase, collapse spaces. */
+  private normalizeVesselName(name: string): string {
+    return String(name ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  /**
+   * True if the record has at least one meaningful (non-zero, non-null) key metric.
+   */
+  private hasMeaningfulMetrics(r: HullPerformanceRecord): boolean {
+    return (
+      (r.hull_roughness_power_loss != null && r.hull_roughness_power_loss > 0) ||
+      (r.consumption != null && r.consumption > 0) ||
+      (r.speed != null && r.speed > 0) ||
+      (r.predicted_consumption != null && r.predicted_consumption > 0) ||
+      (r.hull_roughness_speed_loss != null && r.hull_roughness_speed_loss > 0) ||
+      (r.hull_excess_fuel_oil != null && r.hull_excess_fuel_oil > 0) ||
+      (r.hull_excess_fuel_oil_mtd != null && r.hull_excess_fuel_oil_mtd > 0)
+    );
+  }
+
+  /**
+   * From records sorted newest-first, return the first record that has at least one
+   * non-zero/non-null key metric. If none, returns undefined.
+   */
+  private findLatestMeaningfulRecord(
+    sortedNewestFirst: HullPerformanceRecord[]
+  ): HullPerformanceRecord | undefined {
+    return sortedNewestFirst.find((r) => this.hasMeaningfulMetrics(r));
   }
 
   /**
@@ -371,6 +468,38 @@ export class HullPerformanceService {
       actual_consumption: latestRecord.consumption,
       predicted_consumption: latestRecord.predicted_consumption,
       actual_speed: latestRecord.speed,
+    };
+  }
+
+  /**
+   * Build latest_metrics by taking, for each field, the first non-zero/non-null value
+   * when scanning records newest-first. Uses report_date from the record that supplies
+   * the primary metric (excess_power_pct) so the "Latest metrics (date)" label is meaningful.
+   */
+  private buildLatestMetricsFromNonZero(
+    sortedNewestFirst: HullPerformanceRecord[]
+  ): HullPerformanceAnalysis['latest_metrics'] {
+    const pick = (getter: (r: HullPerformanceRecord) => number): number => {
+      const r = sortedNewestFirst.find((rec) => {
+        const v = getter(rec);
+        return v != null && !Number.isNaN(v) && v > 0;
+      });
+      return r ? getter(r) : 0;
+    };
+    const primaryRecord = sortedNewestFirst.find(
+      (r) => r.hull_roughness_power_loss != null && r.hull_roughness_power_loss > 0
+    ) ?? sortedNewestFirst.find((r) => r.consumption != null && r.consumption > 0)
+    ?? sortedNewestFirst[0];
+    const report_date = primaryRecord?.report_date ?? '';
+    return {
+      report_date,
+      excess_power_pct: pick((r) => r.hull_roughness_power_loss),
+      speed_loss_pct: pick((r) => r.hull_roughness_speed_loss),
+      excess_fuel_consumption_pct: pick((r) => r.hull_excess_fuel_oil),
+      excess_fuel_consumption_mtd: pick((r) => r.hull_excess_fuel_oil_mtd),
+      actual_consumption: pick((r) => r.consumption),
+      predicted_consumption: pick((r) => r.predicted_consumption),
+      actual_speed: pick((r) => r.speed),
     };
   }
 

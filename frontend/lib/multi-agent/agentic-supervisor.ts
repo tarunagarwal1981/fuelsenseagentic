@@ -28,7 +28,7 @@ import { LLMFactory } from './llm-factory';
 import { AgentRegistry } from './registry';
 import type { MultiAgentState, ReasoningStep, RoutingMetadata } from './state';
 import { matchQueryPattern, type PatternMatch } from './pattern-matcher';
-import { makeRoutingDecision, CONFIDENCE_THRESHOLDS, type DecisionResult } from './decision-framework';
+import { makeRoutingDecision, CONFIDENCE_THRESHOLDS, hasPrerequisites, type DecisionResult } from './decision-framework';
 import { logIntentClassification, hashQueryForIntent } from '@/lib/monitoring/intent-classification-logger';
 import { SupervisorPromptGenerator } from './supervisor-prompt-generator';
 
@@ -289,32 +289,66 @@ export async function reasoningSupervisor(
   // ============================================================================
   
   if (decision.decision === 'immediate_action' && decision.agent) {
-    console.log(`\n🎯 [TIER-2] HIGH CONFIDENCE - Direct routing to ${decision.agent}`);
-    
+    // Hull analysis requires vessel_identifiers; route to entity_extractor first when missing.
+    // If entity_extractor already failed, route to finalize to avoid retry loop.
+    let targetAgent: string;
+    if (
+      decision.agent === 'hull_performance_agent' &&
+      !hasPrerequisites('hull_performance_agent', state)
+    ) {
+      targetAgent =
+        state.agent_status?.entity_extractor === 'failed'
+          ? 'finalize'
+          : 'entity_extractor';
+    } else {
+      targetAgent = decision.agent;
+    }
+
+    if (targetAgent === 'finalize' && decision.agent === 'hull_performance_agent') {
+      console.log(
+        `\n🎯 [TIER-2] Entity extractor already failed - routing to finalize to avoid retry loop`
+      );
+    } else if (targetAgent !== decision.agent) {
+      console.log(
+        `\n🎯 [TIER-2] Hull analysis without vessel_identifiers - routing to entity_extractor first`
+      );
+    } else {
+      console.log(`\n🎯 [TIER-2] HIGH CONFIDENCE - Direct routing to ${decision.agent}`);
+    }
+
     const step: ReasoningStep = {
       step_number: reasoningStepCount + 1,
       thought: decision.reason,
       action: 'call_agent',
-      action_params: { agent: decision.agent },
-      observation: `Pattern match with ${decision.confidence}% confidence → ${decision.agent}`,
+      action_params: { agent: targetAgent },
+      observation:
+        targetAgent === 'finalize' && decision.agent === 'hull_performance_agent'
+          ? 'Entity extraction failed; finalizing with error message.'
+          : targetAgent !== decision.agent
+            ? 'Hull analysis requires vessel identifiers; running entity extractor first.'
+            : `Pattern match with ${decision.confidence}% confidence → ${decision.agent}`,
       timestamp: new Date(),
     };
 
     const routing_metadata = buildRoutingMetadata(patternMatch, decision);
-    logRoutingDecision(query, state.correlation_id || 'unknown', routing_metadata);
+    const effectiveMetadata =
+      targetAgent !== decision.agent
+        ? { ...routing_metadata, target_agent: targetAgent as 'entity_extractor' | 'finalize' }
+        : routing_metadata;
+    logRoutingDecision(query, state.correlation_id || 'unknown', effectiveMetadata);
     console.log('📋 [AGENTIC-SUPERVISOR] Setting routing_metadata:', {
-      matched_intent: routing_metadata.matched_intent,
-      target_agent: routing_metadata.target_agent,
-      classification_method: routing_metadata.classification_method,
+      matched_intent: effectiveMetadata.matched_intent,
+      target_agent: effectiveMetadata.target_agent,
+      classification_method: effectiveMetadata.classification_method,
     });
-    
+
     return {
       ...originalIntentUpdate,
-      next_agent: decision.agent,
+      next_agent: targetAgent,
       current_thought: decision.reason,
       reasoning_history: [step],
       needs_clarification: false,
-      routing_metadata,
+      routing_metadata: effectiveMetadata,
     };
   }
   
@@ -412,7 +446,7 @@ export async function reasoningSupervisor(
   };
   
   // Execute action (pass patternMatch for routing_metadata)
-  const tier3Result = executeReasoningAction(reasoning, state, step, patternMatch);
+  const tier3Result = await executeReasoningAction(reasoning, state, step, patternMatch);
   return { ...originalIntentUpdate, ...tier3Result };
 }
 
@@ -1030,6 +1064,47 @@ async function executeReasoningAction(
   }
 }
 
+/** Hull circuit breaker: after 2 failed attempts, finalize instead of retrying */
+const HULL_CIRCUIT_BREAKER_THRESHOLD = 2;
+
+function checkHullCircuitBreaker(
+  state: MultiAgentState,
+  step: ReasoningStep,
+  routing_metadata: RoutingMetadata,
+  reasoningThought: string
+): Partial<MultiAgentState> | null {
+  const hullCallCount = state.agent_call_counts?.hull_performance_agent ?? 0;
+  const hullFailed = !!state.agent_errors?.hull_performance_agent;
+  if (hullFailed && hullCallCount >= HULL_CIRCUIT_BREAKER_THRESHOLD) {
+    console.error(
+      '🚨 [AGENTIC-SUPERVISOR] Hull circuit breaker triggered after',
+      hullCallCount,
+      'attempts, routing to finalize'
+    );
+    step.observation = 'Hull performance data could not be loaded after multiple attempts';
+    return {
+      next_agent: 'finalize',
+      current_thought: reasoningThought,
+      reasoning_history: [step],
+      needs_clarification: false,
+      routing_metadata: { ...routing_metadata, target_agent: 'finalize' },
+      agent_context: {
+        ...state.agent_context,
+        finalize: {
+          complexity: (state.agent_context?.finalize?.complexity ?? 'high') as 'low' | 'medium' | 'high',
+          needs_weather_analysis: state.agent_context?.finalize?.needs_weather_analysis ?? false,
+          needs_bunker_analysis: state.agent_context?.finalize?.needs_bunker_analysis ?? false,
+          error_mode: true as const,
+          error_type: 'hull_unavailable' as const,
+          error_message: 'Hull performance data could not be loaded after multiple attempts.',
+          partial_data_available: !!state.vessel_specs || !!state.vessel_identifiers,
+        },
+      },
+    };
+  }
+  return null;
+}
+
 /**
  * Handle call_agent action
  */
@@ -1051,6 +1126,28 @@ function handleCallAgent(
     };
   }
 
+  // Hull flow: Tier 3 often says vessel_info_agent, but we need vessel_identifiers first.
+  // Route to entity_extractor so it extracts vessel name (e.g. "Neptune star") from the query.
+  const noVesselIds =
+    !state.vessel_identifiers?.names?.length && !state.vessel_identifiers?.imos?.length;
+  if (
+    agentName === 'vessel_info_agent' &&
+    state.original_intent === 'hull_analysis' &&
+    noVesselIds
+  ) {
+    console.log(
+      '✅ [AGENTIC-SUPERVISOR] hull_analysis without vessel_identifiers, routing to entity_extractor first'
+    );
+    step.observation = 'Hull query needs vessel identifiers, running entity extractor first';
+    return {
+      next_agent: 'entity_extractor',
+      current_thought: reasoning.thought,
+      reasoning_history: [step],
+      needs_clarification: false,
+      routing_metadata: { ...routing_metadata, target_agent: 'entity_extractor' },
+    };
+  }
+
   // Task-complete guard: if vessel_info_agent already succeeded and we have
   // vessel_specs, avoid re-calling it (prevents infinite loop for "how many vessels").
   if (
@@ -1058,6 +1155,45 @@ function handleCallAgent(
     state.agent_status?.vessel_info_agent === 'success' &&
     state.vessel_specs?.length
   ) {
+    // Hull exception: do not finalize until we have hull data
+    if (state.original_intent === 'hull_analysis' && !state.hull_performance) {
+      // Hull agent needs vessel_identifiers (e.g. "Neptune star"); get them from entity_extractor first if missing
+      const noVesselIdsHere =
+        !state.vessel_identifiers?.names?.length && !state.vessel_identifiers?.imos?.length;
+      if (noVesselIdsHere) {
+        console.log(
+          '✅ [AGENTIC-SUPERVISOR] hull_analysis without vessel_identifiers, routing to entity_extractor first'
+        );
+        step.observation = 'Hull query needs vessel identifiers, running entity extractor first';
+        return {
+          next_agent: 'entity_extractor',
+          current_thought: 'Need vessel name from query before hull performance',
+          reasoning_history: [step],
+          needs_clarification: false,
+          routing_metadata: { ...routing_metadata, target_agent: 'entity_extractor' },
+        };
+      }
+      const hullBreaker = checkHullCircuitBreaker(
+        state,
+        step,
+        routing_metadata,
+        'Vessel info retrieved, but hull data unavailable after repeated attempts'
+      );
+      if (hullBreaker) return hullBreaker;
+      console.log(
+        '✅ [AGENTIC-SUPERVISOR] hull_analysis without hull_performance, routing to hull_performance_agent'
+      );
+      step.observation = 'Vessel data available, fetching hull performance before finalize';
+      const hullCount = state.agent_call_counts?.hull_performance_agent ?? 0;
+      return {
+        next_agent: 'hull_performance_agent',
+        current_thought: 'Vessel info retrieved, fetching hull performance',
+        reasoning_history: [step],
+        needs_clarification: false,
+        routing_metadata: { ...routing_metadata, target_agent: 'hull_performance_agent' },
+        agent_call_counts: { ...state.agent_call_counts, hull_performance_agent: hullCount + 1 },
+      };
+    }
     console.log(
       '✅ [AGENTIC-SUPERVISOR] vessel_info_agent already succeeded with vessel_specs, routing to finalize'
     );
@@ -1127,6 +1263,28 @@ function handleCallAgent(
         },
       };
     }
+  }
+
+  // Hull circuit breaker when Tier 3 says hull_performance_agent
+  if (agentName === 'hull_performance_agent') {
+    const hullBreaker = checkHullCircuitBreaker(
+      state,
+      step,
+      routing_metadata,
+      reasoning.thought
+    );
+    if (hullBreaker) return hullBreaker;
+    const hullCount = state.agent_call_counts?.hull_performance_agent ?? 0;
+    console.log(`🎯 [AGENTIC-SUPERVISOR] Routing to: ${agentName}`);
+    step.observation = `Routing to ${agentName}`;
+    return {
+      next_agent: agentName,
+      current_thought: reasoning.thought,
+      reasoning_history: [step],
+      needs_clarification: false,
+      routing_metadata,
+      agent_call_counts: { ...state.agent_call_counts, hull_performance_agent: hullCount + 1 },
+    };
   }
 
   console.log(`🎯 [AGENTIC-SUPERVISOR] Routing to: ${agentName}`);

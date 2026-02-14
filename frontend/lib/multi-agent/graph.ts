@@ -20,6 +20,7 @@ import {
 // Import agent-nodes to trigger agent registrations
 import './agent-nodes';
 import { entityExtractorAgentNode } from './agents/entity-extractor-agent';
+import { hullPerformanceAgentNode } from './agents/hull-performance-agent';
 import {
   supervisorAgentNode,
   routeAgentNode,
@@ -312,6 +313,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   .addNode('bunker_agent', bunkerAgentNode)    // Now deterministic workflow
   .addNode('vessel_selection_agent', vesselSelectionAgentNode)  // Multi-vessel comparison
   .addNode('vessel_info_agent', vesselInfoAgentNode)  // Vessel master data, count, list (VesselDetails API)
+  .addNode('hull_performance_agent', hullPerformanceAgentNode)  // Hull condition, fouling, excess power (fetch_hull_performance)
   .addNode('finalize', finalizeNode)           // Still LLM-based
 
   // ========================================================================
@@ -336,6 +338,7 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
     bunker_agent: 'bunker_agent',
     vessel_selection_agent: 'vessel_selection_agent',
     vessel_info_agent: 'vessel_info_agent',
+    hull_performance_agent: 'hull_performance_agent',
     finalize: 'finalize',
     supervisor: 'supervisor',  // AGENTIC: Allow supervisor self-loop for continued reasoning
     [END]: END,
@@ -375,6 +378,11 @@ const workflow = new StateGraph(MultiAgentStateAnnotation)
   // Vessel Info Agent Workflow (goes back to supervisor)
   // ========================================================================
   .addEdge('vessel_info_agent', 'supervisor')
+
+  // ========================================================================
+  // Hull Performance Agent Workflow (deterministic - goes back to supervisor)
+  // ========================================================================
+  .addEdge('hull_performance_agent', 'supervisor')
 
   // ========================================================================
   // Finalize to End

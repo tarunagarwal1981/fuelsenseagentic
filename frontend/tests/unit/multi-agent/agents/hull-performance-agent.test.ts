@@ -115,6 +115,28 @@ describe('hullPerformanceAgentNode', () => {
     );
   });
 
+  it('uses agent_overrides when vessel_identifiers is missing (recovery path)', async () => {
+    mockExecuteFetchHullPerformanceTool.mockResolvedValue({ success: true, data: mockAnalysis() });
+
+    const state = {
+      ...baseState,
+      vessel_identifiers: undefined,
+      agent_overrides: {
+        hull_performance_agent: { vessel_name: 'Neptune star' },
+      },
+    } as MultiAgentState;
+
+    const result = await hullPerformanceAgentNode(state);
+
+    expect(mockExecuteFetchHullPerformanceTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vessel_identifier: { name: 'Neptune star', imo: undefined },
+      }),
+      expect.any(Object)
+    );
+    expect(result?.agent_status?.hull_performance_agent).toBe('success');
+  });
+
   it('returns failed state when vessel_identifiers is missing', async () => {
     const state = { ...baseState, vessel_identifiers: undefined } as MultiAgentState;
 

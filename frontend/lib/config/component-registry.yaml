@@ -178,7 +178,7 @@ fallback:
   strategy: llm_synthesis
   
   llm_config:
-    model: claude-sonnet-4
+    model: claude-sonnet-4-5
     temperature: 0.3
     max_tokens: 2000
     

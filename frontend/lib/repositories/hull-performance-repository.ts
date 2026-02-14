@@ -8,10 +8,10 @@
  * Logs fetch/cache events to Axiom. Does not throw; returns structured responses with success/error.
  */
 
-import { HullPerformanceClient } from '@/lib/api-clients/hull-performance-client';
 import type {
   HullPerformanceRecord,
   VesselPerformanceModelRecord,
+  IHullPerformanceDataSource,
 } from '@/lib/api-clients/hull-performance-client';
 import { RedisCache } from './cache-client';
 import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
@@ -44,14 +44,14 @@ export type GetVesselPerformanceDataResult = {
 };
 
 export class HullPerformanceRepository {
-  private client: HullPerformanceClient;
+  private client: IHullPerformanceDataSource;
   private redis: RedisCache;
   private correlationId: string;
 
   constructor(
     correlationId: string,
     dependencies: {
-      client: HullPerformanceClient;
+      client: IHullPerformanceDataSource;
       redis: RedisCache;
     }
   ) {
@@ -139,11 +139,22 @@ export class HullPerformanceRepository {
     );
 
     try {
-      // L1: Redis
-      const cached = await this.redis.get(cacheKey) as
-        | { data: HullPerformanceRecord[]; date_range: { start: string; end: string } }
-        | null;
-      if (cached && Array.isArray(cached.data)) {
+      // L1: Redis (on error, fall through to L2 so DB is still tried)
+      let cached: { data: HullPerformanceRecord[]; date_range?: { start: string; end: string } } | null = null;
+      try {
+        cached = await this.redis.get(cacheKey) as
+          | { data: HullPerformanceRecord[]; date_range: { start: string; end: string } }
+          | null;
+      } catch (redisErr) {
+        const msg = redisErr instanceof Error ? redisErr.message : String(redisErr);
+        logCustomEvent(
+          'hull_performance_redis_error',
+          this.correlationId,
+          { error: msg, cache_key: cacheKey, falling_through_to_db: true },
+          'warn'
+        );
+      }
+      if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
         const durationMs = Date.now() - startMs;
         logCustomEvent(
           'hull_performance_cache_hit',
@@ -199,14 +210,27 @@ export class HullPerformanceRepository {
         const imoNum = parseInt(String(vesselIdentifier.imo).replace(/\D/g, ''), 10);
         if (Number.isFinite(imoNum)) params.vessel_imo = imoNum;
       }
-      if (vesselIdentifier.name != null) params.vessel_name = vesselIdentifier.name;
+      if (vesselIdentifier.name != null)
+        params.vessel_name = vesselIdentifier.name.trim().toUpperCase();
 
       const data = await this.client.getHullPerformance(params);
+      console.log(
+        '[Hull Repo] getHullPerformance returned',
+        data.length,
+        'rows',
+        data.length === 0 ? { params } : ''
+      );
       const payload = {
         data,
         date_range: { start: startDate, end: endDate },
       };
-      await this.redis.set(cacheKey, payload, HULL_PERF_TTL_SEC);
+      if (data.length > 0) {
+        try {
+          await this.redis.set(cacheKey, payload, HULL_PERF_TTL_SEC);
+        } catch {
+          // ignore Redis set failure; we still return DB data
+        }
+      }
 
       const durationMs = Date.now() - startMs;
       logCustomEvent(
@@ -235,6 +259,7 @@ export class HullPerformanceRepository {
     } catch (err) {
       const durationMs = Date.now() - startMs;
       const message = err instanceof Error ? err.message : String(err);
+      console.error('[Hull Repo] getVesselPerformanceData error:', message);
       logError(this.correlationId, err instanceof Error ? err : new Error(message), {
         repository: 'HullPerformanceRepository',
         method: 'getVesselPerformanceData',

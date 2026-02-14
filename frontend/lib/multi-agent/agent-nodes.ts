@@ -103,6 +103,7 @@ import { portFinderInputSchema } from '@/lib/tools/port-finder';
 import { priceFetcherInputSchema } from '@/lib/tools/price-fetcher';
 import { bunkerAnalyzerInputSchema } from '@/lib/tools/bunker-analyzer';
 import { ecaZoneValidatorInputSchema } from '@/lib/tools/eca-zone-validator';
+import { fetchHullPerformanceInputSchema } from '@/lib/tools/hull-performance/fetch-hull-performance';
 
 // Import weather agent tools from tools.ts
 import {
@@ -4745,7 +4746,7 @@ async function synthesizeTextOnlyResponse(
   state: MultiAgentState,
   llmConfig?: { model: string; temperature: number; max_tokens: number }
 ): Promise<string> {
-  const modelName = llmConfig?.model || 'claude-sonnet-4';
+  const modelName = llmConfig?.model || 'claude-sonnet-4-5';
   const temperature = llmConfig?.temperature ?? 0.3;
   const maxTokens = llmConfig?.max_tokens ?? 2000;
 
@@ -4992,6 +4993,31 @@ ${period.days} days (${period.start_date} to ${period.end_date}) · ${period.tot
       formatted_response: null,
       synthesized_insights: null,
       messages: [new AIMessage({ content: hullPerformanceResponse })],
+      agent_status: {
+        ...(state.agent_status || {}),
+        finalize: 'success',
+      },
+    };
+  }
+
+  // ========================================================================
+  // HULL UNAVAILABLE (circuit breaker) - show error instead of Phase 2 boilerplate
+  // ========================================================================
+  if (
+    state.original_intent === 'hull_analysis' &&
+    state.agent_context?.finalize?.error_type === 'hull_unavailable'
+  ) {
+    console.log('🚢 [FINALIZE] Hull unavailable (circuit breaker), returning error message');
+    const hullUnavailableMessage = `Hull performance data could not be loaded after multiple attempts. Please check that the vessel name is correct and try again. If the problem persists, the hull data source may be temporarily unavailable.`;
+    const agentDuration = Date.now() - agentStartTime;
+    recordAgentTime('finalize', agentDuration);
+    recordAgentExecution('finalize', agentDuration, true);
+    logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
+    return {
+      final_recommendation: hullUnavailableMessage,
+      formatted_response: null,
+      synthesized_insights: null,
+      messages: [new AIMessage({ content: hullUnavailableMessage })],
       agent_status: {
         ...(state.agent_status || {}),
         finalize: 'success',
@@ -5475,6 +5501,39 @@ AgentRegistry.registerAgent({
   */
   prerequisites: ['route_data'],
   outputs: ['bunker_ports', 'port_weather_status', 'port_prices', 'bunker_analysis']
+});
+
+// Register Hull Performance Agent (deterministic: fetches hull condition, fouling, excess power via fetch_hull_performance)
+AgentRegistry.registerAgent({
+  agent_name: 'hull_performance_agent',
+  description:
+    'Fetches hull performance analysis: hull condition, fouling, excess power %, speed loss, trends. Uses fetch_hull_performance with vessel_identifier and optional time_period. Requires vessel_identifiers from entity extractor.',
+  available_tools: [
+    {
+      tool_name: 'fetch_hull_performance',
+      description: 'Fetch hull performance metrics, condition analysis, component breakdown, and trends for a vessel',
+      when_to_use: [
+        'User asks about hull performance, hull condition, fouling, excess power, performance trends',
+        'vessel_identifiers exist in state'
+      ],
+      when_not_to_use: [
+        'vessel_identifiers missing (run entity_extractor first)',
+        'hull_performance already in state'
+      ],
+      prerequisites: ['vessel_identifiers'],
+      produces: ['hull_performance'],
+      schema: zodSchemaToJsonSchema(fetchHullPerformanceInputSchema),
+    },
+  ],
+  prerequisites: ['vessel_identifiers'],
+  outputs: ['hull_performance'],
+  is_deterministic: true,
+  workflow_steps: [
+    'Validate vessel_identifiers in state',
+    'Determine time period from query or default 90 days',
+    'Call fetch_hull_performance tool',
+    'Store hull_performance in state',
+  ],
 });
 
 // Register Finalize Agent (synthesizes results, always last in execution)

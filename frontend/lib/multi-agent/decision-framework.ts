@@ -182,6 +182,8 @@ const INTENT_REQUIREMENTS: Record<string, (state: MultiAgentState) => boolean> =
   bunker_planning: (s) => !!s.route_data && !!s.bunker_analysis,
   weather_analysis: (s) => !!s.route_data && !!s.weather_forecast,
   compliance: (s) => !!s.route_data && !!s.compliance_data,
+  hull_analysis: (s) =>
+    s.agent_status?.hull_performance_agent === 'success' && s.hull_performance != null,
 };
 
 /**
@@ -234,6 +236,22 @@ function determineNextAgent(match: PatternMatch, state: MultiAgentState): string
   if (intent === 'compliance') {
     if (!state.route_data) return 'route_agent';
     if (!state.compliance_data) return 'compliance_agent';
+    return null;
+  }
+
+  // Hull analysis: entity_extractor -> hull_performance_agent
+  if (intent === 'hull_analysis') {
+    const hasVesselIds =
+      state.vessel_identifiers &&
+      ((state.vessel_identifiers.names?.length ?? 0) > 0 ||
+        (state.vessel_identifiers.imos?.length ?? 0) > 0);
+    if (!hasVesselIds) return 'entity_extractor';
+    if (
+      state.agent_status?.hull_performance_agent !== 'success' ||
+      state.hull_performance == null
+    ) {
+      return 'hull_performance_agent';
+    }
     return null;
   }
 
@@ -291,6 +309,14 @@ export function hasPrerequisites(agent: string, state: MultiAgentState): boolean
       // Route agent has no prerequisites
       return true;
       
+    case 'hull_performance_agent':
+      // Hull performance needs vessel_identifiers from entity extractor
+      return !!(
+        state.vessel_identifiers &&
+        ((state.vessel_identifiers.names?.length ?? 0) > 0 ||
+          (state.vessel_identifiers.imos?.length ?? 0) > 0)
+      );
+      
     default:
       return true;
   }
@@ -309,6 +335,16 @@ export function getMissingPrerequisites(agent: string, state: MultiAgentState): 
       
     case 'compliance_agent':
       if (!state.route_data) missing.push('route_data');
+      break;
+      
+    case 'hull_performance_agent':
+      if (
+        !state.vessel_identifiers ||
+        ((state.vessel_identifiers.names?.length ?? 0) === 0 &&
+          (state.vessel_identifiers.imos?.length ?? 0) === 0)
+      ) {
+        missing.push('vessel_identifiers');
+      }
       break;
   }
   

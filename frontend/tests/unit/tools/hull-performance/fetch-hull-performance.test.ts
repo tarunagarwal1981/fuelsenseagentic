@@ -53,6 +53,7 @@ describe('fetch-hull-performance tool', () => {
     mockRedis.get.mockResolvedValue(null);
     mockRedis.set.mockResolvedValue(undefined);
     mockGetVesselPerformanceModel.mockResolvedValue([]);
+    process.env.HULL_PERFORMANCE_SOURCE = 'api'; // use mocked API client in tests
   });
 
   describe('input validation (fetchHullPerformanceInputSchema)', () => {

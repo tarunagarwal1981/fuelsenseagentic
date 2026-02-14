@@ -84,6 +84,8 @@ async function testComplianceAgent() {
         eca_summary: null,
         vessel_name: null,
         vessel_profile: null,
+        hull_performance: null,
+        hull_performance_charts: null,
         agent_call_counts: {
           route_agent: 0,
           weather_agent: 0,

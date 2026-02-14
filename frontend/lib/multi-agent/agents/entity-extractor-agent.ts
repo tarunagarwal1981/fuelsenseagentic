@@ -15,12 +15,13 @@
  * - Runs in parallel with other early-stage agents
  */
 
-import { ChatAnthropic } from '@langchain/anthropic';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import type { MultiAgentState } from '../state';
 import { AgentRegistry } from '../registry';
 import { AgentRegistryV2 } from '../agent-registry-v2';
+import { withTimeout } from '../optimizations';
+import { LLMFactory } from '../llm-factory';
 
 // ============================================================================
 // Entity Extraction Schema
@@ -45,15 +46,47 @@ const EntityExtractionSchema = z.object({
 type EntityExtraction = z.infer<typeof EntityExtractionSchema>;
 
 // ============================================================================
-// LLM Configuration
+// LLM Configuration (via LLMFactory at invoke time: GPT-4o-mini or Claude Haiku)
 // ============================================================================
 
-const extractorLLM = new ChatAnthropic({
-  model: 'claude-haiku-4-5-20251001',
-  temperature: 0,
-  maxTokens: 500,
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+/** Timeout for entity extraction LLM call to avoid hanging on 529/slow API */
+const ENTITY_EXTRACTOR_LLM_TIMEOUT_MS = 20_000;
+
+// ============================================================================
+// Fallback: regex extraction when LLM fails (timeout / 529)
+// ============================================================================
+
+const HULL_VESSEL_NAME_PATTERNS = [
+  // "hull performance of X" or "hull condition for X"
+  /(?:hull\s+performance|hull\s+condition)\s+(?:of|for)\s+([A-Za-z0-9\s\-]+?)(?:\s+for\s|\s*$)/i,
+  // "give me hull performance of X", "show me hull condition for X"
+  /(?:give me|show me|get|fetch|check)\s+(?:me\s+)?(?:the\s+)?(?:hull\s+performance|hull\s+condition)\s+(?:of|for)\s+([A-Za-z0-9\s\-]+?)(?:\s+for\s|\s*$)/i,
+];
+
+const HULL_IMO_PATTERN = /(?:imo\s+)?(\d{7})\b/i;
+
+/**
+ * Extract a single vessel name or IMO from a hull-style query when LLM fails.
+ * Returns normalized name (uppercase) or IMO string, or null if no match.
+ */
+export function extractVesselFromHullQuery(query: string): { name?: string; imo?: string } | null {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+
+  // Try 7-digit IMO first
+  const imoMatch = trimmed.match(HULL_IMO_PATTERN);
+  if (imoMatch?.[1]) return { imo: imoMatch[1] };
+
+  // Try vessel name patterns
+  for (const re of HULL_VESSEL_NAME_PATTERNS) {
+    const match = trimmed.match(re);
+    const name = match?.[1]?.trim();
+    if (name && name.length > 0) {
+      return { name: name.toUpperCase() };
+    }
+  }
+  return null;
+}
 
 // ============================================================================
 // System Prompt
@@ -167,16 +200,42 @@ export async function entityExtractorAgentNode(
       return {};
     }
 
+    // Regex-first: for hull-style queries, skip LLM and use fast extraction
+    const regexFirst = extractVesselFromHullQuery(userQuery);
+    if (regexFirst) {
+      const duration = Date.now() - startTime;
+      console.log(
+        `[ENTITY-EXTRACTOR] ✅ Regex-first extracted in ${duration}ms:`,
+        regexFirst.name ?? `IMO ${regexFirst.imo}`
+      );
+      return {
+        vessel_identifiers: {
+          names: regexFirst.name ? [regexFirst.name] : [],
+          imos: regexFirst.imo ? [regexFirst.imo] : [],
+        },
+        agent_status: {
+          ...(state.agent_status || {}),
+          entity_extractor: 'success',
+        },
+      };
+    }
+
     // Extract entities using LLM - invoke and parse JSON response
     // Support mock response for testing (skips actual LLM call)
+    // Timeout to avoid hanging on 529 Overloaded or slow Anthropic API
     let rawContent: string | object;
     if (mockResponse !== undefined) {
       rawContent = mockResponse;
     } else {
-      const response = await extractorLLM.invoke([
-        new SystemMessage(ENTITY_EXTRACTION_PROMPT),
-        new HumanMessage(userQuery),
-      ]);
+      const llm = LLMFactory.getLLMForTask('entity_extraction');
+      const response = await withTimeout(
+        llm.invoke([
+          new SystemMessage(ENTITY_EXTRACTION_PROMPT),
+          new HumanMessage(userQuery),
+        ]),
+        ENTITY_EXTRACTOR_LLM_TIMEOUT_MS,
+        `Entity extraction LLM timeout (${ENTITY_EXTRACTOR_LLM_TIMEOUT_MS / 1000}s)`
+      );
       rawContent = response.content;
     }
     const content =
@@ -230,6 +289,28 @@ export async function entityExtractorAgentNode(
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`[ENTITY-EXTRACTOR] ❌ Error after ${duration}ms:`, error);
+
+    // Fallback: try regex extraction for hull-style queries when LLM failed
+    const messages = state.messages || [];
+    const lastMessage = messages[messages.length - 1];
+    const userQuery =
+      (typeof lastMessage?.content === 'string'
+        ? lastMessage.content
+        : (lastMessage?.content as { text?: string }[])?.map((c) => c.text ?? '').join('')) || '';
+    const fallback = userQuery ? extractVesselFromHullQuery(userQuery) : null;
+    if (fallback) {
+      console.log('[ENTITY-EXTRACTOR] Fallback: extracted vessel from query (LLM failed)');
+      return {
+        vessel_identifiers: {
+          names: fallback.name ? [fallback.name] : [],
+          imos: fallback.imo ? [fallback.imo] : [],
+        },
+        agent_status: {
+          ...(state.agent_status || {}),
+          entity_extractor: 'success',
+        },
+      };
+    }
 
     return {
       agent_errors: {

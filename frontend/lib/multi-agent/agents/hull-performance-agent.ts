@@ -27,18 +27,65 @@ export async function hullPerformanceAgentNode(
       vessel: state.vessel_identifiers,
     });
 
-    // 1. Validate required state
-    if (!state.vessel_identifiers) {
-      throw new Error(
-        'No vessel identifiers found in state. Entity extractor should run first.'
-      );
+    // 1. Resolve vessel identifiers: state.vessel_identifiers or agent_overrides (recovery)
+    let ids: { names?: string[]; imos?: string[] };
+    const fromState = state.vessel_identifiers;
+    const hasFromState =
+      fromState &&
+      ((fromState.names?.length ?? 0) > 0 || (fromState.imos?.length ?? 0) > 0);
+
+    if (hasFromState) {
+      ids = fromState;
+    } else {
+      const overrides = state.agent_overrides?.hull_performance_agent as
+        | { vessel_name?: string; name?: string; imo?: string; imos?: string[] }
+        | undefined;
+      if (overrides) {
+        const name =
+          typeof overrides.vessel_name === 'string'
+            ? overrides.vessel_name
+            : typeof overrides.name === 'string'
+              ? overrides.name
+              : undefined;
+        const imo =
+          typeof overrides.imo === 'string'
+            ? overrides.imo
+            : Array.isArray(overrides.imos) && overrides.imos.length > 0
+              ? overrides.imos[0]
+              : undefined;
+        if (name || imo) {
+          ids = {
+            names: name ? [name] : [],
+            imos: imo ? [imo] : [],
+          };
+        } else {
+          ids = { names: [], imos: [] };
+        }
+      } else {
+        ids = { names: [], imos: [] };
+      }
     }
-    const ids = state.vessel_identifiers;
-    const hasVessel =
-      (ids.names?.length ?? 0) > 0 || (ids.imos?.length ?? 0) > 0;
+
+    // Fallback: single vessel from vessel_specs (e.g. vessel_info_agent returned one vessel)
+    let hasVessel = (ids.names?.length ?? 0) > 0 || (ids.imos?.length ?? 0) > 0;
+    if (!hasVessel && state.vessel_specs?.length === 1) {
+      const spec = state.vessel_specs[0] as { name?: string; imo?: string };
+      const specName = typeof spec?.name === 'string' ? spec.name : undefined;
+      const specImo = typeof spec?.imo === 'string' ? spec.imo : undefined;
+      if (specName || specImo) {
+        ids = {
+          names: specName ? [specName] : [],
+          imos: specImo ? [specImo] : [],
+        };
+        hasVessel = true;
+      }
+    }
+
     if (!hasVessel) {
       throw new Error(
-        'Vessel identifiers are empty. Entity extractor should populate names or imos.'
+        state.vessel_identifiers
+          ? 'Vessel identifiers are empty. Entity extractor should populate names or imos.'
+          : 'No vessel identifiers found in state. Entity extractor should run first.'
       );
     }
 
@@ -98,6 +145,8 @@ export async function hullPerformanceAgentNode(
     const errMessage =
       error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
+
+    console.warn('[HULL-PERFORMANCE-AGENT] Failed:', errMessage);
 
     logAgentExecution('hull_performance_agent', correlationId, duration, 'failed', {
       error: errMessage,

@@ -39,6 +39,7 @@ function getChatOpenAI() {
 export type LLMTask = 
   | 'intent_analysis'      // Supervisor (currently uses pure logic)
   | 'intent_classification' // Map query to agent ID (GPT-4o-mini)
+  | 'entity_extraction'    // Extract vessel names/IMOs from query (GPT-4o-mini / Haiku fallback)
   | 'supervisor_planning'  // Supervisor orchestration decisions
   | 'simple_tool'          // Route, Weather agents (simple schemas)
   | 'complex_tool'         // Bunker agent (complex nested schemas)
@@ -99,6 +100,26 @@ export class LLMFactory {
         return new ChatAnthropic({
           model: 'claude-haiku-4-5-20251001',
           temperature: 0,
+          apiKey: apiKey,
+        });
+
+      case 'entity_extraction':
+        /** Extract vessel names/IMOs from query. Same as intent: GPT-4o-mini first, Haiku fallback. */
+        const OpenAIEntity = getChatOpenAI();
+        if (OpenAIEntity && process.env.OPENAI_API_KEY) {
+          console.log('🤖 [LLM-FACTORY] Using GPT-4o-mini for entity extraction');
+          return new OpenAIEntity({
+            model: 'gpt-4o-mini',
+            temperature: 0,
+            maxTokens: 500,
+            apiKey: process.env.OPENAI_API_KEY,
+          });
+        }
+        console.log('🤖 [LLM-FACTORY] Using Claude Haiku 4.5 for entity extraction (fallback)');
+        return new ChatAnthropic({
+          model: 'claude-haiku-4-5-20251001',
+          temperature: 0,
+          maxTokens: 500,
           apiKey: apiKey,
         });
         

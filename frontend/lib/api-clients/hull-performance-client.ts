@@ -69,6 +69,22 @@ export interface VesselPerformanceModelRecord {
   sea_trial_rpm: number;
 }
 
+/** Interface for hull performance data source (API client or DB client). */
+export interface IHullPerformanceDataSource {
+  getHullPerformance(params?: {
+    vessel_imo?: number;
+    vessel_name?: string;
+    start_date?: string;
+    end_date?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<HullPerformanceRecord[]>;
+  getVesselPerformanceModel(params: {
+    vessel_imo: number;
+    load_type?: 'Laden' | 'Ballast';
+  }): Promise<VesselPerformanceModelRecord[]>;
+}
+
 // ---------------------------------------------------------------------------
 // Simple circuit breaker (in-file; no dependency on tool-specific breaker)
 // ---------------------------------------------------------------------------
@@ -258,14 +274,23 @@ export class HullPerformanceClient {
         const url = `${this.baseURL}/hull-performance${query ? `?${query}` : ''}`;
         const body = await this.fetchJson(url);
         const raw = normalizeHullPerformanceResponse(body);
-        return raw.map((row) => mapToHullPerformanceRecord(row as Record<string, unknown>));
+        return raw.map((row) => mapToHullPerformanceRecord(row as unknown as Record<string, unknown>));
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const search = new URLSearchParams();
+      if (params.vessel_imo != null) search.set('vessel_imo', String(params.vessel_imo));
+      if (params.vessel_name != null) search.set('vessel_name', params.vessel_name);
+      if (params.start_date != null) search.set('start_date', params.start_date);
+      if (params.end_date != null) search.set('end_date', params.end_date);
+      if (params.limit != null) search.set('limit', String(params.limit));
+      if (params.offset != null) search.set('offset', String(params.offset));
+      const requestUrl = `${this.baseURL}/hull-performance${search.toString() ? `?${search.toString()}` : ''}`;
       logError(cid, err instanceof Error ? err : new Error(message), {
         client: 'HullPerformanceClient',
         method: 'getHullPerformance',
         params,
+        request_url: requestUrl,
       });
       throw new Error(`Hull Performance API: ${message}`);
     }
@@ -287,7 +312,7 @@ export class HullPerformanceClient {
         const url = `${this.baseURL}/vessel-performance-model-table?${search.toString()}`;
         const body = await this.fetchJson(url);
         const raw = normalizeVesselPerformanceModelResponse(body);
-        return raw.map((row) => mapToVesselPerformanceModelRecord(row as Record<string, unknown>));
+        return raw.map((row) => mapToVesselPerformanceModelRecord(row as unknown as Record<string, unknown>));
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
