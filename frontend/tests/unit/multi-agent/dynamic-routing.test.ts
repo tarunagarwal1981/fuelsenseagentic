@@ -275,11 +275,11 @@ describe('Safety Validators', () => {
   };
 
   it('should catch missing route when routing to bunker_agent', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'bunker_agent',
       route_data: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const result = SafetyValidators.validateRouteBeforeBunker(state);
 
@@ -302,11 +302,11 @@ describe('Safety Validators', () => {
   });
 
   it('should not validate when next_agent is not bunker_agent', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'route_agent',
       route_data: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const result = SafetyValidators.validateRouteBeforeBunker(state);
 
@@ -314,12 +314,12 @@ describe('Safety Validators', () => {
   });
 
   it('should catch missing bunker when routing to vessel_selection_agent', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'vessel_selection_agent',
       bunker_analysis: undefined,
       bunker_ports: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const result = SafetyValidators.validateBunkerBeforeVesselSelection(state);
 
@@ -342,11 +342,11 @@ describe('Safety Validators', () => {
   });
 
   it('should catch missing vessel data when routing to rob_tracking_agent', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'rob_tracking_agent',
       vessel_profile: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const result = SafetyValidators.validateVesselDataBeforeROB(state);
 
@@ -355,11 +355,11 @@ describe('Safety Validators', () => {
   });
 
   it('should run all validators in validateAll', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'bunker_agent',
       route_data: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const result = SafetyValidators.validateAll(state);
 
@@ -379,12 +379,12 @@ describe('Safety Validators', () => {
   });
 
   it('should override next_agent in getSafeNextAgent when validation fails', () => {
-    const state: MultiAgentState = {
+    const state = {
       ...baseState,
       next_agent: 'vessel_selection_agent',
       bunker_analysis: undefined,
       bunker_ports: undefined,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
 
     const safeAgent = SafetyValidators.getSafeNextAgent(state);
 

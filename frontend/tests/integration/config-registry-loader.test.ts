@@ -129,8 +129,8 @@ export async function testConfigRegistryLoader(): Promise<void> {
       allPassed = false;
     } else {
       // Verify config has expected structure (loaded from YAML)
-      const hasId = !!(agentConfig.id || agentConfig.agent_id);
-      const hasName = !!(agentConfig.name || agentConfig.agent_name);
+      const hasId = !!agentConfig.id;
+      const hasName = !!agentConfig.name;
       
       if (!hasId || !hasName) {
         console.error('❌ Test 5 FAILED: Config structure invalid');
@@ -156,7 +156,7 @@ export async function testConfigRegistryLoader(): Promise<void> {
     const registryAgents = agentRegistry.getAll();
     
     // Check that at least some agents match
-    const configIds = new Set(configAgents.map(a => a.id || a.agent_id));
+    const configIds = new Set(configAgents.map(a => a.id));
     const registryIds = new Set(registryAgents.map(a => a.id));
     
     const matchingIds = Array.from(configIds).filter(id => registryIds.has(id));

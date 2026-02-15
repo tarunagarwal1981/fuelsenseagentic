@@ -89,7 +89,7 @@ function createCompleteState(): MultiAgentState {
       capacity_mt: 2000,
       fuel_type: 'VLSFO',
     } as any,
-  } as MultiAgentState;
+  } as unknown as MultiAgentState;
 }
 
 /**
@@ -125,11 +125,11 @@ export async function testSynthesisTemplate(): Promise<void> {
       
       // Step 3: Render template
       const rendered = await templateEngine.render(synthesis, templateId, {
-        stakeholder: stakeholder as any,
-        format: format as any,
-        verbosity: requestContext.verbosity || 'detailed',
-        includeMetrics: requestContext.includeMetrics || false,
-        includeReasoning: requestContext.includeReasoning !== false,
+        stakeholder: stakeholder as 'charterer' | 'operator' | 'compliance' | 'technical' | 'api',
+        format: format as 'text' | 'html' | 'json' | 'mobile',
+        verbosity: requestContext?.verbosity ?? 'detailed',
+        includeMetrics: requestContext?.includeMetrics ?? false,
+        includeReasoning: requestContext?.includeReasoning !== false,
       });
       
       if (!rendered || rendered.length === 0) {
@@ -173,8 +173,9 @@ export async function testSynthesisTemplate(): Promise<void> {
     const synthesis = await synthesisEngine.synthesize(state, executionResult);
     
     // Select template
-    const stakeholder = templateSelector.detectStakeholder(state.request_context);
-    const format = templateSelector.detectFormat(state.request_context);
+    const requestContext = state.request_context ?? undefined;
+    const stakeholder = templateSelector.detectStakeholder(requestContext);
+    const format = templateSelector.detectFormat(requestContext);
     const templateId = templateSelector.selectTemplate(
       synthesis.queryType,
       stakeholder,
@@ -183,8 +184,8 @@ export async function testSynthesisTemplate(): Promise<void> {
     
     // Render
     const rendered = await templateEngine.render(synthesis, templateId, {
-      stakeholder: stakeholder as any,
-      format: format as any,
+      stakeholder: stakeholder as 'charterer' | 'operator' | 'compliance' | 'technical' | 'api',
+      format: format as 'text' | 'html' | 'json' | 'mobile',
     });
     
     // Verify flow completed

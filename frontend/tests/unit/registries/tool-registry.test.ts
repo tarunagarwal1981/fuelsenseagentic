@@ -446,7 +446,7 @@ export function testToolRegistryComprehensive(): void {
     registry.register(createMockTool({ category: 'weather', id: 'weather1' }));
     registry.register(createMockTool({ category: 'bunker', id: 'bunker1' }));
     
-    const stats = registry.getStats();
+    const stats = (registry as any).getStats();
     
     if (stats.totalTools !== 4) {
       console.error(`    ❌ FAILED: Expected 4 tools, got ${stats.totalTools}`);
@@ -545,9 +545,9 @@ export function testToolRegistryComprehensive(): void {
     
     const all = registry.getAll();
     const count = registry.getCount();
-    const stats = registry.getStats();
+    const stats = (registry as any).getStats();
     
-    if (all.length !== 0 || count !== 0 || stats.totalTools !== 0) {
+    if (all.length !== 0 || count !== 0 || (stats?.totalTools ?? -1) !== 0) {
       console.error('    ❌ FAILED: Empty registry operations failed');
       allPassed = false;
     } else {

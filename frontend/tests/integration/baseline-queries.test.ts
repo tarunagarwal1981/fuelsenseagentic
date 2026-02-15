@@ -165,7 +165,7 @@ function buildInitialState(query: string): MultiAgentState {
     // Parameter override fields (supervisor → agent communication)
     port_overrides: undefined,
     agent_overrides: undefined,
-  };
+  } as unknown as MultiAgentState;
 }
 
 function hasExpectedData(state: MultiAgentState, dataKey: string): boolean {

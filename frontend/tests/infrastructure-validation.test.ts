@@ -141,7 +141,7 @@ export async function testHappyPath(): Promise<TestResult> {
   try {
     await runWithCorrelation(correlationId, async () => {
       // Use multiAgentApp (no checkpointer) for simpler happy path test
-      const initialState: MultiAgentState = {
+      const initialState = {
         messages: [new HumanMessage('Plan bunker for Singapore to Rotterdam, vessel MT EXAMPLE, 15000 DWT')],
         correlation_id: correlationId,
         next_agent: '',
@@ -189,7 +189,7 @@ export async function testHappyPath(): Promise<TestResult> {
         missing_data: [],
         routing_metadata: undefined,
         original_intent: null,
-      };
+      } as unknown as MultiAgentState;
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
       
@@ -271,7 +271,7 @@ export async function testTransientFailure(): Promise<TestResult> {
     
     await runWithCorrelation(correlationId, async () => {
       // Use multiAgentApp for simpler test
-      const initialState: MultiAgentState = {
+      const initialState = {
         messages: [new HumanMessage('Calculate route from Singapore to Colombo')],
         correlation_id: correlationId,
         next_agent: '',
@@ -319,7 +319,7 @@ export async function testTransientFailure(): Promise<TestResult> {
         missing_data: [],
         routing_metadata: undefined,
         original_intent: null,
-      };
+      } as unknown as MultiAgentState;
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
       
@@ -378,7 +378,7 @@ export async function testPersistentFailure(): Promise<TestResult> {
     
     await runWithCorrelation(correlationId, async () => {
       // Use multiAgentApp for simpler test
-      const initialState: MultiAgentState = {
+      const initialState = {
         messages: [new HumanMessage('Plan bunker from INVALID to INVALID2')],
         correlation_id: correlationId,
         next_agent: '',
@@ -426,7 +426,7 @@ export async function testPersistentFailure(): Promise<TestResult> {
         missing_data: [],
         routing_metadata: undefined,
         original_intent: null,
-      };
+      } as unknown as MultiAgentState;
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
       
@@ -542,7 +542,7 @@ export async function testCheckpointRecovery(): Promise<TestResult> {
       const threadId = randomUUID();
       
       // First execution - partial completion
-      const initialState: MultiAgentState = {
+      const initialState = {
         messages: [new HumanMessage('Calculate route from Singapore to Rotterdam')],
         correlation_id: correlationId,
         next_agent: '',
@@ -590,7 +590,7 @@ export async function testCheckpointRecovery(): Promise<TestResult> {
         missing_data: [],
         routing_metadata: undefined,
         original_intent: null,
-      };
+      } as unknown as MultiAgentState;
       
       const config = { 
         configurable: { thread_id: threadId },
@@ -657,7 +657,7 @@ export async function testCorrelationIdPropagation(): Promise<TestResult> {
   try {
     await runWithCorrelation(correlationId, async () => {
       // Use multiAgentApp for simpler test
-      const initialState: MultiAgentState = {
+      const initialState = {
         messages: [new HumanMessage('Calculate route from Singapore to Colombo')],
         correlation_id: correlationId,
         next_agent: '',
@@ -705,7 +705,7 @@ export async function testCorrelationIdPropagation(): Promise<TestResult> {
         missing_data: [],
         routing_metadata: undefined,
         original_intent: null,
-      };
+      } as unknown as MultiAgentState;
       
       const finalState = await multiAgentApp.invoke(initialState, { recursionLimit: 60 });
       

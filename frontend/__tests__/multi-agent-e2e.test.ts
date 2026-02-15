@@ -522,18 +522,18 @@ async function testPerformanceComparison(): Promise<TestResult> {
       `✅ New endpoint (chat-multi-agent): ${newEndpointTime}ms`
     );
 
-    // Compare performance
+    // Compare performance (old endpoint no longer used; keep block for future comparison)
+    const oldEndpointTime = 0;
     if (oldEndpointTime > 0) {
       const diff = newEndpointTime - oldEndpointTime;
       const diffPercent = ((diff / oldEndpointTime) * 100).toFixed(1);
-      
+
       result.assertions.passed++;
       result.assertions.details.push(
         `📊 Performance difference: ${diff > 0 ? '+' : ''}${diff}ms (${diffPercent}%)`
       );
 
       if (Math.abs(diff) < oldEndpointTime * 0.2) {
-        // Within 20% is considered similar
         result.assertions.passed++;
         result.assertions.details.push('✅ Performance is similar (within 20%)');
       } else if (newEndpointTime < oldEndpointTime) {

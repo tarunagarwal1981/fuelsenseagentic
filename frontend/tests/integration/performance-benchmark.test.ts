@@ -110,7 +110,7 @@ function setupCostTracking(): void {
       });
     }
     // Always call original fetch (not wrapped version)
-    return originalFetch!(...args);
+    return originalFetch!(...(args as Parameters<typeof fetch>));
   };
   
   costTrackingSetup = true;

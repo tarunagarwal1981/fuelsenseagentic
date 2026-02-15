@@ -46,8 +46,8 @@ export async function testQuery(
   
   const humanMessage = new HumanMessage(userMessage);
   
-  // Initial state
-  const initialState: MultiAgentState = {
+  // Initial state (cast: test only needs a subset of fields for graph invocation)
+  const initialState = {
     messages: [humanMessage],
     correlation_id: 'test-correlation-id',
     next_agent: '',
@@ -101,8 +101,8 @@ export async function testQuery(
     // Parameter override fields (supervisor → agent communication)
     port_overrides: undefined,
     agent_overrides: undefined,
-  };
-  
+  } as unknown as MultiAgentState;
+
   console.log('\n🚀 [QUERY-TEST] Starting graph execution...\n');
   const startTime = Date.now();
   

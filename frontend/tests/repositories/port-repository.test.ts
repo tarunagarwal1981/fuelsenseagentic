@@ -11,7 +11,6 @@
 
 import { PortRepository } from '@/lib/repositories/port-repository';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { Port } from '@/lib/repositories/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -24,7 +23,8 @@ jest.mock('fs/promises');
 describe('PortRepository', () => {
   let portRepository: PortRepository;
   let mockCache: jest.Mocked<RedisCache>;
-  let mockDb: jest.Mocked<SupabaseClient>;
+  /** Chainable Supabase-style mock (typed as any for .from().select().eq() etc.) */
+  let mockDb: any;
 
   const mockPort: Port = {
     id: 'SGSIN',
@@ -66,7 +66,7 @@ describe('PortRepository', () => {
       limit: jest.fn().mockReturnThis(),
     } as any;
 
-    portRepository = new PortRepository(mockCache, mockDb);
+    portRepository = new PortRepository(mockCache);
 
     // Reset mocks
     jest.clearAllMocks();
@@ -228,8 +228,8 @@ describe('PortRepository', () => {
     };
 
     it('should find ports within radius', async () => {
-      // Mock findAll to return test ports
-      jest.spyOn(portRepository, 'findAll').mockResolvedValue([
+      // Mock findAll to return test ports (legacy API; cast for test)
+      jest.spyOn(portRepository as any, 'findAll').mockResolvedValue([
         mockPort,
         nearbyPort,
         farPort,
@@ -243,7 +243,7 @@ describe('PortRepository', () => {
     });
 
     it('should sort results by distance', async () => {
-      jest.spyOn(portRepository, 'findAll').mockResolvedValue([
+      jest.spyOn(portRepository as any, 'findAll').mockResolvedValue([
         farPort,
         nearbyPort,
         mockPort,
@@ -256,7 +256,7 @@ describe('PortRepository', () => {
     });
 
     it('should return empty array when no ports in radius', async () => {
-      jest.spyOn(portRepository, 'findAll').mockResolvedValue([farPort]);
+      jest.spyOn(portRepository as any, 'findAll').mockResolvedValue([farPort]);
 
       const result = await portRepository.findNearby(testLat, testLon, 10);
 
@@ -281,7 +281,7 @@ describe('PortRepository', () => {
         error: null,
       });
 
-      const result = await portRepository.searchByName('singapore');
+      const result = await (portRepository as any).searchByName('singapore');
 
       expect(result).toBeTruthy();
       expect(mockDb.ilike).toHaveBeenCalledWith('name', '%singapore%');
@@ -293,23 +293,23 @@ describe('PortRepository', () => {
         error: null,
       });
 
-      await portRepository.searchByName('port');
+      await (portRepository as any).searchByName('port');
 
       expect(mockDb.limit).toHaveBeenCalledWith(20);
     });
 
     it('should fallback to in-memory search when DB fails', async () => {
       mockDb.limit.mockRejectedValue(new Error('DB error'));
-      jest.spyOn(portRepository, 'findAll').mockResolvedValue(searchPorts);
+      jest.spyOn(portRepository as any, 'findAll').mockResolvedValue(searchPorts);
 
-      const result = await portRepository.searchByName('singapore');
+      const result = await (portRepository as any).searchByName('singapore');
 
       expect(result.length).toBeGreaterThan(0);
       expect(result[0].name.toLowerCase()).toContain('singapore');
     });
 
     it('should return empty array for empty query', async () => {
-      const result = await portRepository.searchByName('   ');
+      const result = await (portRepository as any).searchByName('   ');
 
       expect(result).toEqual([]);
       expect(mockDb.from).not.toHaveBeenCalled();
@@ -318,7 +318,7 @@ describe('PortRepository', () => {
 
   describe('cache TTL', () => {
     it('should use 24-hour TTL for ports', () => {
-      const ttl = portRepository['getCacheTTL']();
+      const ttl = (portRepository as any)['getCacheTTL']();
       expect(ttl).toBe(86400); // 24 hours
     });
   });
@@ -326,7 +326,7 @@ describe('PortRepository', () => {
   describe('Haversine distance calculation', () => {
     it('should calculate distance correctly', () => {
       // Singapore to Port Klang (approximately 150nm)
-      const distance = portRepository['calculateDistance'](
+      const distance = (portRepository as any)['calculateDistance'](
         [1.2897, 103.8501], // Singapore
         [3.0, 101.4] // Port Klang
       );
@@ -336,7 +336,7 @@ describe('PortRepository', () => {
     });
 
     it('should return 0 for same coordinates', () => {
-      const distance = portRepository['calculateDistance'](
+      const distance = (portRepository as any)['calculateDistance'](
         [1.2897, 103.8501],
         [1.2897, 103.8501]
       );

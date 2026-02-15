@@ -95,7 +95,7 @@ function setupLLMTracking(): void {
         }
       }
     }
-    return originalFetch!(...args);
+    return originalFetch!(...(args as Parameters<typeof fetch>));
   };
 }
 
@@ -125,7 +125,8 @@ interface EssentialQuery {
   id: string;
   description: string;
   query: string;
-  additionalState?: Partial<MultiAgentState>;
+  /** Test-only state overrides (may include legacy keys like origin_port, bunker_port) */
+  additionalState?: Record<string, unknown>;
   expectedOutputs: string[]; // State keys that should be populated
   expectedAgents?: string[]; // Agents that should run (for reference)
 }
@@ -317,7 +318,7 @@ const ESSENTIAL_QUERIES: EssentialQuery[] = [
 /**
  * Build initial state for a query
  */
-function buildInitialState(query: string, additionalState: Partial<MultiAgentState> = {}): MultiAgentState {
+function buildInitialState(query: string, additionalState: Record<string, unknown> = {}): MultiAgentState {
   return {
     messages: [new HumanMessage(query)],
     correlation_id: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -375,7 +376,7 @@ function buildInitialState(query: string, additionalState: Partial<MultiAgentSta
     synthesis_data: null,
     degraded_mode: false,
     ...additionalState,
-  };
+  } as unknown as MultiAgentState;
 }
 
 /**

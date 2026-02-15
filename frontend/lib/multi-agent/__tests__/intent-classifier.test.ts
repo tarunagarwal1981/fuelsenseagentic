@@ -24,7 +24,7 @@ import { registerAllAgents } from '@/lib/registry/agents';
 
 function createInMemoryCache(): RedisCache {
   const store = new Map<string, { value: unknown; ttl: number }>();
-  return {
+  const cache = {
     async get<T>(key: string): Promise<T | null> {
       const entry = store.get(key);
       if (!entry) return null;
@@ -41,6 +41,7 @@ function createInMemoryCache(): RedisCache {
       return 0;
     },
   };
+  return cache as unknown as RedisCache;
 }
 
 // ============================================================================

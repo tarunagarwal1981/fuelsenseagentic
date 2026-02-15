@@ -178,7 +178,7 @@ export function testAgentRegistryComprehensive(): void {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    toolRegistry.register(mockTool);
+    toolRegistry.register(mockTool as any);
     
     // Now register agent with valid tool reference
     const agent = createMockAgent({

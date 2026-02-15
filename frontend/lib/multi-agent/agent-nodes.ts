@@ -4987,10 +4987,28 @@ ${period.days} days (${period.start_date} to ${period.end_date}) · ${period.tot
     recordAgentExecution('finalize', agentDuration, true);
     logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
 
+    // Build hybrid response so the client renders HullPerformanceCard with charts
+    const formattedResponse = {
+      type: 'hybrid' as const,
+      text: hullPerformanceResponse,
+      components: [
+        {
+          id: 'hull_performance_card',
+          component: 'HullPerformanceCard',
+          props: {
+            analysis: state.hull_performance,
+            chartData: state.hull_performance_charts ?? undefined,
+          },
+          tier: 1,
+          priority: 95,
+        },
+      ],
+      query_type: 'hull_performance' as const,
+    };
+
     return {
-      hull_performance_charts: chartData,
       final_recommendation: sanitizeMarkdownForDisplay(hullPerformanceResponse),
-      formatted_response: null,
+      formatted_response: formattedResponse,
       synthesized_insights: null,
       messages: [new AIMessage({ content: hullPerformanceResponse })],
       agent_status: {

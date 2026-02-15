@@ -20,7 +20,7 @@ function createState(overrides: Record<string, unknown>): MultiAgentState {
     next_agent: '',
     agent_context: null,
     ...overrides,
-  } as MultiAgentState;
+  } as unknown as MultiAgentState;
 }
 
 describe('ComponentMatcherService', () => {

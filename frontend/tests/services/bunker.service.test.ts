@@ -8,18 +8,18 @@
  * - Error handling
  */
 
-import { BunkerService } from './bunker.service';
+import { BunkerService } from '@/lib/services/bunker.service';
 import { PortRepository } from '@/lib/repositories/port-repository';
 import { PriceRepository } from '@/lib/repositories/price-repository';
-import { RouteService } from './route.service';
+import { RouteService } from '@/lib/services/route.service';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { RouteData, BunkerPort, BunkerOption } from './types';
+import type { RouteData, BunkerPort, BunkerOption } from '@/lib/services/types';
 import { Port } from '@/lib/repositories/types';
 
 // Mock dependencies
 jest.mock('@/lib/repositories/port-repository');
 jest.mock('@/lib/repositories/price-repository');
-jest.mock('./route.service');
+jest.mock('@/lib/services/route.service');
 jest.mock('@/lib/repositories/cache-client');
 
 describe('BunkerService', () => {
@@ -134,7 +134,7 @@ describe('BunkerService', () => {
       });
 
       expect(result.length).toBeGreaterThan(0);
-      expect(result.every((p) => p.deviation <= 200)).toBe(true);
+      expect(result.every((p: BunkerPort) => p.deviation <= 200)).toBe(true);
     });
 
     it('should filter by fuel availability', async () => {
@@ -155,7 +155,7 @@ describe('BunkerService', () => {
         fuelTypes: ['VLSFO'],
       });
 
-      expect(result.every((p) => p.fuelsAvailable.includes('VLSFO'))).toBe(true);
+      expect(result.every((p: BunkerPort) => p.fuelsAvailable.includes('VLSFO'))).toBe(true);
     });
 
     it('should sort by deviation (closest first)', async () => {

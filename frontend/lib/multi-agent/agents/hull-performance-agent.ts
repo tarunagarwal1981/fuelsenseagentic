@@ -9,8 +9,15 @@
 import { AIMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from '../state';
 import { executeFetchHullPerformanceTool } from '@/lib/tools/hull-performance';
-import { logAgentExecution } from '@/lib/monitoring/axiom-logger';
+import { logAgentExecution, logError } from '@/lib/monitoring/axiom-logger';
 import { extractCorrelationId } from '@/lib/utils/correlation';
+import type { HullPerformanceChartData } from '@/lib/services/hull-performance-service';
+import { HullPerformanceService } from '@/lib/services/hull-performance-service';
+import { HullPerformanceRepository } from '@/lib/repositories/hull-performance-repository';
+import { HullPerformanceClient, type IHullPerformanceDataSource } from '@/lib/api-clients/hull-performance-client';
+import { HullPerformanceDbClient } from '@/lib/api-clients/hull-performance-db-client';
+import { ServiceContainer } from '@/lib/repositories/service-container';
+import { RedisCache } from '@/lib/repositories/cache-client';
 
 // ============================================================================
 // Agent Node
@@ -110,37 +117,81 @@ export async function hullPerformanceAgentNode(
       correlationId,
     });
 
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to fetch hull performance data');
+    // Log initial results
+    logAgentExecution(
+      'hull_performance_agent',
+      correlationId,
+      Date.now() - startTime,
+      result.success ? 'completed' : 'failed',
+      {
+        vessel: ids,
+        success: result.success,
+        has_data: !!result.data,
+      }
+    );
+
+    // Extract chart data if analysis succeeded
+    let chartData: HullPerformanceChartData | undefined;
+    if (result.success && result.data) {
+      try {
+        const container = ServiceContainer.getInstance();
+        const cache = container.getCache() as RedisCache;
+        const useDb = process.env.HULL_PERFORMANCE_SOURCE === 'db';
+
+        const client: IHullPerformanceDataSource = useDb
+          ? new HullPerformanceDbClient(correlationId)
+          : new HullPerformanceClient(correlationId);
+
+        const repository = new HullPerformanceRepository(correlationId, {
+          client,
+          redis: cache,
+        });
+
+        const service = new HullPerformanceService(correlationId, repository);
+
+        chartData = await service.extractChartData(result.data);
+
+        logAgentExecution(
+          'hull_performance_agent',
+          correlationId,
+          0,
+          'chart_data_extracted',
+          {
+            has_chart_data: !!chartData,
+            has_excess_power: !!chartData?.excessPower,
+            has_speed_loss: !!chartData?.speedLoss,
+            has_speed_consumption: !!chartData?.speedConsumption,
+            excess_power_points: chartData?.excessPower?.dataPoints?.length ?? 0,
+          }
+        );
+      } catch (chartError) {
+        logError(correlationId, chartError as Error, {
+          agent: 'hull_performance_agent',
+          step: 'chart_data_extraction',
+        });
+        chartData = undefined;
+      }
     }
 
-    const displayName = vesselId.name || vesselId.imo || 'vessel';
-
-    // 4. Update state
-    const updatedState: Partial<MultiAgentState> = {
+    // Return state update with both analysis and chart data
+    return {
       hull_performance: result.data ?? null,
+      hull_performance_charts: chartData ?? null,
       agent_status: {
         ...(state.agent_status || {}),
-        hull_performance_agent: 'success',
+        hull_performance_agent: result.success ? 'success' : 'failed',
       },
       messages: [
         ...(state.messages ?? []),
         new AIMessage({
-          content: `[HULL-PERFORMANCE-AGENT] Hull performance analysis complete for ${displayName}`,
+          content: result.success
+            ? chartData
+              ? 'Hull performance analysis complete with interactive trend charts'
+              : 'Hull performance analysis complete (summary only)'
+            : result.error || 'Failed to fetch hull performance',
         }),
       ],
     };
-
-    // 5. Log success
-    const duration = Date.now() - startTime;
-    logAgentExecution('hull_performance_agent', correlationId, duration, 'success', {
-      vessel: vesselId,
-      hull_condition: result.data?.hull_condition,
-      excess_power_pct: result.data?.latest_metrics?.excess_power_pct,
-      duration_ms: duration,
-    });
-
-    return updatedState;
   } catch (error) {
     const errMessage =
       error instanceof Error ? error.message : String(error);

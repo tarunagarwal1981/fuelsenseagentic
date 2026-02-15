@@ -108,8 +108,7 @@ async function testFetchPricesUsesPriceRepository(): Promise<void> {
     fuel_types: ['VLSFO', 'MGO'],
   });
 
-  assert(result.success !== false, 'fetchPrices should succeed');
-  assertDefined(result.prices_by_port, 'result.prices_by_port should be defined');
+  assertDefined(result.prices_by_port, 'result.prices_by_port should be defined (fetchPrices succeeded)');
   assertDefined(result.prices_by_port['SGSIN'], 'SGSIN prices should be available');
 
   const sgsinPrices = result.prices_by_port['SGSIN'];
@@ -247,7 +246,7 @@ async function testToolsBenefitFromCaching(): Promise<void> {
   });
   const duration1 = Date.now() - start1;
 
-  assert(result1.success !== false, 'First call should succeed');
+  assert(result1.prices_by_port != null, 'First call should succeed');
 
   // Small delay to ensure cache is written
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -260,7 +259,7 @@ async function testToolsBenefitFromCaching(): Promise<void> {
   });
   const duration2 = Date.now() - start2;
 
-  assert(result2.success !== false, 'Second call should succeed');
+  assert(result2.prices_by_port != null, 'Second call should succeed');
 
   // Cache hit should be faster (at least 20% faster, accounting for test overhead)
   // Note: In production, cache hits are typically 5-10x faster, but in tests

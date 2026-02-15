@@ -424,6 +424,8 @@ export async function POST(req: Request) {
             if (event.port_prices) accumulatedState.port_prices = event.port_prices;
             if (event.bunker_analysis) accumulatedState.bunker_analysis = event.bunker_analysis;
             if (event.multi_bunker_plan) accumulatedState.multi_bunker_plan = event.multi_bunker_plan;
+            if (event.hull_performance != null) accumulatedState.hull_performance = event.hull_performance;
+            if (event.hull_performance_charts != null) accumulatedState.hull_performance_charts = event.hull_performance_charts;
             if (event.final_recommendation) accumulatedState.final_recommendation = event.final_recommendation;
             if (event.formatted_response) accumulatedState.formatted_response = event.formatted_response;
             if (event.synthesized_response) accumulatedState.synthesized_response = event.synthesized_response;

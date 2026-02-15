@@ -377,8 +377,9 @@ async function testErrorHandling(): Promise<void> {
       throw new Error('Should have thrown error for invalid port');
     } catch (error) {
       assert(error instanceof Error, 'Should throw Error');
-      assert(error.message.includes('not found') || error.message.includes('Invalid'), 'Error should mention port not found');
-      console.log(`   ✓ Invalid port handled gracefully: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      assert(msg.includes('not found') || msg.includes('Invalid'), 'Error should mention port not found');
+      console.log(`   ✓ Invalid port handled gracefully: ${msg}`);
     }
 
     // Test that valid operations still work after error

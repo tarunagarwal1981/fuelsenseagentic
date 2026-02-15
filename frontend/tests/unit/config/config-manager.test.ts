@@ -27,8 +27,8 @@ export async function testConfigManager(): Promise<void> {
     } else {
       console.log('✅ Test 1 PASSED: ConfigManager is a singleton');
     }
-  } catch (error: any) {
-    console.error('❌ Test 1 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 1 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -43,8 +43,8 @@ export async function testConfigManager(): Promise<void> {
     } else {
       console.log('✅ Test 2 PASSED: All configurations loaded');
     }
-  } catch (error: any) {
-    console.error('❌ Test 2 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 2 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -58,11 +58,11 @@ export async function testConfigManager(): Promise<void> {
       allPassed = false;
     } else {
       console.log('✅ Test 3 PASSED: Agent config retrieved');
-      console.log(`   - Agent ID: ${agentConfig.id || agentConfig.agent_id}`);
-      console.log(`   - Agent Name: ${agentConfig.name || agentConfig.agent_name}`);
+      console.log(`   - Agent ID: ${agentConfig.id}`);
+      console.log(`   - Agent Name: ${agentConfig.name}`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 3 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 3 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -78,8 +78,8 @@ export async function testConfigManager(): Promise<void> {
       console.log('✅ Test 4 PASSED: Retrieved all agent configs');
       console.log(`   - Found ${allAgents.length} agent configs`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 4 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 4 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -95,8 +95,8 @@ export async function testConfigManager(): Promise<void> {
       console.log(`   - Tool ID: ${toolConfig.id}`);
       console.log(`   - Tool Name: ${toolConfig.name}`);
     }
-  } catch (error: any) {
-    console.warn('⚠️  Test 5 SKIPPED:', error.message);
+  } catch (error: unknown) {
+    console.warn('⚠️  Test 5 SKIPPED:', error instanceof Error ? error.message : String(error));
   }
   
   // Test 6: Get workflow config
@@ -108,11 +108,12 @@ export async function testConfigManager(): Promise<void> {
       console.warn('⚠️  Test 6 SKIPPED: bunker-planning workflow config not found');
     } else {
       console.log('✅ Test 6 PASSED: Workflow config retrieved');
-      console.log(`   - Workflow ID: ${workflowConfig.id || workflowConfig.workflow_id}`);
-      console.log(`   - Workflow Name: ${workflowConfig.name || workflowConfig.workflow_name}`);
+      console.log(`   - Workflow ID: ${workflowConfig.id}`);
+      console.log(`   - Workflow Name: ${workflowConfig.name}`);
     }
-  } catch (error: any) {
-    console.warn('⚠️  Test 6 SKIPPED:', error.message);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn('⚠️  Test 6 SKIPPED:', msg);
   }
   
   // Test 7: Get feature flags
@@ -137,8 +138,8 @@ export async function testConfigManager(): Promise<void> {
         console.log('✅ Test 7b PASSED: Feature flag retrieved by ID');
       }
     }
-  } catch (error: any) {
-    console.warn('⚠️  Test 7 SKIPPED:', error.message);
+  } catch (error: unknown) {
+    console.warn('⚠️  Test 7 SKIPPED:', error instanceof Error ? error.message : String(error));
   }
   
   // Test 8: Get business rules
@@ -152,8 +153,8 @@ export async function testConfigManager(): Promise<void> {
       console.log('✅ Test 8 PASSED: Business rules retrieved');
       console.log(`   - Found ${businessRules.length} business rule(s)`);
     }
-  } catch (error: any) {
-    console.warn('⚠️  Test 8 SKIPPED:', error.message);
+  } catch (error: unknown) {
+    console.warn('⚠️  Test 8 SKIPPED:', error instanceof Error ? error.message : String(error));
   }
   
   // Test 9: Check if feature flag is enabled
@@ -170,8 +171,8 @@ export async function testConfigManager(): Promise<void> {
     } else {
       console.warn('⚠️  Test 9 SKIPPED: No feature flags available to test');
     }
-  } catch (error: any) {
-    console.warn('⚠️  Test 9 SKIPPED:', error.message);
+  } catch (error: unknown) {
+    console.warn('⚠️  Test 9 SKIPPED:', error instanceof Error ? error.message : String(error));
   }
   
   // Test 10: Reload configurations
@@ -185,8 +186,8 @@ export async function testConfigManager(): Promise<void> {
     } else {
       console.log('✅ Test 10 PASSED: Configurations reloaded successfully');
     }
-  } catch (error: any) {
-    console.error('❌ Test 10 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 10 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   

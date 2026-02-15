@@ -132,9 +132,10 @@ describe('HullPerformanceRepository', () => {
 
       await repo.getVesselPerformanceData({ imo: '9123456' });
 
-      const call = mockClient.getHullPerformance.mock.calls[0][0];
-      const start = new Date(call.start_date!).getTime();
-      const end = new Date(call.end_date!).getTime();
+      const call = mockClient.getHullPerformance.mock.calls[0]?.[0];
+      expect(call).toBeDefined();
+      const start = new Date((call as { start_date: string }).start_date).getTime();
+      const end = new Date((call as { end_date: string }).end_date).getTime();
       const days = (end - start) / (24 * 60 * 60 * 1000);
       expect(days).toBeGreaterThanOrEqual(89);
       expect(days).toBeLessThanOrEqual(91);

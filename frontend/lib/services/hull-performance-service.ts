@@ -9,6 +9,12 @@ import { HullPerformanceRepository } from '@/lib/repositories/hull-performance-r
 import type { HullPerformanceRecord } from '@/lib/api-clients/hull-performance-client';
 import type { VesselPerformanceModelRecord } from '@/lib/api-clients/hull-performance-client';
 import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
+import { ExcessPowerChartService } from './charts/excess-power-chart-service';
+import { SpeedLossChartService } from './charts/speed-loss-chart-service';
+import { SpeedConsumptionChartService } from './charts/speed-consumption-chart-service';
+import type { ExcessPowerChartData } from './charts/excess-power-chart-service';
+import type { SpeedLossChartData } from './charts/speed-loss-chart-service';
+import type { SpeedConsumptionChartData } from './charts/speed-consumption-chart-service';
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -77,6 +83,15 @@ export interface HullPerformanceAnalysis {
     data_source: string;
     cache_hit: boolean;
   };
+}
+
+/**
+ * Consolidated chart data from all chart services
+ */
+export interface HullPerformanceChartData {
+  excessPower: ExcessPowerChartData | null;
+  speedLoss: SpeedLossChartData | null;
+  speedConsumption: SpeedConsumptionChartData | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -339,6 +354,75 @@ export class HullPerformanceService {
       });
       return null;
     }
+  }
+
+  /**
+   * Extract all chart data using modular chart services
+   */
+  async extractChartData(
+    analysis: HullPerformanceAnalysis
+  ): Promise<HullPerformanceChartData> {
+    const startTime = Date.now();
+
+    logCustomEvent(
+      'hull_performance_chart_extraction_start',
+      this.correlationId,
+      {
+        vessel_imo: analysis.vessel.imo,
+        data_points: analysis.trend_data?.length ?? 0,
+      },
+      'info'
+    );
+
+    // Initialize chart services
+    const excessPowerService = new ExcessPowerChartService(this.correlationId);
+    const speedLossService = new SpeedLossChartService(this.correlationId);
+    const speedConsumptionService = new SpeedConsumptionChartService(this.correlationId);
+
+    // Extract chart data in parallel (all services are independent)
+    const [excessPower, speedLoss, speedConsumption] = await Promise.all([
+      excessPowerService.extractChartData(analysis).catch(err => {
+        logError(this.correlationId, err, {
+          service: 'excess_power_chart',
+          vessel_imo: analysis.vessel.imo,
+        });
+        return null;
+      }),
+      speedLossService.extractChartData(analysis).catch(err => {
+        logError(this.correlationId, err, {
+          service: 'speed_loss_chart',
+          vessel_imo: analysis.vessel.imo,
+        });
+        return null;
+      }),
+      speedConsumptionService.extractChartData(analysis).catch(err => {
+        logError(this.correlationId, err, {
+          service: 'speed_consumption_chart',
+          vessel_imo: analysis.vessel.imo,
+        });
+        return null;
+      }),
+    ]);
+
+    const executionTime = Date.now() - startTime;
+    logCustomEvent(
+      'hull_performance_chart_extraction_complete',
+      this.correlationId,
+      {
+        vessel_imo: analysis.vessel.imo,
+        has_excess_power: excessPower !== null,
+        has_speed_loss: speedLoss !== null,
+        has_speed_consumption: speedConsumption !== null,
+        execution_time_ms: executionTime,
+      },
+      'info'
+    );
+
+    return {
+      excessPower,
+      speedLoss,
+      speedConsumption,
+    };
   }
 
   /**

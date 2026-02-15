@@ -58,7 +58,7 @@ function setupLLMTracking(): void {
       });
       console.log(`   🔍 [LLM-TRACKER] LLM call #${llmCallTracker.count} detected`);
     }
-    return originalFetch(...args);
+    return originalFetch(...(args as Parameters<typeof fetch>));
   };
 }
 
@@ -83,7 +83,7 @@ function getLLMCallCount(): number {
 /**
  * Create initial state for testing
  */
-function createInitialState(overrides: Partial<MultiAgentState> = {}): MultiAgentState {
+function createInitialState(overrides: Record<string, unknown> = {}): MultiAgentState {
   return {
     messages: [],
     correlation_id: `test-${Date.now()}`,
@@ -95,7 +95,7 @@ function createInitialState(overrides: Partial<MultiAgentState> = {}): MultiAgen
       bunker_agent: 0,
     },
     ...overrides,
-  } as MultiAgentState;
+  } as unknown as MultiAgentState;
 }
 
 /**

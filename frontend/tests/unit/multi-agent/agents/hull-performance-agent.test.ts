@@ -52,12 +52,12 @@ function mockAnalysis(overrides: Record<string, unknown> = {}) {
 }
 
 describe('hullPerformanceAgentNode', () => {
-  const baseState: MultiAgentState = {
+  const baseState = {
     messages: [],
     vessel_identifiers: { names: ['MV Test'], imos: ['9123456'] },
     agent_status: {},
     agent_errors: {},
-  } as MultiAgentState;
+  } as unknown as MultiAgentState;
 
   beforeEach(() => {
     jest.clearAllMocks();

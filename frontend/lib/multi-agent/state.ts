@@ -16,6 +16,7 @@ import type { FormattedResponse } from '../formatters/response-formatter';
 import type { ROBTrackingOutput, ROBWaypoint } from '@/lib/engines/rob-tracking-engine';
 import type { ECAConsumptionOutput } from '@/lib/engines/eca-consumption-engine';
 import type { VesselProfile } from '@/lib/services/vessel-service';
+import type { HullPerformanceAnalysis, HullPerformanceChartData } from '@/lib/services/hull-performance-service';
 import type {
   VesselBasicInfo,
   NoonReportData,
@@ -1035,16 +1036,16 @@ export const MultiAgentStateAnnotation = Annotation.Root({
    * Hull performance analysis (condition, metrics, trends, baseline).
    * Populated by Hull Performance Agent via fetch_hull_performance tool.
    */
-  hull_performance: Annotation<any | null>({
+  hull_performance: Annotation<HullPerformanceAnalysis | null>({
     reducer: (_, value) => value ?? null,
     default: () => null,
   }),
 
   /**
-   * Chart data for hull performance visualization (excess power trend, consumption comparison, baselines).
-   * Populated by Finalize Agent when formatting hull performance response.
+   * Chart data for hull performance visualization (excess power trend, speed loss, speed-consumption).
+   * Populated by Hull Performance Agent via HullPerformanceService.extractChartData().
    */
-  hull_performance_charts: Annotation<any | null>({
+  hull_performance_charts: Annotation<HullPerformanceChartData | null>({
     reducer: (_, value) => value ?? null,
     default: () => null,
   }),

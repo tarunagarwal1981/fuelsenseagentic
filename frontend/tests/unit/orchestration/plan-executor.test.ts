@@ -113,8 +113,8 @@ export async function testPlanExecutor(): Promise<void> {
     await loadConfigurations();
     registerAllTools();
     registerAllAgents();
-  } catch (error: any) {
-    console.error('❌ Setup FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Setup FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
     return;
   }
@@ -122,12 +122,12 @@ export async function testPlanExecutor(): Promise<void> {
   // Test 1: Executes plan successfully
   console.log('📋 Test 1: Executes plan successfully');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -143,15 +143,15 @@ export async function testPlanExecutor(): Promise<void> {
       console.log(`   - Completed: ${result.stagesCompleted.length} stages`);
       console.log(`   - Duration: ${result.durationMs}ms`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 1 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 1 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
   // Test 2: Stages run in order
   console.log('\n📋 Test 2: Stages run in order');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
     const executionOrder: number[] = [];
     
@@ -161,10 +161,10 @@ export async function testPlanExecutor(): Promise<void> {
       },
     });
     
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     await executorWithCallbacks.execute(plan, initialState);
     
@@ -180,15 +180,15 @@ export async function testPlanExecutor(): Promise<void> {
       console.log('✅ Test 2 PASSED: Stages run in order');
       console.log(`   - Execution order: ${executionOrder.join(' → ')}`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 2 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 2 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
   // Test 3: Skip conditions work
   console.log('\n📋 Test 3: Skip conditions work');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
     
     // Add skip condition to second stage (skip if route_data exists)
@@ -199,11 +199,11 @@ export async function testPlanExecutor(): Promise<void> {
     };
     
     // Set route_data in initial state to trigger skip
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
       route_data: { waypoints: [] } as any,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -216,23 +216,23 @@ export async function testPlanExecutor(): Promise<void> {
       console.log('✅ Test 3 PASSED: Skip conditions work');
       console.log(`   - Skipped stage: bunker_stage`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 3 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 3 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
   // Test 4: Early exit works
   console.log('\n📋 Test 4: Early exit works');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
     
     // Set needs_clarification flag to trigger early exit
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
       needs_clarification: true,
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -246,8 +246,8 @@ export async function testPlanExecutor(): Promise<void> {
       console.warn('⚠️  Test 4: Early exit may not have triggered');
       console.log(`   - Completed all ${result.stagesCompleted.length} stages`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 4 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 4 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -262,10 +262,10 @@ export async function testPlanExecutor(): Promise<void> {
     // Make first stage fail by using non-existent agent
     plan.stages[0].agentId = 'non_existent_agent';
     
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     try {
       const result = await executor.execute(plan, initialState);
@@ -279,12 +279,12 @@ export async function testPlanExecutor(): Promise<void> {
         console.log(`   - Plan failed: ${result.success}`);
         console.log(`   - Failed stages: ${result.stagesFailed.join(', ')}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Exception is also acceptable for required failure
       console.log('✅ Test 5 PASSED: Required failure stopped execution (exception thrown)');
     }
-  } catch (error: any) {
-    console.error('❌ Test 5 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 5 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
@@ -300,11 +300,11 @@ export async function testPlanExecutor(): Promise<void> {
     plan.stages[1].required = false;
     plan.stages[1].agentId = 'non_existent_agent';
     
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
       route_data: { waypoints: [] } as any, // Provide route_data so bunker stage can run
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -319,20 +319,20 @@ export async function testPlanExecutor(): Promise<void> {
       console.error('❌ Test 6 FAILED: Execution should continue after optional failure');
       allPassed = false;
     }
-  } catch (error: any) {
-    console.error('❌ Test 6 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 6 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
   // Test 7: Costs tracked accurately
   console.log('\n📋 Test 7: Costs tracked accurately');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -351,20 +351,20 @@ export async function testPlanExecutor(): Promise<void> {
       console.log(`   - LLM calls: ${result.costs.llmCalls}`);
       console.log(`   - API calls: ${result.costs.apiCalls}`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 7 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 7 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   
   // Test 8: No LLM calls during execution
   console.log('\n📋 Test 8: No LLM calls during execution');
   try {
-    const executor = createPlanExecutor();
+    const executor = createPlanExecutor({});
     const plan = createMockPlan();
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-correlation-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const result = await executor.execute(plan, initialState);
     
@@ -378,8 +378,8 @@ export async function testPlanExecutor(): Promise<void> {
       console.log('✅ Test 8 PASSED: No LLM calls during execution');
       console.log(`   - LLM calls: ${result.costs.llmCalls} (expected: 0)`);
     }
-  } catch (error: any) {
-    console.error('❌ Test 8 FAILED:', error.message);
+  } catch (error: unknown) {
+    console.error('❌ Test 8 FAILED:', error instanceof Error ? error.message : String(error));
     allPassed = false;
   }
   

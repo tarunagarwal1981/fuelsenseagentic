@@ -541,8 +541,11 @@ export async function testStateManagementIntegration(): Promise<void> {
     const originalState: Partial<MultiAgentState> = {
       vessel_name: 'CYCLE TEST',
       route_data: {
-        origin: 'Singapore',
-        destination: 'Rotterdam',
+        origin_port_code: 'SGSIN',
+        destination_port_code: 'NLRTM',
+        distance_nm: 1000,
+        estimated_hours: 120,
+        route_type: 'direct',
         waypoints: Array(50).fill({ lat: 1.0, lon: 2.0 }),
       },
     };

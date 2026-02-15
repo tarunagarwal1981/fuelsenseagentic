@@ -84,7 +84,7 @@ function createStateWithBunkerData(): MultiAgentState {
       capacity_mt: 2000,
       fuel_type: 'VLSFO',
     } as any,
-  } as MultiAgentState;
+  } as unknown as MultiAgentState;
 }
 
 /**
@@ -118,7 +118,7 @@ function createStateWithCIIData(): MultiAgentState {
       cii_value: 15.5,
       required_cii: 10.0,
     } as any,
-  };
+  } as unknown as MultiAgentState;
 }
 
 /**

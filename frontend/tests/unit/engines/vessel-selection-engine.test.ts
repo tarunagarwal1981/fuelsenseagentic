@@ -65,9 +65,12 @@ const nextVoyage = {
 };
 
 const routeData = {
+  origin_port_code: 'SGSIN',
+  destination_port_code: 'NLRTM',
   distance_nm: 11250,
   estimated_hours: 672,
-  waypoints: [] as unknown[],
+  route_type: 'sea',
+  waypoints: [] as { lat: number; lon: number }[],
 };
 
 const bunkerAnalysis = {

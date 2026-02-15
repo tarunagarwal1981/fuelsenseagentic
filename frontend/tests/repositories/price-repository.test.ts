@@ -11,7 +11,6 @@
 
 import { PriceRepository } from '@/lib/repositories/price-repository';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { FuelPrice, PriceQuery } from '@/lib/repositories/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -24,7 +23,8 @@ jest.mock('fs/promises');
 describe('PriceRepository', () => {
   let priceRepository: PriceRepository;
   let mockCache: jest.Mocked<RedisCache>;
-  let mockDb: jest.Mocked<SupabaseClient>;
+  /** Chainable Supabase-style mock (typed as any for .from().select().order() etc.) */
+  let mockDb: any;
 
   const mockPrice: FuelPrice = {
     id: 'price-1',

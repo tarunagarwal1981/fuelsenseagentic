@@ -8,16 +8,16 @@
  * - Error handling
  */
 
-import { WeatherService } from './weather.service';
+import { WeatherService } from '@/lib/services/weather.service';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { OpenMeteoAPIClient } from './open-meteo-api-client';
+import { OpenMeteoAPIClient } from '@/lib/services/open-meteo-api-client';
 import { PortRepository } from '@/lib/repositories/port-repository';
-import { MarineWeather, WeatherImpact, PortWeatherSafety } from './types';
+import type { MarineWeather, WeatherImpact, PortWeatherSafety } from '@/lib/services/types';
 import { Port } from '@/lib/repositories/types';
 
 // Mock dependencies
 jest.mock('@/lib/repositories/cache-client');
-jest.mock('./open-meteo-api-client');
+jest.mock('@/lib/services/open-meteo-api-client');
 jest.mock('@/lib/repositories/port-repository');
 
 describe('WeatherService', () => {

@@ -72,7 +72,7 @@ describe('entityExtractorAgentNode fallback when LLM fails', () => {
   }
 
   function makeUserMessage(content: string) {
-    return { role: 'user' as const, content };
+    return { role: 'user' as const, content } as any;
   }
 
   it('uses fallback to extract vessel when LLM throws and query is hull-style', async () => {

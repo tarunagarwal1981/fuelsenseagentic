@@ -134,16 +134,16 @@ export async function testPlanExecution(): Promise<void> {
   }
   
   const validator = getPlanValidator();
-  const executor = createPlanExecutor();
+  const executor = createPlanExecutor({});
   
   // Test 1: Complete flow - generate → validate → execute
   console.log('📋 Test 1: Complete flow - generate → validate → execute');
   try {
     const userQuery = 'Find cheapest bunker ports from Singapore to Rotterdam';
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-integration-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     // Step 1: Generate or use mock plan
     console.log('   Step 1: Generating plan...');
@@ -199,10 +199,10 @@ export async function testPlanExecution(): Promise<void> {
   console.log('\n📋 Test 2: Execution respects plan structure');
   try {
     const userQuery = 'Calculate route from Tokyo to Shanghai';
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-structure-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const plan = hasApiKey && generator
       ? await generator.generatePlan(userQuery, initialState, { forceRegenerate: true })
@@ -235,10 +235,10 @@ export async function testPlanExecution(): Promise<void> {
   console.log('\n📋 Test 3: Results match estimates');
   try {
     const userQuery = 'Find cheapest bunker from Singapore to Rotterdam';
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-estimates-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const plan = hasApiKey && generator
       ? await generator.generatePlan(userQuery, initialState, { forceRegenerate: true })
@@ -265,10 +265,10 @@ export async function testPlanExecution(): Promise<void> {
   console.log('\n📋 Test 4: Error handling works');
   try {
     const userQuery = 'Find cheapest bunker from Singapore to Rotterdam';
-    const initialState: MultiAgentState = {
+    const initialState = {
       messages: [],
       correlation_id: 'test-errors-123',
-    } as MultiAgentState;
+    } as unknown as MultiAgentState;
     
     const plan = hasApiKey && generator
       ? await generator.generatePlan(userQuery, initialState, { forceRegenerate: true })

@@ -10,7 +10,6 @@
 
 import { VesselRepository } from '@/lib/repositories/vessel-repository';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { VesselProfile } from '@/lib/repositories/types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -23,7 +22,8 @@ jest.mock('fs/promises');
 describe('VesselRepository', () => {
   let vesselRepository: VesselRepository;
   let mockCache: jest.Mocked<RedisCache>;
-  let mockDb: jest.Mocked<SupabaseClient>;
+  /** Chainable Supabase-style mock (typed as any for .from().select().single() etc.) */
+  let mockDb: any;
 
   const mockVessel: VesselProfile = {
     id: 'vessel_001',

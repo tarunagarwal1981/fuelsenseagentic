@@ -8,17 +8,17 @@
  * - Error handling
  */
 
-import { RouteService } from './route.service';
+import { RouteService } from '@/lib/services/route.service';
 import { PortRepository } from '@/lib/repositories/port-repository';
 import { RedisCache } from '@/lib/repositories/cache-client';
-import { SeaRouteAPIClient } from './sea-route-api-client';
-import { RouteData, Waypoint } from './types';
+import { SeaRouteAPIClient } from '@/lib/services/sea-route-api-client';
+import type { RouteData, Waypoint } from '@/lib/services/types';
 import { Port } from '@/lib/repositories/types';
 
 // Mock dependencies
 jest.mock('@/lib/repositories/port-repository');
 jest.mock('@/lib/repositories/cache-client');
-jest.mock('./sea-route-api-client');
+jest.mock('@/lib/services/sea-route-api-client');
 jest.mock('@turf/turf');
 
 describe('RouteService', () => {

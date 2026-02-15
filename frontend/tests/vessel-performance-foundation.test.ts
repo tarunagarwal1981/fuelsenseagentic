@@ -84,7 +84,7 @@ function makeState(overrides: Partial<MultiAgentState>): MultiAgentState {
 }
 
 function makeUserMessage(content: string) {
-  return { role: 'user' as const, content };
+  return { role: 'user' as const, content } as any;
 }
 
 // ============================================================================
@@ -234,7 +234,7 @@ async function runAgentRegistryTests() {
     'messages',
     'entity extractor requires messages'
   );
-  assertLength(agent?.prerequisites.required_tools || [], 0, 'entity extractor has no required tools');
+  assertLength((agent?.prerequisites as { required_tools?: string[] } | undefined)?.required_tools ?? [], 0, 'entity extractor has no required tools');
   assertLength(agent?.prerequisites.required_agents || [], 0, 'entity extractor has no required agents');
 
   assertContains(agent?.produces.primary, 'vessel_identifiers', 'entity extractor produces vessel_identifiers');

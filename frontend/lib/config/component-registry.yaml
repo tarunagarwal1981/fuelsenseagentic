@@ -143,6 +143,27 @@ components:
       forecast: "weather_forecast"
       vesselTimeline: "vessel_timeline"
 
+  # ========================================
+  # Hull Performance Analytics Card
+  # ========================================
+  - id: hull_performance_card
+    name: "Hull Performance Analytics"
+    component: "HullPerformanceCard"
+    description: "Professional hull performance analytics with summary metrics and interactive trend charts (excess power, speed loss, speed-consumption)"
+    required_state_fields:
+      - hull_performance
+    optional_state_fields:
+      - hull_performance_charts
+    props_mapping:
+      analysis: "state.hull_performance"
+      chartData: "state.hull_performance_charts"
+    render_conditions:
+      - "hull_performance && hull_performance.vessel"
+    produced_by:
+      - hull_performance_agent
+    tier: 1
+    priority: 95
+
 # ============================================================================
 # Query Type → Component Mappings
 # ============================================================================
@@ -169,6 +190,10 @@ query_type_mappings:
     components:
       - route_map
       - eca_compliance
+
+  hull_performance:
+    components:
+      - hull_performance_card
 
 # ============================================================================
 # Fallback Strategy

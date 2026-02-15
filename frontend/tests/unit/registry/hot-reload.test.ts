@@ -8,7 +8,7 @@
  * 4. Verifying the cache is invalidated and config is reloaded
  */
 
-import { ConfigLoader } from '../../lib/registry/config-loader';
+import { ConfigLoader } from '@/lib/registry/config-loader';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -52,9 +52,10 @@ function cleanup(): void {
 export async function testHotReload(): Promise<void> {
   console.log('\n🔥 [HOT-RELOAD-TEST] Starting hot-reload test...\n');
   
-  // Set NODE_ENV to development if not set
-  if (!process.env.NODE_ENV) {
-    process.env.NODE_ENV = 'development';
+  // Set NODE_ENV to development if not set (use mutable ref for tests)
+  const env = process.env as NodeJS.ProcessEnv & { NODE_ENV?: string };
+  if (!env.NODE_ENV) {
+    env.NODE_ENV = 'development';
   }
 
   const loader = ConfigLoader.getInstance();
