@@ -21,6 +21,7 @@ import {
   Moon,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
   FileStack,
   Lock,
   MessageCircle,
@@ -32,6 +33,13 @@ import {
   Sparkles,
   X,
   FileText,
+  Anchor,
+  Bell,
+  Save,
+  FilePlus,
+  ThumbsUp,
+  ThumbsDown,
+  Paperclip,
 } from "lucide-react";
 import { isFeatureEnabled } from '@/lib/config/feature-flags';
 import dynamic from "next/dynamic";
@@ -178,6 +186,7 @@ export function ChatInterfaceMultiAgent() {
   const [exampleQueriesExpanded, setExampleQueriesExpanded] = useState(false);
   const [agentLogExpanded, setAgentLogExpanded] = useState(true);
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
+  const [senseInsightTab, setSenseInsightTab] = useState<'CP Risk' | 'Performance Drift' | 'Low ROB' | 'Fuel Anomalies' | 'Action Taken'>('CP Risk');
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
     id: string;
     origin_port_code: string;
@@ -638,12 +647,14 @@ export function ChatInterfaceMultiAgent() {
     }
   };
 
-  // Chat body (messages + analysis + possible next actions) - shared by right card and expanded popup
+  // Chat body: empty at start; when user sends a query, show messages + answer (right panel = placeholder until then)
   const renderChatBody = () => (
     <>
-        {/* Messages Area - white with subtle dotted grid, font sizes per screenshot */}
         <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-gray-900 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.06)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_0)] bg-[size:16px_16px]">
           <div className="max-w-4xl mx-auto px-4 py-2">
+            {/* Show conversation only when there are messages or loading (empty at start per Figma) */}
+            {(messages.length > 0 || isLoading) && (
+            <>
             {messages.some((m) => m.role === "assistant") && (
               <div className="flex items-center justify-between gap-2 mb-2 text-sm text-gray-900 dark:text-gray-100">
                 <div className="flex items-center gap-2">
@@ -759,16 +770,16 @@ export function ChatInterfaceMultiAgent() {
                         )}
                       </div>
                       {message.role === 'assistant' && isLastAssistant && hullPerformanceCharts && (hullPerformanceCharts.excessPower || hullPerformanceCharts.speedLoss || hullPerformanceCharts.speedConsumption) && (
-                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-                          <div className="flex gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
+                        <div className="mt-4 border-t border-fs-border pt-4">
+                          <div className="flex gap-0 border-b border-fs-border">
                             {hullPerformanceCharts.excessPower && (
                               <button
                                 type="button"
                                 onClick={() => setHullChartTab('excessPower')}
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
                                   hullChartTab === 'excessPower'
-                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
+                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
                                 }`}
                               >
                                 Excess Power
@@ -778,10 +789,10 @@ export function ChatInterfaceMultiAgent() {
                               <button
                                 type="button"
                                 onClick={() => setHullChartTab('speedLoss')}
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
                                   hullChartTab === 'speedLoss'
-                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
+                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
                                 }`}
                               >
                                 Speed Loss
@@ -791,10 +802,10 @@ export function ChatInterfaceMultiAgent() {
                               <button
                                 type="button"
                                 onClick={() => setHullChartTab('speedConsumption')}
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
                                   hullChartTab === 'speedConsumption'
-                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
+                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
                                 }`}
                               >
                                 Speed-Consumption
@@ -869,62 +880,70 @@ export function ChatInterfaceMultiAgent() {
               )}
               <div ref={messagesEndRef} />
             </div>
-          </div>
-        </div>
-        {/* Possible next actions */}
-        <div className="border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 p-4 flex-shrink-0">
-          <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">Possible next actions</p>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Review risk breakdown</Button>
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>View affected vessels</Button>
-            <Button variant="outline" size="sm" className="text-sm font-normal text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600" disabled>Run delay impact simulation</Button>
+            </>
+            )}
           </div>
         </div>
     </>
   );
 
   return (
-    <div className="flex h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
-      {/* 1. Narrow dark nav sidebar (placeholder) */}
-      <div className="w-16 flex-shrink-0 flex flex-col items-center py-4 bg-gray-800 dark:bg-gray-900 border-r border-gray-700">
-        <div className="flex flex-col items-center gap-1 mb-6">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-            <Bot className="h-5 w-5 text-white" />
+    <div className="flex flex-col h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
+      <div className="flex flex-1 min-h-0">
+      {/* 1. Narrow dark nav sidebar - Figma: anchor, bell+badge, document, clock, profile, collapse */}
+      <div className="w-16 flex-shrink-0 flex flex-col items-center py-4 bg-fs-sidebar border-r border-fs-border">
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="w-10 h-10 rounded-full bg-fs-brand-gradient flex items-center justify-center flex-shrink-0">
+            <Anchor className="h-5 w-5 text-white" />
           </div>
-          <span className="text-[10px] text-gray-400 text-center leading-tight">Super agent</span>
-          <ChevronDown className="h-3 w-3 text-gray-500" />
         </div>
         <nav className="flex-1 flex flex-col gap-1">
-          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md bg-gray-700/50 text-white border-l-2 border-blue-500 -ml-px pl-px">
-            <Settings className="h-5 w-5" />
-            <span className="text-[10px]">Agents</span>
+          <button type="button" className="relative flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
+            <Bell className="h-5 w-5" />
+            <span className="absolute top-1 right-1 flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-fs-alert text-[10px] font-bold text-white">3</span>
           </button>
-          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md text-gray-400 hover:bg-gray-700/30 hover:text-gray-300">
-            <FileStack className="h-5 w-5" />
-            <span className="text-[10px]">Projects</span>
+          <button type="button" className="flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
+            <FileText className="h-5 w-5" />
           </button>
-          <button className="flex flex-col items-center gap-1 py-2 px-2 rounded-md text-gray-400 hover:bg-gray-700/30 hover:text-gray-300">
+          <button type="button" className="flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
             <Clock className="h-5 w-5" />
-            <span className="text-[10px]">Archive</span>
           </button>
         </nav>
-        <button className="mt-auto p-2 text-gray-500 hover:text-gray-300 rounded-md">
-          <RefreshCw className="h-5 w-5" />
-        </button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <button type="button" className="w-10 h-10 rounded-full bg-fs-surface-elevated flex items-center justify-center text-white">
+            <User className="h-5 w-5" />
+          </button>
+          <button type="button" className="p-2 text-gray-500 hover:text-gray-300 rounded-md" title="Collapse sidebar">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
-      {/* 2. Left content: Today's Intelligence (25% page width) - thin border all around, small gap from nav */}
+      {/* 2. Left panel: Alerts (25) - Figma: search, tabs Active/Monitoring/WIP, alert list */}
       <div className="w-[25%] flex-shrink-0 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
-        {/* Top header bar: Super agent (left) + Today's Intelligence (right) */}
-        <div className="flex items-center justify-between pl-4 pr-4 py-3.5 border-b border-l border-l-gray-300 dark:border-l-gray-600 border-b-gray-200 dark:border-b-gray-600 bg-white dark:bg-gray-800 shrink-0 [border-left-style:dashed]">
-          <button type="button" className="flex items-center gap-2 text-left hover:opacity-90 transition-opacity">
-            <span className="text-sm font-medium text-[#5E50F3] dark:text-indigo-400">Super agent</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 shrink-0" aria-hidden />
-            <ChevronDown className="h-4 w-4 text-gray-700 dark:text-gray-300 shrink-0" />
-          </button>
-          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-            Today&apos;s Intelligence
-          </h2>
+        <div className="shrink-0 px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-600">
+          <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Alerts (25)</h2>
+          <div className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 px-3 py-2">
+            <input
+              type="text"
+              placeholder="Search by Vessel Name, Alert type, & date"
+              className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none"
+            />
+            <button type="button" className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+              <Clock className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex gap-3 mt-2 border-b border-gray-200 dark:border-gray-600">
+            <button type="button" className="text-xs font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-red-500 dark:border-red-400">
+              Active <span className="font-normal text-gray-500 dark:text-gray-400">(15)</span>
+            </button>
+            <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+              Monitoring (5)
+            </button>
+            <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
+              WIP (5)
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -986,39 +1005,21 @@ export function ChatInterfaceMultiAgent() {
             </div>
           </div>
 
-          {/* Alerts (placeholder) - match screenshot: small bold font, teal accents, card layout */}
-          <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
-            <div className="px-3 pt-3 pb-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                  Alerts <span className="font-normal text-gray-700 dark:text-gray-300">25</span>
-                </span>
-                <div className="flex items-center gap-1">
-                  <button type="button" className="text-xs text-teal-600 dark:text-teal-400 hover:underline font-normal">
-                    View all
-                  </button>
-                  <button type="button" className="p-0.5 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
-                    <MoreVertical className="h-3.5 w-3.5" />
-                  </button>
+          {/* Alert list - Figma: vessel, date, alert type, fuel message */}
+            <div className="space-y-0 max-h-[260px] overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
+                    Hull Condition:{" "}
+                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Blue Ocean</span>
+                  </p>
+                  <span className="text-xs font-normal text-gray-500 dark:text-gray-400 flex-shrink-0">Date: 12 Jan</span>
                 </div>
+                <p className="text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">Alert type: Hull Condition</p>
+                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
+                  Fuel consumption abnormal <span className="text-red-600 dark:text-red-400 font-semibold">15.5%</span> above expected range
+                </p>
               </div>
-              <div className="border-b border-gray-200 dark:border-gray-600" />
-              <div className="flex gap-3 mt-0 border-b border-gray-200 dark:border-gray-600">
-                <button
-                  type="button"
-                  className="text-xs font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-teal-500 dark:border-teal-400"
-                >
-                  Active <span className="font-normal text-gray-500 dark:text-gray-400">(15)</span>
-                </button>
-                <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
-                  Monitoring (5)
-                </button>
-                <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
-                  CTA (5)
-                </button>
-              </div>
-            </div>
-            <div className="space-y-0 max-h-[260px] overflow-y-auto">
               <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
@@ -1027,14 +1028,11 @@ export function ChatInterfaceMultiAgent() {
                   </p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
-                    <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
-                      <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
-                    </div>
                     <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
                   </div>
                 </div>
                 <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
-                  Fuel Consumption is 18% above expect for MV Nova. Power and RPM are stable, Indicating hull Fouling as the primary cause
+                  Fuel Consumption is 18% above expect for MV Nova. Power and RPM are stable, indicating hull fouling as the primary cause.
                 </p>
               </div>
               <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
@@ -1045,18 +1043,14 @@ export function ChatInterfaceMultiAgent() {
                   </p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
-                    <div className="w-7 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 relative">
-                      <div className="absolute left-0.5 top-0.5 w-2.5 h-2.5 rounded-full bg-gray-500 dark:bg-gray-400" />
-                    </div>
                     <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
                   </div>
                 </div>
                 <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
-                  Facing Severe Weather Condition
+                  Facing severe weather condition
                 </p>
               </div>
             </div>
-          </div>
         </div>
       </div>
 
@@ -1093,9 +1087,21 @@ export function ChatInterfaceMultiAgent() {
 
         {renderChatBody()}
 
-        {/* Query area at bottom of right pane */}
+        {/* Query area at bottom of right pane - Figma: input, suggested actions, thumbs up/down, menu, paperclip */}
         <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
           <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
+          <div className="flex gap-2 mb-2">
+            {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setInput((prev) => (prev ? `${prev} ` : '') + label)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
             <div className="flex-1 relative rounded-xl overflow-visible">
               <textarea
@@ -1123,10 +1129,26 @@ export function ChatInterfaceMultiAgent() {
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+            <div className="flex items-center gap-1 pb-1">
+              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Good response">
+                <ThumbsUp className="h-4 w-4" />
+              </button>
+              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Bad response">
+                <ThumbsDown className="h-4 w-4" />
+              </button>
+              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="More options">
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Attach file">
+                <Paperclip className="h-4 w-4" />
+              </button>
+            </div>
           </form>
         </div>
       </div>
       )}
+
+      </div>
 
       {/* Expanded chat: almost full-screen chat interface with query at bottom */}
       {expandedPopup && (
@@ -1147,6 +1169,18 @@ export function ChatInterfaceMultiAgent() {
             {/* Query field at bottom of expanded window */}
             <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
               <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
+              <div className="flex gap-2 mb-2">
+                {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setInput((prev) => (prev ? `${prev} ` : '') + label)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
                 <div className="flex-1 relative rounded-xl overflow-visible">
                   <textarea
@@ -1172,6 +1206,12 @@ export function ChatInterfaceMultiAgent() {
                   >
                     <Send className="h-4 w-4" />
                   </Button>
+                </div>
+                <div className="flex items-center gap-1 pb-1">
+                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ThumbsUp className="h-4 w-4" /></button>
+                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ThumbsDown className="h-4 w-4" /></button>
+                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><MoreVertical className="h-4 w-4" /></button>
+                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><Paperclip className="h-4 w-4" /></button>
                 </div>
               </form>
             </div>

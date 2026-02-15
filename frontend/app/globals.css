@@ -37,6 +37,18 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* FuelSense theme (Figma / Builder.io design) */
+  --color-fs-brand: var(--fs-brand);
+  --color-fs-brand-light: var(--fs-brand-light);
+  --color-fs-brand-dark: var(--fs-brand-dark);
+  --color-fs-green: var(--fs-green);
+  --color-fs-topbar: var(--fs-topbar);
+  --color-fs-sidebar: var(--fs-sidebar);
+  --color-fs-alert: var(--fs-alert);
+  --color-fs-surface: var(--fs-surface);
+  --color-fs-surface-elevated: var(--fs-surface-elevated);
+  --color-fs-border: var(--fs-border);
+  --color-fs-input: var(--fs-input);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -47,72 +59,133 @@
 }
 
 :root {
+  /* Figma design tokens from Builder.io Quick Copy (Frame 2147225272).
+     Source: builder.io/app/projects?showPasteHere=true&figmaQuickCopyData=... */
+  --figma-Surface-Faded-bg: #F9FAFB;
+  --figma-Primary-Dark-Blue: #072638;
+  --figma-Buttons-button-container-2: rgba(33, 148, 149, 0.2);
+  --figma-Status-Error: #CD1030;
+  --figma-Grey-01: #FFF;
+  --figma-Surface-Card-stroke: #D2D5DB;
+  --figma-Surface-Card: #FFF;
+  --figma-Text-Title: #132740;
+  --figma-Text-Subtitles: #4B556B;
+  --figma-Border-Main-Divider: #E5E7EA;
+  --figma-Gray-500: #667085;
+  --figma-Status-Error-dark: #9D142B;
+  --figma-Grey-02: #F9FAFB;
+  --figma-Surface-Teal-BG-1: #E5F9F9;
+  --figma-Grey-11: #040406;
+  --figma-Grey-05: #D2D5DB;
+  --figma-secondary-elements-background: #F9FAFB;
+  --figma-secondary-elements-foreground: #9EA2AE;
+  --figma-Text-Primary: #132740;
+  --figma-Text-Icon: #9EA2AE;
+  --figma-Text-Secondary: #4B556B;
+  --figma-Surface-Grey-BG-1-Stroke: #E5E7EA;
+  --figma-Grey-10: #212936;
+  --figma-Primary-Teal: #219495;
+  --figma-Grey-03: #F3F4F6;
+  --figma-Tab-Unselected: #999;
+  --figma-font-face: Poppins;
+  --figma-font-size-body-1: 18px;
+  --figma-line-height-body-1: 26px;
+  --figma-font-size-body-2: 16px;
+  --figma-line-height-body-2: 24px;
+  --figma-font-size-body-3: 14px;
+  --figma-line-height-body-3: 22px;
+  --figma-font-size-header-4: 20px;
+
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --background: var(--figma-Grey-01);
+  --foreground: var(--figma-Text-Primary);
+  --card: var(--figma-Surface-Card);
+  --card-foreground: var(--figma-Text-Title);
+  --popover: var(--figma-Surface-Card);
+  --popover-foreground: var(--figma-Text-Primary);
+  --primary: var(--figma-Primary-Teal);
+  --primary-foreground: var(--figma-Grey-01);
+  --secondary: var(--figma-secondary-elements-background);
+  --secondary-foreground: var(--figma-secondary-elements-foreground);
+  --muted: var(--figma-Grey-03);
+  --muted-foreground: var(--figma-Text-Secondary);
+  --accent: var(--figma-Surface-Teal-BG-1);
+  --accent-foreground: var(--figma-Primary-Dark-Blue);
+  --destructive: var(--figma-Status-Error);
+  --border: var(--figma-Border-Main-Divider);
+  --input: var(--figma-Grey-03);
+  --ring: var(--figma-Primary-Teal);
+  --chart-1: var(--figma-Primary-Teal);
+  --chart-2: var(--figma-Primary-Dark-Blue);
+  --chart-3: var(--figma-Text-Secondary);
+  --chart-4: var(--figma-Surface-Teal-BG-1);
+  --chart-5: var(--figma-Gray-500);
+  --sidebar: var(--figma-Grey-10);
+  --sidebar-foreground: var(--figma-Grey-01);
+  --sidebar-primary: var(--figma-Primary-Teal);
+  --sidebar-primary-foreground: var(--figma-Grey-01);
+  --sidebar-accent: var(--figma-Grey-10);
+  --sidebar-accent-foreground: var(--figma-Grey-01);
+  --sidebar-border: var(--figma-Surface-Grey-BG-1-Stroke);
+  --sidebar-ring: var(--figma-Primary-Teal);
+  /* FuelSense theme – light (aligned to Figma) */
+  --fs-brand: var(--figma-Primary-Teal);
+  --fs-brand-light: var(--figma-Surface-Teal-BG-1);
+  --fs-brand-dark: var(--figma-Primary-Dark-Blue);
+  --fs-green: var(--figma-Primary-Teal);
+  --fs-topbar: var(--figma-Surface-Faded-bg);
+  --fs-sidebar: var(--figma-Grey-10);
+  --fs-alert: var(--figma-Status-Error);
+  --fs-surface: var(--figma-Surface-Card);
+  --fs-surface-elevated: var(--figma-Surface-Faded-bg);
+  --fs-border: var(--figma-Border-Main-Divider);
+  --fs-input: var(--figma-Grey-03);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --background: var(--figma-Grey-11);
+  --foreground: var(--figma-Grey-01);
+  --card: var(--figma-Grey-10);
+  --card-foreground: var(--figma-Grey-01);
+  --popover: var(--figma-Grey-10);
+  --popover-foreground: var(--figma-Grey-01);
+  --primary: var(--figma-Primary-Teal);
+  --primary-foreground: var(--figma-Grey-01);
+  --secondary: var(--figma-Grey-10);
+  --secondary-foreground: var(--figma-secondary-elements-foreground);
+  --muted: var(--figma-Grey-10);
+  --muted-foreground: var(--figma-Text-Icon);
+  --accent: var(--figma-Buttons-button-container-2);
+  --accent-foreground: var(--figma-Grey-01);
+  --destructive: var(--figma-Status-Error-dark);
+  --border: var(--figma-Surface-Grey-BG-1-Stroke);
+  --input: var(--figma-Grey-10);
+  --ring: var(--figma-Primary-Teal);
+  --chart-1: var(--figma-Primary-Teal);
+  --chart-2: var(--figma-Grey-01);
+  --chart-3: var(--figma-Text-Icon);
+  --chart-4: var(--figma-Surface-Teal-BG-1);
+  --chart-5: var(--figma-Gray-500);
+  --sidebar: var(--figma-Grey-11);
+  --sidebar-foreground: var(--figma-Grey-01);
+  --sidebar-primary: var(--figma-Primary-Teal);
+  --sidebar-primary-foreground: var(--figma-Grey-01);
+  --sidebar-accent: var(--figma-Grey-10);
+  --sidebar-accent-foreground: var(--figma-Grey-01);
+  --sidebar-border: var(--figma-Surface-Grey-BG-1-Stroke);
+  --sidebar-ring: var(--figma-Primary-Teal);
+  /* FuelSense theme – dark (Figma Greys) */
+  --fs-brand: var(--figma-Primary-Teal);
+  --fs-brand-light: var(--figma-Surface-Teal-BG-1);
+  --fs-brand-dark: var(--figma-Primary-Dark-Blue);
+  --fs-green: var(--figma-Primary-Teal);
+  --fs-topbar: var(--figma-Grey-10);
+  --fs-sidebar: var(--figma-Grey-11);
+  --fs-alert: var(--figma-Status-Error-dark);
+  --fs-surface: var(--figma-Grey-10);
+  --fs-surface-elevated: var(--figma-Grey-10);
+  --fs-border: var(--figma-Surface-Grey-BG-1-Stroke);
+  --fs-input: var(--figma-Grey-10);
 }
 
 @layer base {
@@ -128,6 +201,11 @@
   [class*="prose"] * {
     font-family: inherit;
   }
+}
+
+/* FuelSense brand gradient (teal → green) */
+.bg-fs-brand-gradient {
+  background: linear-gradient(to bottom right, var(--fs-brand), var(--fs-green));
 }
 
 /* Animation utilities */
