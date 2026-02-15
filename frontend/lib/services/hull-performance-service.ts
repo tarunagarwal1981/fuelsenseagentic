@@ -64,6 +64,7 @@ export interface HullPerformanceAnalysis {
     consumption: number;
     predicted_consumption: number;
     speed: number;
+    loading_condition: string;
   }>;
 
   baseline_curves?: {
@@ -534,6 +535,7 @@ export class HullPerformanceService {
       consumption: r.consumption,
       predicted_consumption: r.predicted_consumption,
       speed: r.speed,
+      loading_condition: r.loading_condition ?? '',
     }));
   }
 

@@ -1,292 +1,303 @@
 /**
  * Speed-Consumption Chart Service
  *
- * Analyzes relationship between vessel speed and fuel consumption.
- * Generates speed-consumption curves for voyage optimization.
- *
- * Used by: Hull Performance Agent, Voyage Optimizer Agent
+ * Builds speed vs consumption chart data with ballast/laden separation,
+ * polynomial fits, and baseline comparison.
  */
 
+import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
+import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
+import { calculatePolynomialRegression } from '@/lib/utils/polynomial-regression';
 import { BaseChartService } from './base-chart-service';
-import type { HullPerformanceAnalysis } from '../hull-performance-service';
-import { logCustomEvent } from '@/lib/monitoring/axiom-logger';
 
-// ============================================================================
-// Interfaces
-// ============================================================================
-
+/** Single speed-consumption point with required loading condition */
 export interface SpeedConsumptionPoint {
-  speed: number; // Vessel speed (knots)
-  consumption: number; // Fuel consumption (MT/day)
-  date: string; // Date of measurement (for color coding)
-  timestamp: number; // Unix timestamp
-  condition?: 'laden' | 'ballast'; // Vessel loading condition
+  speed: number;
+  consumption: number;
+  condition: 'ballast' | 'laden';
+  /** Report date (YYYY-MM-DD) from trend_data, for tooltip display */
+  date?: string;
 }
 
+/** Polynomial regression result for curve fit (e.g. from polynomial-regression utils) */
+export interface PolynomialFit {
+  coefficients: [number, number, number];
+  r_squared: number;
+  equation_text: string;
+}
+
+/** Chart data with ballast/laden separation, actual + baseline, fits and statistics */
 export interface SpeedConsumptionChartData {
-  dataPoints: SpeedConsumptionPoint[];
+  ballast: {
+    actual: {
+      dataPoints: SpeedConsumptionPoint[];
+      polynomialFit?: PolynomialFit;
+    };
+    baseline: {
+      dataPoints: Array<{ speed: number; consumption: number }>;
+      polynomialFit?: PolynomialFit;
+    };
+  };
+  laden: {
+    actual: {
+      dataPoints: SpeedConsumptionPoint[];
+      polynomialFit?: PolynomialFit;
+    };
+    baseline: {
+      dataPoints: Array<{ speed: number; consumption: number }>;
+      polynomialFit?: PolynomialFit;
+    };
+  };
   statistics: {
-    avgSpeed: number;
-    avgConsumption: number;
-    speedRange: { min: number; max: number };
-    consumptionRange: { min: number; max: number };
-    correlation: number; // Pearson correlation coefficient
-  };
-  // Optional: polynomial curve fit (cubic) for better accuracy
-  polynomialFit?: {
-    coefficients: number[]; // [a, b, c, d] for y = ax³ + bx² + cx + d
-    r2: number;
-  };
-  metadata: {
-    totalPoints: number;
-    filteredPoints: number;
-    dateRange: {
-      start: string;
-      end: string;
+    ballast: {
+      avgSpeed: number;
+      avgConsumption: number;
+      speedRange: { min: number; max: number };
+      consumptionRange: { min: number; max: number };
+      correlation: number;
+      dataPoints: number;
+    };
+    laden: {
+      avgSpeed: number;
+      avgConsumption: number;
+      speedRange: { min: number; max: number };
+      consumptionRange: { min: number; max: number };
+      correlation: number;
+      dataPoints: number;
     };
   };
 }
-
-// ============================================================================
-// Service
-// ============================================================================
 
 export class SpeedConsumptionChartService extends BaseChartService {
   /**
-   * Extract speed-consumption chart data from hull performance analysis
+   * Build chart-ready speed-consumption data with ballast/laden separation.
+   * Separates trend_data by loading_condition, extracts baseline curves, computes
+   * polynomial fits (when >= 3 points) and statistics. Logs start/complete to Axiom.
    */
-  async extractChartData(
+  extractChartData(
     analysis: HullPerformanceAnalysis
-  ): Promise<SpeedConsumptionChartData | null> {
-    const startTime = Date.now();
-
-    logCustomEvent(
-      'speed_consumption_chart_extraction_start',
-      this.correlationId,
-      { vessel_imo: analysis.vessel.imo },
-      'info'
-    );
-
-    // Validate input
-    const validation = this.validateChartData(analysis.trend_data, 2);
-    if (!validation.isValid) {
+  ): SpeedConsumptionChartData | null {
+    try {
       logCustomEvent(
-        'speed_consumption_chart_extraction_failed',
+        'speed_consumption_chart_extract_start',
         this.correlationId,
-        { reason: validation.errorMessage },
-        'warn'
+        {},
+        'info'
       );
+
+      const trendData = analysis?.trend_data ?? [];
+      const baselineCurves = analysis?.baseline_curves;
+
+      // 1. Separate trend_data into ballast and laden by loading_condition
+      const ballastActual = this.extractPointsByCondition(trendData, 'ballast');
+      const ladenActual = this.extractPointsByCondition(trendData, 'laden');
+
+      // 2. Extract baseline curves (speed, consumption)
+      const ballastBaseline =
+        baselineCurves?.ballast?.map((p) => ({
+          speed: p.speed,
+          consumption: p.consumption,
+        })) ?? [];
+      const ladenBaseline =
+        baselineCurves?.laden?.map((p) => ({
+          speed: p.speed,
+          consumption: p.consumption,
+        })) ?? [];
+
+      // 3. Polynomial fits (x = speed, y = consumption); require >= 3 points
+      const toRegressionPoints = (
+        points: Array<{ speed: number; consumption: number }>
+      ) => points.map((p) => ({ x: p.speed, y: p.consumption }));
+
+      const ballastActualFit =
+        ballastActual.length >= 3
+          ? calculatePolynomialRegression(toRegressionPoints(ballastActual))
+          : null;
+      const ladenActualFit =
+        ladenActual.length >= 3
+          ? calculatePolynomialRegression(toRegressionPoints(ladenActual))
+          : null;
+      const ballastBaselineFit =
+        ballastBaseline.length >= 3
+          ? calculatePolynomialRegression(toRegressionPoints(ballastBaseline))
+          : null;
+      const ladenBaselineFit =
+        ladenBaseline.length >= 3
+          ? calculatePolynomialRegression(toRegressionPoints(ladenBaseline))
+          : null;
+
+      const has_ballast_fit = ballastActualFit != null;
+      const has_laden_fit = ladenActualFit != null;
+
+      // 4. Statistics via this.calculateStatistics()
+      const ballastStats = this.calculateStatistics(ballastActual);
+      const ladenStats = this.calculateStatistics(ladenActual);
+
+      // 5. Build result
+      const result: SpeedConsumptionChartData = {
+        ballast: {
+          actual: {
+            dataPoints: ballastActual,
+            polynomialFit: ballastActualFit
+              ? {
+                  coefficients: ballastActualFit.coefficients,
+                  r_squared: ballastActualFit.r_squared,
+                  equation_text: ballastActualFit.equation_text,
+                }
+              : undefined,
+          },
+          baseline: {
+            dataPoints: ballastBaseline,
+            polynomialFit: ballastBaselineFit
+              ? {
+                  coefficients: ballastBaselineFit.coefficients,
+                  r_squared: ballastBaselineFit.r_squared,
+                  equation_text: ballastBaselineFit.equation_text,
+                }
+              : undefined,
+          },
+        },
+        laden: {
+          actual: {
+            dataPoints: ladenActual,
+            polynomialFit: ladenActualFit
+              ? {
+                  coefficients: ladenActualFit.coefficients,
+                  r_squared: ladenActualFit.r_squared,
+                  equation_text: ladenActualFit.equation_text,
+                }
+              : undefined,
+          },
+          baseline: {
+            dataPoints: ladenBaseline,
+            polynomialFit: ladenBaselineFit
+              ? {
+                  coefficients: ladenBaselineFit.coefficients,
+                  r_squared: ladenBaselineFit.r_squared,
+                  equation_text: ladenBaselineFit.equation_text,
+                }
+              : undefined,
+          },
+        },
+        statistics: {
+          ballast: ballastStats,
+          laden: ladenStats,
+        },
+      };
+
+      logCustomEvent(
+        'speed_consumption_chart_extract_complete',
+        this.correlationId,
+        {
+          ballast_actual_points: ballastActual.length,
+          laden_actual_points: ladenActual.length,
+          ballast_baseline_points: ballastBaseline.length,
+          laden_baseline_points: ladenBaseline.length,
+          has_ballast_fit,
+          has_laden_fit,
+        },
+        'info'
+      );
+
+      return result;
+    } catch (err) {
+      logError(this.correlationId, err, {
+        context: 'SpeedConsumptionChartService.extractChartData',
+      });
       return null;
     }
-
-    // Extract and validate data points
-    const rawPoints = this.extractDataPoints(analysis.trend_data);
-    const { valid: validPoints, filtered: filteredCount } = this.filterValidPoints(
-      rawPoints,
-      ['speed', 'consumption']
-    );
-
-    if (validPoints.length < 2) {
-      logCustomEvent(
-        'speed_consumption_chart_insufficient_data',
-        this.correlationId,
-        { valid_points: validPoints.length, filtered: filteredCount },
-        'warn'
-      );
-      return null;
-    }
-
-    // Sort by speed for better visualization
-    const sortedPoints = validPoints.sort((a, b) => a.speed - b.speed);
-
-    // Calculate statistics
-    const statistics = this.calculateStatistics(sortedPoints);
-
-    // Build metadata
-    const metadata = {
-      totalPoints: analysis.trend_data.length,
-      filteredPoints: filteredCount,
-      dateRange: {
-        start: sortedPoints[0].date,
-        end: sortedPoints[sortedPoints.length - 1].date,
-      },
-    };
-
-    const chartData: SpeedConsumptionChartData = {
-      dataPoints: sortedPoints,
-      statistics,
-      metadata,
-    };
-
-    const executionTime = Date.now() - startTime;
-    logCustomEvent(
-      'speed_consumption_chart_extraction_complete',
-      this.correlationId,
-      {
-        vessel_imo: analysis.vessel.imo,
-        data_points: sortedPoints.length,
-        correlation: statistics.correlation.toFixed(3),
-        execution_time_ms: executionTime,
-      },
-      'info'
-    );
-
-    return chartData;
   }
 
   /**
-   * Extract data points from trend data
+   * Extract speed-consumption points for one loading condition from trend_data.
    */
-  private extractDataPoints(
-    trendData: HullPerformanceAnalysis['trend_data']
+  protected extractPointsByCondition(
+    trendData: HullPerformanceAnalysis['trend_data'],
+    condition: 'ballast' | 'laden'
   ): SpeedConsumptionPoint[] {
-    return trendData.map(point => ({
-      speed: point.speed ?? 0,
-      consumption: point.consumption ?? 0,
-      date: point.date,
-      timestamp: this.dateToTimestamp(point.date),
-      condition: undefined, // trend_data has no condition; baseline curves do
-    }));
+    if (!Array.isArray(trendData)) return [];
+    return trendData
+      .filter((d) => this.normalizeLoadingCondition(d.loading_condition) === condition)
+      .map((d) => ({
+        speed: d.speed,
+        consumption: d.consumption,
+        condition,
+        date: d.date,
+      }))
+      .filter((p) => Number.isFinite(p.speed) && Number.isFinite(p.consumption));
   }
 
   /**
-   * Calculate statistical summary and correlation
+   * Compute statistics for a set of speed-consumption points.
+   */
+  protected computeConditionStatistics(
+    points: SpeedConsumptionPoint[]
+  ): SpeedConsumptionChartData['statistics']['ballast'] {
+    return this.calculateStatistics(points);
+  }
+
+  /**
+   * Normalize raw loading condition string to 'ballast' or 'laden'.
+   * Converts to lowercase and trims; returns 'ballast' if string includes 'ballast', otherwise 'laden'.
+   *
+   * @param condition - Raw loading condition (e.g. from hull_performance.loading_condition)
+   * @returns 'ballast' | 'laden'
+   */
+  private normalizeLoadingCondition(condition: string | undefined): 'ballast' | 'laden' {
+    const s = (condition ?? '').toLowerCase().trim();
+    return s.includes('ballast') ? 'ballast' : 'laden';
+  }
+
+  /**
+   * Calculate statistics for speed-consumption points: averages, ranges, Pearson correlation, and count.
+   * Uses Pearson r = Σ((x - x̄)(y - ȳ)) / sqrt(Σ(x - x̄)² × Σ(y - ȳ)²). Returns zeros for empty array.
+   *
+   * @param points - Speed-consumption points (x = speed, y = consumption)
+   * @returns Object matching statistics.ballast / statistics.laden interface
    */
   private calculateStatistics(
     points: SpeedConsumptionPoint[]
-  ): SpeedConsumptionChartData['statistics'] {
-    const speeds = points.map(p => p.speed);
-    const consumptions = points.map(p => p.consumption);
+  ): SpeedConsumptionChartData['statistics']['ballast'] {
+    if (points.length === 0) {
+      return {
+        avgSpeed: 0,
+        avgConsumption: 0,
+        speedRange: { min: 0, max: 0 },
+        consumptionRange: { min: 0, max: 0 },
+        correlation: 0,
+        dataPoints: 0,
+      };
+    }
+    const n = points.length;
+    const avgSpeed = points.reduce((s, p) => s + p.speed, 0) / n;
+    const avgConsumption = points.reduce((s, p) => s + p.consumption, 0) / n;
+    const speedMin = Math.min(...points.map((p) => p.speed));
+    const speedMax = Math.max(...points.map((p) => p.speed));
+    const consumptionMin = Math.min(...points.map((p) => p.consumption));
+    const consumptionMax = Math.max(...points.map((p) => p.consumption));
 
-    const avgSpeed = this.calculateMean(speeds);
-    const avgConsumption = this.calculateMean(consumptions);
-
-    const speedRange = {
-      min: Math.min(...speeds),
-      max: Math.max(...speeds),
-    };
-
-    const consumptionRange = {
-      min: Math.min(...consumptions),
-      max: Math.max(...consumptions),
-    };
-
-    // Calculate Pearson correlation coefficient
-    const correlation = this.calculateCorrelation(speeds, consumptions);
+    let correlation = 0;
+    if (n >= 2) {
+      const sumCov = points.reduce(
+        (s, p) => s + (p.speed - avgSpeed) * (p.consumption - avgConsumption),
+        0
+      );
+      const sumSqSpeed = points.reduce((s, p) => s + (p.speed - avgSpeed) ** 2, 0);
+      const sumSqConsumption = points.reduce(
+        (s, p) => s + (p.consumption - avgConsumption) ** 2,
+        0
+      );
+      const denom = Math.sqrt(sumSqSpeed * sumSqConsumption);
+      correlation = denom > 0 ? sumCov / denom : 0;
+    }
 
     return {
       avgSpeed,
       avgConsumption,
-      speedRange,
-      consumptionRange,
+      speedRange: { min: speedMin, max: speedMax },
+      consumptionRange: { min: consumptionMin, max: consumptionMax },
       correlation,
+      dataPoints: n,
     };
-  }
-
-  /**
-   * Calculate Pearson correlation coefficient
-   * Measures linear relationship between speed and consumption
-   * Range: -1 (perfect negative) to +1 (perfect positive)
-   */
-  private calculateCorrelation(xValues: number[], yValues: number[]): number {
-    const n = xValues.length;
-    if (n < 2) return 0;
-
-    const xMean = this.calculateMean(xValues);
-    const yMean = this.calculateMean(yValues);
-
-    let numerator = 0;
-    let xDenominator = 0;
-    let yDenominator = 0;
-
-    for (let i = 0; i < n; i++) {
-      const xDiff = xValues[i] - xMean;
-      const yDiff = yValues[i] - yMean;
-
-      numerator += xDiff * yDiff;
-      xDenominator += xDiff * xDiff;
-      yDenominator += yDiff * yDiff;
-    }
-
-    const denominator = Math.sqrt(xDenominator * yDenominator);
-
-    if (denominator === 0) return 0;
-
-    return numerator / denominator;
-  }
-
-  /**
-   * Predict consumption at a given speed using linear interpolation
-   * For more accurate predictions, use polynomial fit
-   */
-  predictConsumption(
-    chartData: SpeedConsumptionChartData,
-    targetSpeed: number
-  ): number | null {
-    const points = chartData.dataPoints;
-
-    // Find two closest points
-    let lowerPoint: SpeedConsumptionPoint | null = null;
-    let upperPoint: SpeedConsumptionPoint | null = null;
-
-    for (const point of points) {
-      if (point.speed <= targetSpeed) {
-        if (!lowerPoint || point.speed > lowerPoint.speed) {
-          lowerPoint = point;
-        }
-      }
-      if (point.speed >= targetSpeed) {
-        if (!upperPoint || point.speed < upperPoint.speed) {
-          upperPoint = point;
-        }
-      }
-    }
-
-    // Exact match
-    if (lowerPoint && lowerPoint.speed === targetSpeed) {
-      return lowerPoint.consumption;
-    }
-    if (upperPoint && upperPoint.speed === targetSpeed) {
-      return upperPoint.consumption;
-    }
-
-    // Interpolation
-    if (lowerPoint && upperPoint) {
-      const ratio =
-        (targetSpeed - lowerPoint.speed) / (upperPoint.speed - lowerPoint.speed);
-      return (
-        lowerPoint.consumption +
-        ratio * (upperPoint.consumption - lowerPoint.consumption)
-      );
-    }
-
-    // Extrapolation not recommended
-    return null;
-  }
-
-  /**
-   * Find optimal speed for fuel efficiency
-   * Returns speed (knots) that minimizes consumption per nautical mile
-   */
-  findOptimalSpeed(chartData: SpeedConsumptionChartData): number | null {
-    const points = chartData.dataPoints;
-    if (points.length < 2) return null;
-
-    let optimalSpeed: number | null = null;
-    let minConsumptionPerMile = Infinity;
-
-    for (const point of points) {
-      if (point.speed === 0) continue; // Avoid division by zero
-
-      // Consumption per nautical mile = consumption (MT/day) / (speed (knots) * 24 hours)
-      const consumptionPerMile = point.consumption / (point.speed * 24);
-
-      if (consumptionPerMile < minConsumptionPerMile) {
-        minConsumptionPerMile = consumptionPerMile;
-        optimalSpeed = point.speed;
-      }
-    }
-
-    return optimalSpeed;
   }
 }

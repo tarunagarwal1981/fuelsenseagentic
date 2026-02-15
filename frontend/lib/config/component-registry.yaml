@@ -144,25 +144,22 @@ components:
       vesselTimeline: "vessel_timeline"
 
   # ========================================
-  # Hull Performance Analytics Card
+  # Speed–Consumption Chart (ballast/laden)
   # ========================================
-  - id: hull_performance_card
-    name: "Hull Performance Analytics"
-    component: "HullPerformanceCard"
-    description: "Professional hull performance analytics with summary metrics and interactive trend charts (excess power, speed loss, speed-consumption)"
+  - id: speed-consumption-chart
+    name: "Speed–Consumption Chart"
+    component: "SpeedConsumptionChart"
+    description: "Speed vs consumption chart with ballast/laden tabs, polynomial fits, and baseline comparison"
     required_state_fields:
-      - hull_performance
-    optional_state_fields:
-      - hull_performance_charts
-    props_mapping:
-      analysis: "state.hull_performance"
-      chartData: "state.hull_performance_charts"
+      - hull_performance_charts.speedConsumption
     render_conditions:
-      - "hull_performance && hull_performance.vessel"
+      - "hull_performance_charts && hull_performance_charts.speedConsumption != null"
     produced_by:
       - hull_performance_agent
-    tier: 1
-    priority: 95
+    priority: 4
+    tier: 2
+    props_mapping:
+      data: "hull_performance_charts.speedConsumption"
 
 # ============================================================================
 # Query Type → Component Mappings
@@ -190,10 +187,6 @@ query_type_mappings:
     components:
       - route_map
       - eca_compliance
-
-  hull_performance:
-    components:
-      - hull_performance_card
 
 # ============================================================================
 # Fallback Strategy

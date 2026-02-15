@@ -4916,12 +4916,6 @@ export async function finalizeNode(state: MultiAgentState) {
   if (state.hull_performance) {
     console.log('🛥️ [FINALIZE] Hull performance response');
 
-    const {
-      prepareExcessPowerTrendChart,
-      prepareConsumptionComparisonChart,
-      prepareBaselineComparisonChart,
-    } = await import('@/lib/multi-agent/helpers/hull-performance-charts');
-
     const hp = state.hull_performance as {
       vessel?: { imo: string; name: string };
       hull_condition?: string;
@@ -4936,6 +4930,7 @@ export async function finalizeNode(state: MultiAgentState) {
         consumption: number;
         predicted_consumption: number;
         speed: number;
+        loading_condition: string;
       }>;
       baseline_curves?: {
         laden: Array<{ speed: number; consumption: number; power: number }>;
@@ -4945,13 +4940,8 @@ export async function finalizeNode(state: MultiAgentState) {
       metadata?: { fetched_at: string; data_source: string; cache_hit: boolean };
     };
 
-    const chartData = {
-      excess_power_trend: prepareExcessPowerTrendChart(hp.trend_data),
-      consumption_comparison: prepareConsumptionComparisonChart(hp.trend_data),
-      baseline_comparison: hp.baseline_curves
-        ? prepareBaselineComparisonChart(hp.trend_data, hp.baseline_curves)
-        : null,
-    };
+    // Chart data is already prepared by hull_performance_agent using modular chart services
+    // No need to prepare charts here - just use state.hull_performance_charts
 
     const lm = hp.latest_metrics ?? {};
     const period = hp.analysis_period ?? { days: 0, start_date: '', end_date: '', total_records: 0 };
@@ -4987,28 +4977,10 @@ ${period.days} days (${period.start_date} to ${period.end_date}) · ${period.tot
     recordAgentExecution('finalize', agentDuration, true);
     logAgentExecution('finalize', extractCorrelationId(state), agentDuration, 'success', {});
 
-    // Build hybrid response so the client renders HullPerformanceCard with charts
-    const formattedResponse = {
-      type: 'hybrid' as const,
-      text: hullPerformanceResponse,
-      components: [
-        {
-          id: 'hull_performance_card',
-          component: 'HullPerformanceCard',
-          props: {
-            analysis: state.hull_performance,
-            chartData: state.hull_performance_charts ?? undefined,
-          },
-          tier: 1,
-          priority: 95,
-        },
-      ],
-      query_type: 'hull_performance' as const,
-    };
-
     return {
+      hull_performance_charts: state.hull_performance_charts ?? undefined,
       final_recommendation: sanitizeMarkdownForDisplay(hullPerformanceResponse),
-      formatted_response: formattedResponse,
+      formatted_response: null,
       synthesized_insights: null,
       messages: [new AIMessage({ content: hullPerformanceResponse })],
       agent_status: {

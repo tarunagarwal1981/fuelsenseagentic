@@ -10,8 +10,7 @@ import { ComplianceCard } from './compliance-card';
 import { VoyageTimeline } from './voyage-timeline';
 import { WeatherCard } from './weather-card';
 import { EnhancedBunkerTable } from './enhanced-bunker-table';
-import { HullPerformanceCard } from './cards/hull-performance-card';
-import type { HullPerformanceAnalysis, HullPerformanceChartData } from '@/lib/services/hull-performance-service';
+import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
 import type { ComplianceCardData, TimelineData } from '@/lib/formatters/component-adapter-types';
 import { formatBunkerTable } from '@/lib/formatters/format-bunker-table';
 import type { MultiAgentState } from '@/lib/multi-agent/state';
@@ -27,7 +26,7 @@ const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
   VoyageTimeline,
   WeatherCard,
   EnhancedBunkerTable,
-  HullPerformanceCard,
+  SpeedConsumptionChart,
 };
 
 interface ComponentManifest {
@@ -159,16 +158,6 @@ function adaptEnhancedBunkerTableProps(props: Record<string, unknown>) {
 }
 
 /**
- * Adapt registry props to HullPerformanceCard component props
- */
-function adaptHullPerformanceCardProps(props: Record<string, unknown>) {
-  return {
-    analysis: props.analysis as HullPerformanceAnalysis,
-    chartData: props.chartData as HullPerformanceChartData | undefined,
-  };
-}
-
-/**
  * Get adapted props for a component based on its type
  */
 function getAdaptedProps(
@@ -190,8 +179,6 @@ function getAdaptedProps(
       return adaptWeatherTimelineProps(props);
     case 'EnhancedBunkerTable':
       return adaptEnhancedBunkerTableProps(props);
-    case 'HullPerformanceCard':
-      return adaptHullPerformanceCardProps(props);
     default:
       return props;
   }

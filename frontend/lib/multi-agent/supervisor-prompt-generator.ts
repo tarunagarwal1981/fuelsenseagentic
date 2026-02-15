@@ -461,6 +461,7 @@ Rules:
 - Check state before routing (don't re-run completed agents)
 - Respect dependencies (route_agent before bunker_agent, etc.)
 - Route to 'finalize' when all data is gathered
+- For hull performance, hull condition, fouling, or performance report queries, use hull_performance_agent (entity extraction runs first if needed).
 
 Set next_agent to the appropriate agent ID.`;
   }

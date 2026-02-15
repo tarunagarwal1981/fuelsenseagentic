@@ -45,6 +45,40 @@ import type { FormattedResponse } from "@/lib/formatters/response-formatter";
 import { TemplateResponseContainer } from './template-response';
 import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-formatter';
 import { HybridResponseRenderer } from './hybrid-response-renderer';
+import { ExcessPowerChart } from './charts/excess-power-chart';
+import { SpeedLossChart } from './charts/speed-loss-chart';
+import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
+import type { ExcessPowerChartData } from '@/lib/services/charts/excess-power-chart-service';
+import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
+import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
+
+type HullChartsState = {
+  excessPower?: ExcessPowerChartData | null;
+  speedLoss?: SpeedLossChartData | null;
+  speedConsumption?: SpeedConsumptionChartData | null;
+} | null;
+
+/** Normalize hull_performance_charts from API (camelCase or snake_case) so all three chart types render. */
+function normalizeHullPerformanceCharts(raw: unknown): HullChartsState {
+  if (raw == null || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    excessPower: (o.excessPower ?? o.excess_power) as ExcessPowerChartData | undefined ?? null,
+    speedLoss: (o.speedLoss ?? o.speed_loss) as SpeedLossChartData | undefined ?? null,
+    speedConsumption: (o.speedConsumption ?? o.speed_consumption) as SpeedConsumptionChartData | undefined ?? null,
+  };
+}
+
+/** Merge chart updates: keep existing chart data when new payload omits it (scalable for future chart types). */
+function mergeHullCharts(prev: HullChartsState, next: HullChartsState): HullChartsState {
+  if (!next) return prev;
+  if (!prev) return next;
+  return {
+    excessPower: next.excessPower ?? prev.excessPower ?? null,
+    speedLoss: next.speedLoss ?? prev.speedLoss ?? null,
+    speedConsumption: next.speedConsumption ?? prev.speedConsumption ?? null,
+  };
+}
 
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
@@ -109,6 +143,25 @@ export function ChatInterfaceMultiAgent() {
   const [structuredData, setStructuredData] = useState<
     TemplateFormattedResponse | { type: 'text_only' | 'hybrid'; text?: string; content?: string; components?: Array<{ id: string; component: string; props: Record<string, unknown>; tier: number; priority: number }>; query_type?: string }
   | null>(null);
+  const [hullPerformanceCharts, setHullPerformanceCharts] = useState<{
+    excessPower?: ExcessPowerChartData | null;
+    speedLoss?: SpeedLossChartData | null;
+    speedConsumption?: SpeedConsumptionChartData | null;
+  } | null>(null);
+  const [hullChartTab, setHullChartTab] = useState<'excessPower' | 'speedLoss' | 'speedConsumption'>('excessPower');
+
+  // When hull chart data changes, select first available tab so we never show a blank chart area.
+  // Intentionally omit hullChartTab from deps to avoid resetting the tab when the user switches tabs.
+  useEffect(() => {
+    if (!hullPerformanceCharts) return;
+    if (hullChartTab === 'excessPower' && hullPerformanceCharts.excessPower) return;
+    if (hullChartTab === 'speedLoss' && hullPerformanceCharts.speedLoss) return;
+    if (hullChartTab === 'speedConsumption' && hullPerformanceCharts.speedConsumption) return;
+    if (hullPerformanceCharts.excessPower) setHullChartTab('excessPower');
+    else if (hullPerformanceCharts.speedLoss) setHullChartTab('speedLoss');
+    else if (hullPerformanceCharts.speedConsumption) setHullChartTab('speedConsumption');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when chart data changes, not on tab switch
+  }, [hullPerformanceCharts]);
 
   // Debug logging for feature flags
   useEffect(() => {
@@ -265,6 +318,7 @@ export function ChatInterfaceMultiAgent() {
     setAgentActivities([]);
     setPerformanceMetrics(null);
     setAnalysisData(null);
+    setHullPerformanceCharts(null);
     addAgentLog("supervisor", "Starting analysis...", "start");
 
     const startTime = Date.now();
@@ -463,6 +517,18 @@ export function ChatInterfaceMultiAgent() {
                     addAgentLog("bunker_agent", "Bunker analysis completed", "complete");
                     break;
 
+                  case "hull_charts":
+                    if (data.hull_performance_charts != null) {
+                      const receivedKeys = Object.keys(data.hull_performance_charts as object);
+                      console.log('📨 [MULTI-AGENT-FRONTEND] hull_charts received, keys:', receivedKeys, 'hasSpeedLoss:', !!(data.hull_performance_charts as Record<string, unknown>)?.speedLoss, 'hasSpeedConsumption:', !!(data.hull_performance_charts as Record<string, unknown>)?.speedConsumption);
+                      const normalized = normalizeHullPerformanceCharts(data.hull_performance_charts);
+                      setHullPerformanceCharts((prev) => {
+                        const merged = mergeHullCharts(prev, normalized);
+                        return merged && (merged.excessPower || merged.speedLoss || merged.speedConsumption) ? merged : prev ?? null;
+                      });
+                    }
+                    break;
+
                   case "final_complete":
                     console.log('📝 [MULTI-AGENT-FRONTEND] Received final_complete event');
                     console.log('📝 [MULTI-AGENT-FRONTEND] Recommendation length:', data.recommendation?.length || 0);
@@ -474,6 +540,20 @@ export function ChatInterfaceMultiAgent() {
                       console.log('🎨 [MULTI-AGENT-FRONTEND] Received formatted response');
                       setStructuredData(data.formatted_response);
                     }
+                    // Merge chart data with any from hull_charts so partial final payload never overwrites good data
+                    const finalChartsRaw = data.hull_performance_charts;
+                    if (finalChartsRaw != null) {
+                      const receivedKeys = Object.keys(finalChartsRaw as object);
+                      console.log('📨 [MULTI-AGENT-FRONTEND] final_complete hull_performance_charts keys:', receivedKeys, 'hasSpeedLoss:', !!(finalChartsRaw as Record<string, unknown>)?.speedLoss, 'hasSpeedConsumption:', !!(finalChartsRaw as Record<string, unknown>)?.speedConsumption);
+                    }
+                    const finalCharts = finalChartsRaw != null
+                      ? normalizeHullPerformanceCharts(finalChartsRaw)
+                      : null;
+                    setHullPerformanceCharts((prev) => {
+                      const merged = mergeHullCharts(prev, finalCharts);
+                      const hasAny = merged && (merged.excessPower || merged.speedLoss || merged.speedConsumption);
+                      return hasAny ? merged : null;
+                    });
                     
                     setCurrentAgent(null);
                     setThinkingState(null);
@@ -678,6 +758,72 @@ export function ChatInterfaceMultiAgent() {
                       </ReactMarkdown>
                         )}
                       </div>
+                      {message.role === 'assistant' && isLastAssistant && hullPerformanceCharts && (hullPerformanceCharts.excessPower || hullPerformanceCharts.speedLoss || hullPerformanceCharts.speedConsumption) && (
+                        <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+                          <div className="flex gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
+                            {hullPerformanceCharts.excessPower && (
+                              <button
+                                type="button"
+                                onClick={() => setHullChartTab('excessPower')}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                  hullChartTab === 'excessPower'
+                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                }`}
+                              >
+                                Excess Power
+                              </button>
+                            )}
+                            {hullPerformanceCharts.speedLoss && (
+                              <button
+                                type="button"
+                                onClick={() => setHullChartTab('speedLoss')}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                  hullChartTab === 'speedLoss'
+                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                }`}
+                              >
+                                Speed Loss
+                              </button>
+                            )}
+                            {hullPerformanceCharts.speedConsumption && (
+                              <button
+                                type="button"
+                                onClick={() => setHullChartTab('speedConsumption')}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                                  hullChartTab === 'speedConsumption'
+                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                                }`}
+                              >
+                                Speed-Consumption
+                              </button>
+                            )}
+                          </div>
+                          {hullChartTab === 'excessPower' && hullPerformanceCharts.excessPower && (
+                            <ExcessPowerChart
+                              data={hullPerformanceCharts.excessPower}
+                              height={380}
+                              showThresholds
+                              showTrendLine
+                            />
+                          )}
+                          {hullChartTab === 'speedLoss' && hullPerformanceCharts.speedLoss && (
+                            <SpeedLossChart
+                              data={hullPerformanceCharts.speedLoss}
+                              height={380}
+                              showTrendLine
+                            />
+                          )}
+                          {hullChartTab === 'speedConsumption' && hullPerformanceCharts.speedConsumption && (
+                            <SpeedConsumptionChart
+                              data={hullPerformanceCharts.speedConsumption}
+                              height={380}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {message.role === "user" && (
@@ -767,8 +913,8 @@ export function ChatInterfaceMultiAgent() {
         </button>
       </div>
 
-      {/* 2. Left content: Today's Intelligence (50% width) - thin border all around, small gap from nav */}
-      <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
+      {/* 2. Left content: Today's Intelligence (25% page width) - thin border all around, small gap from nav */}
+      <div className="w-[25%] flex-shrink-0 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
         {/* Top header bar: Super agent (left) + Today's Intelligence (right) */}
         <div className="flex items-center justify-between pl-4 pr-4 py-3.5 border-b border-l border-l-gray-300 dark:border-l-gray-600 border-b-gray-200 dark:border-b-gray-600 bg-white dark:bg-gray-800 shrink-0 [border-left-style:dashed]">
           <button type="button" className="flex items-center gap-2 text-left hover:opacity-90 transition-opacity">
@@ -974,7 +1120,7 @@ export function ChatInterfaceMultiAgent() {
         </div>
       </div>
 
-      {/* 3. Right content: Sense AI Analysis (50% width) - hidden when expanded */}
+      {/* 3. Right content: Sense AI Analysis (takes remaining width) - hidden when expanded */}
       {!expandedPopup && (
       <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
         {/* Sense AI header bar */}

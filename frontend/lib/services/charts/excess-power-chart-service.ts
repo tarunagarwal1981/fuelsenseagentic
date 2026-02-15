@@ -1,47 +1,40 @@
 /**
  * Excess Power Chart Service
  *
- * Processes hull performance data to generate excess power trend charts.
- * Provides:
- * - Time series of excess power percentage
- * - Linear regression (best-fit trend line)
- * - Statistical summary (mean, std dev, outliers)
- *
- * Used by: Hull Performance Agent, Commercial Performance Agent
+ * Builds excess power % trend chart from HullPerformanceAnalysis with robust
+ * data cleaning: invalid points, zeros, and outliers removed for professional charts.
  */
 
-import { BaseChartService, type RegressionResult } from './base-chart-service';
-import type { HullPerformanceAnalysis } from '../hull-performance-service';
 import { logCustomEvent } from '@/lib/monitoring/axiom-logger';
+import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
+import { BaseChartService } from './base-chart-service';
 
-// ============================================================================
-// Interfaces
-// ============================================================================
+const THRESHOLD_GOOD_MAX = 15;
+const THRESHOLD_POOR_MIN = 25;
+const ZONE_RED_Y_MAX = 50;
 
-export interface ExcessPowerDataPoint {
-  date: string; // ISO date (YYYY-MM-DD)
-  timestamp: number; // Unix timestamp (ms)
-  excessPowerPct: number; // Excess power percentage
-  reportDate: string; // Original report date for reference
+/** Internal point shape for cleaning (timestamp for sort, date for display, excessPowerPct for series) */
+interface ExcessPowerPoint {
+  timestamp: number;
+  date: string;
+  excessPowerPct: number;
 }
 
-export interface ExcessPowerChartData {
-  dataPoints: ExcessPowerDataPoint[];
-  regression: RegressionResult;
-  statistics: {
-    mean: number;
-    stdDev: number;
-    min: number;
-    max: number;
-    trend: 'improving' | 'degrading' | 'stable'; // Based on regression slope
-  };
-  thresholds: {
-    good: number; // 15%
-    poor: number; // 25%
-  };
+export interface ExcessPowerChartResult {
+  data: Array<{ date: string; excess_power_pct: number }>;
+  xAxisKey: string;
+  series: Array<{ dataKey: string; name?: string; color?: string }>;
+  referenceLines: Array<{ y?: number; label?: string; stroke?: string }>;
+  referenceAreas: Array<{ y1?: number; y2?: number; fill: string; fillOpacity?: number }>;
+  unit: string;
   metadata: {
     totalPoints: number;
     filteredPoints: number;
+    cleaningStats: {
+      zerosRemoved: number;
+      outliersRemoved: number;
+      validPoints: number;
+    };
     dateRange: {
       start: string;
       end: string;
@@ -49,183 +42,211 @@ export interface ExcessPowerChartData {
   };
 }
 
-// ============================================================================
-// Service
-// ============================================================================
+/** Data point for scatter chart (timestamp for X, value for Y) */
+export interface ExcessPowerDataPoint {
+  timestamp: number;
+  date: string;
+  excessPowerPct: number;
+}
+
+/** Chart data shape for the professional excess power chart (scatter + trend + stats) */
+export interface ExcessPowerChartData {
+  dataPoints: ExcessPowerDataPoint[];
+  regression?: {
+    slope: number;
+    intercept: number;
+    r2: number;
+  };
+  statistics: {
+    trend: 'improving' | 'degrading' | 'stable';
+    mean: number;
+    stdDev: number;
+    min: number;
+    max: number;
+  };
+  metadata: ExcessPowerChartResult['metadata'];
+  thresholds: { good: number; poor: number };
+}
+
+/** Compute linear regression and stats from result; use for professional chart. */
+export function toExcessPowerChartData(
+  result: ExcessPowerChartResult
+): ExcessPowerChartData {
+  const dataPoints: ExcessPowerDataPoint[] = result.data.map((d) => ({
+    timestamp: new Date(d.date).getTime(),
+    date: d.date,
+    excessPowerPct: d.excess_power_pct,
+  }));
+
+  const n = dataPoints.length;
+  const values = dataPoints.map((p) => p.excessPowerPct);
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const variance =
+    values.reduce((s, v) => s + (v - mean) ** 2, 0) / (n > 1 ? n - 1 : 1);
+  const stdDev = Math.sqrt(variance);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  let regression: ExcessPowerChartData['regression'];
+  let trend: ExcessPowerChartData['statistics']['trend'] = 'stable';
+
+  if (n >= 2) {
+    const xs = dataPoints.map((p) => p.timestamp);
+    const ys = values;
+    const sumX = xs.reduce((a, b) => a + b, 0);
+    const sumY = ys.reduce((a, b) => a + b, 0);
+    const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+    const sumX2 = xs.reduce((s, x) => s + x * x, 0);
+    const denom = n * sumX2 - sumX * sumX;
+    const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+    const intercept = mean - slope * (sumX / n);
+
+    const yMean = sumY / n;
+    const ssTot = ys.reduce((s, y) => s + (y - yMean) ** 2, 0);
+    const ssRes = ys.reduce(
+      (s, y, i) => s + (y - (slope * xs[i] + intercept)) ** 2,
+      0
+    );
+    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+
+    regression = { slope, intercept, r2 };
+
+    const slopePerDay = slope * 86400 * 1000; // slope is per ms
+    if (slopePerDay > 0.05) trend = 'degrading';
+    else if (slopePerDay < -0.05) trend = 'improving';
+  }
+
+  return {
+    dataPoints,
+    regression,
+    statistics: { trend, mean, stdDev, min, max },
+    metadata: result.metadata,
+    thresholds: { good: THRESHOLD_GOOD_MAX, poor: THRESHOLD_POOR_MIN },
+  };
+}
 
 export class ExcessPowerChartService extends BaseChartService {
-  private readonly GOOD_THRESHOLD = 15; // % - Hull in good condition
-  private readonly POOR_THRESHOLD = 25; // % - Hull needs immediate cleaning
+  /**
+   * Extract raw points from trend_data for validation and cleaning.
+   */
+  protected extractDataPoints(
+    trendData: HullPerformanceAnalysis['trend_data']
+  ): ExcessPowerPoint[] {
+    if (!Array.isArray(trendData) || trendData.length === 0) return [];
+    return trendData.map((d) => ({
+      timestamp: new Date(d.date).getTime(),
+      date: d.date,
+      excessPowerPct: d.excess_power_pct,
+    }));
+  }
 
   /**
-   * Extract excess power chart data from hull performance analysis
+   * Build chart-ready data from hull performance analysis with two-step cleaning:
+   * 1) Remove invalid data (nulls, NaN); 2) Remove zeros and outliers.
    */
-  async extractChartData(
+  extractChartData(
     analysis: HullPerformanceAnalysis
-  ): Promise<ExcessPowerChartData | null> {
-    const startTime = Date.now();
-
-    logCustomEvent(
-      'excess_power_chart_extraction_start',
-      this.correlationId,
-      { vessel_imo: analysis.vessel.imo },
-      'info'
-    );
-
-    // Validate input
-    const validation = this.validateChartData(analysis.trend_data, 2);
-    if (!validation.isValid) {
-      logCustomEvent(
-        'excess_power_chart_extraction_failed',
-        this.correlationId,
-        { reason: validation.errorMessage },
-        'warn'
-      );
-      return null;
-    }
+  ): ExcessPowerChartResult | null {
+    if (!analysis?.trend_data?.length) return null;
 
     // Extract and validate data points
     const rawPoints = this.extractDataPoints(analysis.trend_data);
-    const { valid: validPoints, filtered: filteredCount } = this.filterValidPoints(
-      rawPoints,
+
+    // Step 1: Filter out invalid data (nulls, NaN)
+    const validPoints = this.filterValidPoints(
+      rawPoints as unknown as Record<string, unknown>[],
       ['timestamp', 'excessPowerPct']
+    ) as unknown as ExcessPowerPoint[];
+    const invalidCount = rawPoints.length - validPoints.length;
+
+    // Step 2: Remove zeros and outliers for cleaner visualization
+    const {
+      valid: cleanPoints,
+      filtered: cleanedCount,
+      stats: cleanStats,
+    } = this.filterNonZeroPoints(
+      validPoints as unknown as Record<string, any>[],
+      ['excessPowerPct'],
+      {
+        removeZeros: true,
+        removeNegatives: false, // Excess power can't be negative, but keep check
+        removeOutliers: true,
+        outlierThreshold: 3.0, // Remove extreme outliers (3x IQR)
+      }
     );
 
-    if (validPoints.length < 2) {
+    const totalFiltered = invalidCount + cleanedCount;
+
+    if (cleanPoints.length < 2) {
       logCustomEvent(
         'excess_power_chart_insufficient_data',
         this.correlationId,
-        { valid_points: validPoints.length, filtered: filteredCount },
+        {
+          valid_points: cleanPoints.length,
+          filtered: totalFiltered,
+          zeros_removed: cleanStats.zeros,
+          outliers_removed: cleanStats.outliers,
+        },
         'warn'
       );
       return null;
     }
 
-    // Sort by timestamp
-    const sortedPoints = validPoints.sort((a, b) => a.timestamp - b.timestamp);
+    // Sort by timestamp (cleanPoints from base is typed as Record[]; we know shape)
+    const sortedPoints = (cleanPoints as unknown as ExcessPowerPoint[]).sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
 
-    // Calculate regression
-    const timestamps = sortedPoints.map(p => p.timestamp);
-    const excessPowers = sortedPoints.map(p => p.excessPowerPct);
-    const regression = this.calculateLinearRegression(timestamps, excessPowers);
-
-    // Calculate statistics
-    const statistics = this.calculateStatistics(excessPowers, regression);
+    // Chart series data (Recharts expects date + excess_power_pct)
+    const data: Array<{ date: string; excess_power_pct: number }> = sortedPoints.map(
+      (p) => ({
+        date: p.date,
+        excess_power_pct: p.excessPowerPct,
+      })
+    );
 
     // Build metadata
-    const metadata = {
+    const metadata: ExcessPowerChartResult['metadata'] = {
       totalPoints: analysis.trend_data.length,
-      filteredPoints: filteredCount,
+      filteredPoints: totalFiltered,
+      cleaningStats: {
+        zerosRemoved: cleanStats.zeros,
+        outliersRemoved: cleanStats.outliers,
+        validPoints: sortedPoints.length,
+      },
       dateRange: {
         start: sortedPoints[0].date,
         end: sortedPoints[sortedPoints.length - 1].date,
       },
     };
 
-    const chartData: ExcessPowerChartData = {
-      dataPoints: sortedPoints,
-      regression,
-      statistics,
-      thresholds: {
-        good: this.GOOD_THRESHOLD,
-        poor: this.POOR_THRESHOLD,
-      },
+    return {
+      data,
+      xAxisKey: 'date',
+      series: [
+        { dataKey: 'excess_power_pct', name: 'Excess power %', color: '#0ea5e9' },
+      ],
+      referenceLines: [
+        { y: THRESHOLD_GOOD_MAX, label: '15%', stroke: '#22c55e' },
+        { y: THRESHOLD_POOR_MIN, label: '25%', stroke: '#ef4444' },
+      ],
+      referenceAreas: [
+        { y1: 0, y2: THRESHOLD_GOOD_MAX, fill: '#22c55e', fillOpacity: 0.08 },
+        {
+          y1: THRESHOLD_GOOD_MAX,
+          y2: THRESHOLD_POOR_MIN,
+          fill: '#eab308',
+          fillOpacity: 0.08,
+        },
+        {
+          y1: THRESHOLD_POOR_MIN,
+          y2: ZONE_RED_Y_MAX,
+          fill: '#ef4444',
+          fillOpacity: 0.08,
+        },
+      ],
+      unit: '%',
       metadata,
     };
-
-    const executionTime = Date.now() - startTime;
-    logCustomEvent(
-      'excess_power_chart_extraction_complete',
-      this.correlationId,
-      {
-        vessel_imo: analysis.vessel.imo,
-        data_points: sortedPoints.length,
-        r2: regression.r2.toFixed(3),
-        trend: statistics.trend,
-        execution_time_ms: executionTime,
-      },
-      'info'
-    );
-
-    return chartData;
-  }
-
-  /**
-   * Extract data points from trend data
-   */
-  private extractDataPoints(
-    trendData: HullPerformanceAnalysis['trend_data']
-  ): ExcessPowerDataPoint[] {
-    return trendData.map(point => ({
-      date: point.date,
-      timestamp: this.dateToTimestamp(point.date),
-      excessPowerPct: point.excess_power_pct ?? 0,
-      reportDate: point.date,
-    }));
-  }
-
-  /**
-   * Calculate statistical summary
-   */
-  private calculateStatistics(
-    values: number[],
-    regression: RegressionResult
-  ): ExcessPowerChartData['statistics'] {
-    const mean = this.calculateMean(values);
-    const stdDev = this.calculateStdDev(values);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-
-    // Determine trend based on regression slope
-    // Positive slope = degrading (excess power increasing)
-    // Negative slope = improving (excess power decreasing)
-    let trend: 'improving' | 'degrading' | 'stable';
-    if (Math.abs(regression.slope) < 1e-10) {
-      // Essentially zero slope
-      trend = 'stable';
-    } else if (regression.slope > 0) {
-      trend = 'degrading';
-    } else {
-      trend = 'improving';
-    }
-
-    return { mean, stdDev, min, max, trend };
-  }
-
-  /**
-   * Generate prediction for a future date
-   * Useful for forecasting when hull cleaning will be needed
-   */
-  predictExcessPower(
-    regression: RegressionResult,
-    futureDateStr: string
-  ): number {
-    const futureTimestamp = this.dateToTimestamp(futureDateStr);
-    return regression.slope * futureTimestamp + regression.intercept;
-  }
-
-  /**
-   * Estimate days until threshold is reached
-   * Returns null if threshold is never reached (improving trend)
-   */
-  estimateDaysUntilThreshold(
-    currentValue: number,
-    regression: RegressionResult,
-    threshold: number
-  ): number | null {
-    // If already above threshold
-    if (currentValue >= threshold) return 0;
-
-    // If trend is improving or stable, threshold won't be reached
-    if (regression.slope <= 0) return null;
-
-    // Calculate: threshold = slope * (currentTime + daysMs) + intercept
-    // Solve for daysMs
-    const currentTime = Date.now();
-    const thresholdTime = (threshold - regression.intercept) / regression.slope;
-    const daysMs = thresholdTime - currentTime;
-    const days = daysMs / (24 * 60 * 60 * 1000);
-
-    return days > 0 ? Math.ceil(days) : null;
   }
 }

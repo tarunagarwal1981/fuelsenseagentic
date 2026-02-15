@@ -1,41 +1,34 @@
 /**
  * Speed Loss Chart Service
  *
- * Processes hull performance data to generate speed loss trend charts.
- * Tracks hull roughness impact on vessel speed over time.
- *
- * Used by: Hull Performance Agent, Fleet Performance Agent
+ * Builds speed loss % trend chart from HullPerformanceAnalysis with robust
+ * data cleaning: invalid points, zeros, and outliers removed for professional charts.
  */
 
-import { BaseChartService, type RegressionResult } from './base-chart-service';
-import type { HullPerformanceAnalysis } from '../hull-performance-service';
 import { logCustomEvent } from '@/lib/monitoring/axiom-logger';
+import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
+import { BaseChartService } from './base-chart-service';
 
-// ============================================================================
-// Interfaces
-// ============================================================================
-
-export interface SpeedLossDataPoint {
-  date: string;
+/** Internal point shape for cleaning (timestamp for sort, date for display, speedLossPct for series) */
+interface SpeedLossPoint {
   timestamp: number;
+  date: string;
   speedLossPct: number;
-  actualSpeed?: number; // Optional: actual speed for context
-  reportDate: string;
 }
 
-export interface SpeedLossChartData {
-  dataPoints: SpeedLossDataPoint[];
-  regression: RegressionResult;
-  statistics: {
-    mean: number;
-    stdDev: number;
-    min: number;
-    max: number;
-    trend: 'improving' | 'degrading' | 'stable';
-  };
+export interface SpeedLossChartResult {
+  data: Array<{ date: string; speed_loss_pct: number }>;
+  xAxisKey: string;
+  series: Array<{ dataKey: string; name?: string; color?: string }>;
+  unit: string;
   metadata: {
     totalPoints: number;
     filteredPoints: number;
+    cleaningStats: {
+      zerosRemoved: number;
+      outliersRemoved: number;
+      validPoints: number;
+    };
     dateRange: {
       start: string;
       end: string;
@@ -43,155 +36,191 @@ export interface SpeedLossChartData {
   };
 }
 
-// ============================================================================
-// Service
-// ============================================================================
+/** Data point for scatter chart (timestamp for X, value for Y; optional actualSpeed for tooltip) */
+export interface SpeedLossDataPoint {
+  timestamp: number;
+  date: string;
+  speedLossPct: number;
+  actualSpeed?: number;
+}
+
+/** Chart data shape for the professional speed loss chart (scatter + trend + stats) */
+export interface SpeedLossChartData {
+  dataPoints: SpeedLossDataPoint[];
+  regression?: {
+    slope: number;
+    intercept: number;
+    r2: number;
+  };
+  statistics: {
+    trend: 'improving' | 'degrading' | 'stable';
+    mean: number;
+    stdDev: number;
+    min: number;
+    max: number;
+  };
+  metadata: SpeedLossChartResult['metadata'];
+}
+
+/** Compute linear regression and stats from result; use for professional chart. */
+export function toSpeedLossChartData(
+  result: SpeedLossChartResult
+): SpeedLossChartData {
+  const dataPoints: SpeedLossDataPoint[] = result.data.map((d) => ({
+    timestamp: new Date(d.date).getTime(),
+    date: d.date,
+    speedLossPct: d.speed_loss_pct,
+  }));
+
+  const n = dataPoints.length;
+  const values = dataPoints.map((p) => p.speedLossPct);
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const variance =
+    values.reduce((s, v) => s + (v - mean) ** 2, 0) / (n > 1 ? n - 1 : 1);
+  const stdDev = Math.sqrt(variance);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  let regression: SpeedLossChartData['regression'];
+  let trend: SpeedLossChartData['statistics']['trend'] = 'stable';
+
+  if (n >= 2) {
+    const xs = dataPoints.map((p) => p.timestamp);
+    const ys = values;
+    const sumX = xs.reduce((a, b) => a + b, 0);
+    const sumY = ys.reduce((a, b) => a + b, 0);
+    const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+    const sumX2 = xs.reduce((s, x) => s + x * x, 0);
+    const denom = n * sumX2 - sumX * sumX;
+    const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+    const intercept = mean - slope * (sumX / n);
+
+    const yMean = sumY / n;
+    const ssTot = ys.reduce((s, y) => s + (y - yMean) ** 2, 0);
+    const ssRes = ys.reduce(
+      (s, y, i) => s + (y - (slope * xs[i] + intercept)) ** 2,
+      0
+    );
+    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+
+    regression = { slope, intercept, r2 };
+
+    const slopePerDay = slope * 86400 * 1000;
+    if (slopePerDay > 0.05) trend = 'degrading';
+    else if (slopePerDay < -0.05) trend = 'improving';
+  }
+
+  return {
+    dataPoints,
+    regression,
+    statistics: { trend, mean, stdDev, min, max },
+    metadata: result.metadata,
+  };
+}
 
 export class SpeedLossChartService extends BaseChartService {
   /**
-   * Extract speed loss chart data from hull performance analysis
+   * Extract raw points from trend_data for validation and cleaning.
    */
-  async extractChartData(
+  protected extractDataPoints(
+    trendData: HullPerformanceAnalysis['trend_data']
+  ): SpeedLossPoint[] {
+    if (!Array.isArray(trendData) || trendData.length === 0) return [];
+    return trendData.map((d) => ({
+      timestamp: new Date(d.date).getTime(),
+      date: d.date,
+      speedLossPct: d.speed_loss_pct,
+    }));
+  }
+
+  /**
+   * Build chart-ready data from hull performance analysis with two-step cleaning:
+   * 1) Remove invalid data (nulls, NaN); 2) Remove zeros and outliers.
+   */
+  extractChartData(
     analysis: HullPerformanceAnalysis
-  ): Promise<SpeedLossChartData | null> {
-    const startTime = Date.now();
-
-    logCustomEvent(
-      'speed_loss_chart_extraction_start',
-      this.correlationId,
-      { vessel_imo: analysis.vessel.imo },
-      'info'
-    );
-
-    // Validate input
-    const validation = this.validateChartData(analysis.trend_data, 2);
-    if (!validation.isValid) {
-      logCustomEvent(
-        'speed_loss_chart_extraction_failed',
-        this.correlationId,
-        { reason: validation.errorMessage },
-        'warn'
-      );
-      return null;
-    }
+  ): SpeedLossChartResult | null {
+    if (!analysis?.trend_data?.length) return null;
 
     // Extract and validate data points
     const rawPoints = this.extractDataPoints(analysis.trend_data);
-    const { valid: validPoints, filtered: filteredCount } = this.filterValidPoints(
-      rawPoints,
+
+    // Step 1: Filter invalid data
+    const validPoints = this.filterValidPoints(
+      rawPoints as unknown as Record<string, unknown>[],
       ['timestamp', 'speedLossPct']
+    ) as unknown as SpeedLossPoint[];
+    const invalidCount = rawPoints.length - validPoints.length;
+
+    // Step 2: Remove zeros and outliers
+    const {
+      valid: cleanPoints,
+      filtered: cleanedCount,
+      stats: cleanStats,
+    } = this.filterNonZeroPoints(
+      validPoints as unknown as Record<string, any>[],
+      ['speedLossPct'],
+      {
+        removeZeros: true,
+        removeNegatives: false,
+        removeOutliers: true,
+        outlierThreshold: 3.0,
+      }
     );
 
-    if (validPoints.length < 2) {
+    const totalFiltered = invalidCount + cleanedCount;
+
+    if (cleanPoints.length < 2) {
       logCustomEvent(
         'speed_loss_chart_insufficient_data',
         this.correlationId,
-        { valid_points: validPoints.length, filtered: filteredCount },
+        {
+          valid_points: cleanPoints.length,
+          filtered: totalFiltered,
+          zeros_removed: cleanStats.zeros,
+          outliers_removed: cleanStats.outliers,
+        },
         'warn'
       );
       return null;
     }
 
     // Sort by timestamp
-    const sortedPoints = validPoints.sort((a, b) => a.timestamp - b.timestamp);
+    const sortedPoints = (cleanPoints as unknown as SpeedLossPoint[]).sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
 
-    // Calculate regression
-    const timestamps = sortedPoints.map(p => p.timestamp);
-    const speedLosses = sortedPoints.map(p => p.speedLossPct);
-    const regression = this.calculateLinearRegression(timestamps, speedLosses);
-
-    // Calculate statistics
-    const statistics = this.calculateStatistics(speedLosses, regression);
+    // Chart series data (Recharts expects date + speed_loss_pct)
+    const data: Array<{ date: string; speed_loss_pct: number }> = sortedPoints.map(
+      (p) => ({
+        date: p.date,
+        speed_loss_pct: p.speedLossPct,
+      })
+    );
 
     // Build metadata
-    const metadata = {
+    const metadata: SpeedLossChartResult['metadata'] = {
       totalPoints: analysis.trend_data.length,
-      filteredPoints: filteredCount,
+      filteredPoints: totalFiltered,
+      cleaningStats: {
+        zerosRemoved: cleanStats.zeros,
+        outliersRemoved: cleanStats.outliers,
+        validPoints: sortedPoints.length,
+      },
       dateRange: {
         start: sortedPoints[0].date,
         end: sortedPoints[sortedPoints.length - 1].date,
       },
     };
 
-    const chartData: SpeedLossChartData = {
-      dataPoints: sortedPoints,
-      regression,
-      statistics,
+    return {
+      data,
+      xAxisKey: 'date',
+      series: [
+        { dataKey: 'speed_loss_pct', name: 'Speed loss %', color: '#0ea5e9' },
+      ],
+      unit: '%',
       metadata,
     };
-
-    const executionTime = Date.now() - startTime;
-    logCustomEvent(
-      'speed_loss_chart_extraction_complete',
-      this.correlationId,
-      {
-        vessel_imo: analysis.vessel.imo,
-        data_points: sortedPoints.length,
-        r2: regression.r2.toFixed(3),
-        trend: statistics.trend,
-        execution_time_ms: executionTime,
-      },
-      'info'
-    );
-
-    return chartData;
-  }
-
-  /**
-   * Extract data points from trend data
-   */
-  private extractDataPoints(
-    trendData: HullPerformanceAnalysis['trend_data']
-  ): SpeedLossDataPoint[] {
-    return trendData.map(point => ({
-      date: point.date,
-      timestamp: this.dateToTimestamp(point.date),
-      speedLossPct: point.speed_loss_pct ?? 0,
-      actualSpeed: point.speed,
-      reportDate: point.date,
-    }));
-  }
-
-  /**
-   * Calculate statistical summary
-   */
-  private calculateStatistics(
-    values: number[],
-    regression: RegressionResult
-  ): SpeedLossChartData['statistics'] {
-    const mean = this.calculateMean(values);
-    const stdDev = this.calculateStdDev(values);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-
-    // Determine trend
-    let trend: 'improving' | 'degrading' | 'stable';
-    if (Math.abs(regression.slope) < 1e-10) {
-      trend = 'stable';
-    } else if (regression.slope > 0) {
-      trend = 'degrading'; // Speed loss increasing
-    } else {
-      trend = 'improving'; // Speed loss decreasing
-    }
-
-    return { mean, stdDev, min, max, trend };
-  }
-
-  /**
-   * Calculate economic impact of speed loss
-   * Returns additional fuel consumption (MT/day) due to speed loss
-   *
-   * @param speedLossPct - Speed loss percentage
-   * @param baseConsumption - Normal consumption at design speed (MT/day)
-   * @returns Additional fuel consumption
-   */
-  calculateSpeedLossImpact(
-    speedLossPct: number,
-    baseConsumption: number
-  ): number {
-    // Simplified model: fuel consumption increases with cube of speed loss
-    // More accurate models would use propulsion curves
-    const factor = Math.pow(1 + speedLossPct / 100, 3) - 1;
-    return baseConsumption * factor;
   }
 }

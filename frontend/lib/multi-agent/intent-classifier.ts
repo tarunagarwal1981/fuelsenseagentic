@@ -104,7 +104,12 @@ async function classifyWithLLM(
 
 ${agentList}
 
-You are a routing classifier. Map this query to ONE agent ID. Respond ONLY with JSON (no markdown code blocks):
+## ROUTING RULES (follow these for correct multi-step workflows)
+
+- **Hull performance / hull condition / fouling / performance report**: When the user asks for hull performance, hull condition, fouling, excess power, speed loss, or a hull/performance report for a vessel (by name or IMO), return agent_id **hull_performance_agent**. Do NOT return entity_extractor for these queries. The system will run entity extraction first if vessel identifiers are missing.
+- **Vessel-only info (no hull)**: When the user only asks which vessel, vessel list, or general vessel info without hull/performance/fouling, return entity_extractor.
+
+You are a routing classifier. Map this query to ONE agent ID (the agent that fulfills the user's goal). Respond ONLY with JSON (no markdown code blocks):
 {
   "agent_id": "<agent_id>",
   "intent": "<matched intent string>",

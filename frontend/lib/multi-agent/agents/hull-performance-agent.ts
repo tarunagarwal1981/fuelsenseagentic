@@ -9,15 +9,13 @@
 import { AIMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from '../state';
 import { executeFetchHullPerformanceTool } from '@/lib/tools/hull-performance';
-import { logAgentExecution, logError } from '@/lib/monitoring/axiom-logger';
+import { logAgentExecution, logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
 import { extractCorrelationId } from '@/lib/utils/correlation';
-import type { HullPerformanceChartData } from '@/lib/services/hull-performance-service';
-import { HullPerformanceService } from '@/lib/services/hull-performance-service';
-import { HullPerformanceRepository } from '@/lib/repositories/hull-performance-repository';
-import { HullPerformanceClient, type IHullPerformanceDataSource } from '@/lib/api-clients/hull-performance-client';
-import { HullPerformanceDbClient } from '@/lib/api-clients/hull-performance-db-client';
-import { ServiceContainer } from '@/lib/repositories/service-container';
-import { RedisCache } from '@/lib/repositories/cache-client';
+import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
+import { ExcessPowerChartService, toExcessPowerChartData } from '@/lib/services/charts/excess-power-chart-service';
+import { SpeedLossChartService, toSpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
+import { SpeedConsumptionChartService } from '@/lib/services/charts/speed-consumption-chart-service';
+import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
 
 // ============================================================================
 // Agent Node
@@ -117,81 +115,121 @@ export async function hullPerformanceAgentNode(
       correlationId,
     });
 
-    // Log initial results
-    logAgentExecution(
-      'hull_performance_agent',
-      correlationId,
-      Date.now() - startTime,
-      result.success ? 'completed' : 'failed',
-      {
-        vessel: ids,
-        success: result.success,
-        has_data: !!result.data,
-      }
-    );
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to fetch hull performance data');
+    }
 
-    // Extract chart data if analysis succeeded
-    let chartData: HullPerformanceChartData | undefined;
+    const displayName = vesselId.name || vesselId.imo || 'vessel';
+
+    // 4. Extract chart data if analysis succeeded
+    let chartData: {
+      excessPower?: ReturnType<typeof toExcessPowerChartData>;
+      speedLoss?: ReturnType<typeof toSpeedLossChartData>;
+      speedConsumption?: SpeedConsumptionChartData | null;
+    } | undefined;
+
+    console.log('🔍 [HULL-AGENT] Checking if should extract charts:', {
+      success: result.success,
+      hasData: !!result.data,
+      hasTrendData: !!result.data?.trend_data,
+      trendDataLength: result.data?.trend_data?.length,
+    });
+
     if (result.success && result.data) {
       try {
-        const container = ServiceContainer.getInstance();
-        const cache = container.getCache() as RedisCache;
-        const useDb = process.env.HULL_PERFORMANCE_SOURCE === 'db';
+        console.log('✅ [HULL-AGENT] Starting chart extraction...');
 
-        const client: IHullPerformanceDataSource = useDb
-          ? new HullPerformanceDbClient(correlationId)
-          : new HullPerformanceClient(correlationId);
+        logCustomEvent(
+          'hull_performance_chart_extraction_start',
+          correlationId,
+          { vessel_imo: result.data.vessel?.imo },
+          'info'
+        );
 
-        const repository = new HullPerformanceRepository(correlationId, {
-          client,
-          redis: cache,
+        const analysis = result.data as HullPerformanceAnalysis;
+        const excessService = new ExcessPowerChartService(correlationId);
+        const speedLossService = new SpeedLossChartService(correlationId);
+        const speedConsumptionService = new SpeedConsumptionChartService(correlationId);
+
+        const excessResult = excessService.extractChartData(analysis);
+        const speedLossResult = speedLossService.extractChartData(analysis);
+        const speedConsumptionResult = speedConsumptionService.extractChartData(analysis);
+
+        chartData = {
+          excessPower: excessResult ? toExcessPowerChartData(excessResult) : null,
+          speedLoss: speedLossResult ? toSpeedLossChartData(speedLossResult) : null,
+          speedConsumption: speedConsumptionResult ?? null,
+        };
+
+        console.log('📊 [HULL-AGENT] Chart extraction complete:', {
+          hasChartData: !!chartData,
+          excessPower: !!chartData?.excessPower,
+          speedLoss: !!chartData?.speedLoss,
+          speedConsumption: !!chartData?.speedConsumption,
         });
 
-        const service = new HullPerformanceService(correlationId, repository);
-
-        chartData = await service.extractChartData(result.data);
-
-        logAgentExecution(
-          'hull_performance_agent',
+        logCustomEvent(
+          'hull_performance_chart_extraction_complete',
           correlationId,
-          0,
-          'chart_data_extracted',
           {
             has_chart_data: !!chartData,
             has_excess_power: !!chartData?.excessPower,
             has_speed_loss: !!chartData?.speedLoss,
             has_speed_consumption: !!chartData?.speedConsumption,
             excess_power_points: chartData?.excessPower?.dataPoints?.length ?? 0,
-          }
+          },
+          'info'
         );
       } catch (chartError) {
+        console.error('❌ [HULL-AGENT] Chart extraction failed:', chartError);
         logError(correlationId, chartError as Error, {
           agent: 'hull_performance_agent',
           step: 'chart_data_extraction',
         });
         chartData = undefined;
       }
+    } else {
+      console.log('⚠️ [HULL-AGENT] Skipping chart extraction - no data');
     }
 
-    // Return state update with both analysis and chart data
-    return {
+    // 5. Update state – use explicit plain object so LangGraph stream serialization keeps all keys
+    const chartsForState =
+      chartData == null
+        ? null
+        : {
+            excessPower: chartData.excessPower ?? null,
+            speedLoss: chartData.speedLoss ?? null,
+            speedConsumption: chartData.speedConsumption ?? null,
+          };
+    if (chartsForState) {
+      const keys = Object.keys(chartsForState);
+      console.log('📊 [HULL-AGENT] Returning hull_performance_charts keys:', keys);
+    }
+    const updatedState: Partial<MultiAgentState> = {
       hull_performance: result.data ?? null,
-      hull_performance_charts: chartData ?? null,
+      ...(chartsForState != null && { hull_performance_charts: chartsForState as any }),
       agent_status: {
         ...(state.agent_status || {}),
-        hull_performance_agent: result.success ? 'success' : 'failed',
+        hull_performance_agent: 'success',
       },
       messages: [
         ...(state.messages ?? []),
         new AIMessage({
-          content: result.success
-            ? chartData
-              ? 'Hull performance analysis complete with interactive trend charts'
-              : 'Hull performance analysis complete (summary only)'
-            : result.error || 'Failed to fetch hull performance',
+          content: `[HULL-PERFORMANCE-AGENT] Hull performance analysis complete for ${displayName}`,
         }),
       ],
     };
+
+    // 6. Log success
+    const duration = Date.now() - startTime;
+    logAgentExecution('hull_performance_agent', correlationId, duration, 'success', {
+      vessel: vesselId,
+      hull_condition: result.data?.hull_condition,
+      excess_power_pct: result.data?.latest_metrics?.excess_power_pct,
+      duration_ms: duration,
+    });
+
+    return updatedState;
   } catch (error) {
     const errMessage =
       error instanceof Error ? error.message : String(error);
