@@ -218,7 +218,7 @@ function mapToVesselPerformanceModelRecord(row: Record<string, unknown>): Vessel
     id: toNum(row.id),
     vessel_imo: toNum(row.vessel_imo),
     speed_kts: toNum(row.speed_kts),
-    me_consumption_: toNum(row.me_consumption_),
+    me_consumption_: toNum(row['me_consumption_mt'] ?? row['me_consumption_']),
     me_power_kw: toNum(row.me_power_kw),
     beaufort_scale: toNum(row.beaufort_scale),
     displacement: toNum(row.displacement),

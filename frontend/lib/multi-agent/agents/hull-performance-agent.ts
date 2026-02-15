@@ -9,8 +9,13 @@
 import { AIMessage } from '@langchain/core/messages';
 import type { MultiAgentState } from '../state';
 import { executeFetchHullPerformanceTool } from '@/lib/tools/hull-performance';
-import { logAgentExecution } from '@/lib/monitoring/axiom-logger';
+import { logAgentExecution, logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
 import { extractCorrelationId } from '@/lib/utils/correlation';
+import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
+import { ExcessPowerChartService, toExcessPowerChartData } from '@/lib/services/charts/excess-power-chart-service';
+import { SpeedLossChartService, toSpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
+import { SpeedConsumptionChartService } from '@/lib/services/charts/speed-consumption-chart-service';
+import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
 
 // ============================================================================
 // Agent Node
@@ -116,9 +121,93 @@ export async function hullPerformanceAgentNode(
 
     const displayName = vesselId.name || vesselId.imo || 'vessel';
 
-    // 4. Update state
+    // 4. Extract chart data if analysis succeeded
+    let chartData: {
+      excessPower?: ReturnType<typeof toExcessPowerChartData>;
+      speedLoss?: ReturnType<typeof toSpeedLossChartData>;
+      speedConsumption?: SpeedConsumptionChartData | null;
+    } | undefined;
+
+    console.log('🔍 [HULL-AGENT] Checking if should extract charts:', {
+      success: result.success,
+      hasData: !!result.data,
+      hasTrendData: !!result.data?.trend_data,
+      trendDataLength: result.data?.trend_data?.length,
+    });
+
+    if (result.success && result.data) {
+      try {
+        console.log('✅ [HULL-AGENT] Starting chart extraction...');
+
+        logCustomEvent(
+          'hull_performance_chart_extraction_start',
+          correlationId,
+          { vessel_imo: result.data.vessel?.imo },
+          'info'
+        );
+
+        const analysis = result.data as HullPerformanceAnalysis;
+        const excessService = new ExcessPowerChartService(correlationId);
+        const speedLossService = new SpeedLossChartService(correlationId);
+        const speedConsumptionService = new SpeedConsumptionChartService(correlationId);
+
+        const excessResult = excessService.extractChartData(analysis);
+        const speedLossResult = speedLossService.extractChartData(analysis);
+        const speedConsumptionResult = speedConsumptionService.extractChartData(analysis);
+
+        chartData = {
+          excessPower: excessResult ? toExcessPowerChartData(excessResult) : null,
+          speedLoss: speedLossResult ? toSpeedLossChartData(speedLossResult) : null,
+          speedConsumption: speedConsumptionResult ?? null,
+        };
+
+        console.log('📊 [HULL-AGENT] Chart extraction complete:', {
+          hasChartData: !!chartData,
+          excessPower: !!chartData?.excessPower,
+          speedLoss: !!chartData?.speedLoss,
+          speedConsumption: !!chartData?.speedConsumption,
+        });
+
+        logCustomEvent(
+          'hull_performance_chart_extraction_complete',
+          correlationId,
+          {
+            has_chart_data: !!chartData,
+            has_excess_power: !!chartData?.excessPower,
+            has_speed_loss: !!chartData?.speedLoss,
+            has_speed_consumption: !!chartData?.speedConsumption,
+            excess_power_points: chartData?.excessPower?.dataPoints?.length ?? 0,
+          },
+          'info'
+        );
+      } catch (chartError) {
+        console.error('❌ [HULL-AGENT] Chart extraction failed:', chartError);
+        logError(correlationId, chartError as Error, {
+          agent: 'hull_performance_agent',
+          step: 'chart_data_extraction',
+        });
+        chartData = undefined;
+      }
+    } else {
+      console.log('⚠️ [HULL-AGENT] Skipping chart extraction - no data');
+    }
+
+    // 5. Update state – use explicit plain object so LangGraph stream serialization keeps all keys
+    const chartsForState =
+      chartData == null
+        ? null
+        : {
+            excessPower: chartData.excessPower ?? null,
+            speedLoss: chartData.speedLoss ?? null,
+            speedConsumption: chartData.speedConsumption ?? null,
+          };
+    if (chartsForState) {
+      const keys = Object.keys(chartsForState);
+      console.log('📊 [HULL-AGENT] Returning hull_performance_charts keys:', keys);
+    }
     const updatedState: Partial<MultiAgentState> = {
       hull_performance: result.data ?? null,
+      ...(chartsForState != null && { hull_performance_charts: chartsForState as any }),
       agent_status: {
         ...(state.agent_status || {}),
         hull_performance_agent: 'success',
@@ -131,7 +220,7 @@ export async function hullPerformanceAgentNode(
       ],
     };
 
-    // 5. Log success
+    // 6. Log success
     const duration = Date.now() - startTime;
     logAgentExecution('hull_performance_agent', correlationId, duration, 'success', {
       vessel: vesselId,

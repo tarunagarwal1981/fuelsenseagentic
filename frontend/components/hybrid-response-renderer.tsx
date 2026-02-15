@@ -10,6 +10,7 @@ import { ComplianceCard } from './compliance-card';
 import { VoyageTimeline } from './voyage-timeline';
 import { WeatherCard } from './weather-card';
 import { EnhancedBunkerTable } from './enhanced-bunker-table';
+import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
 import type { ComplianceCardData, TimelineData } from '@/lib/formatters/component-adapter-types';
 import { formatBunkerTable } from '@/lib/formatters/format-bunker-table';
 import type { MultiAgentState } from '@/lib/multi-agent/state';
@@ -25,6 +26,7 @@ const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
   VoyageTimeline,
   WeatherCard,
   EnhancedBunkerTable,
+  SpeedConsumptionChart,
 };
 
 interface ComponentManifest {

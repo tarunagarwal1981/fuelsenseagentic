@@ -16,6 +16,8 @@ export interface TrendDataPoint {
   consumption: number;
   predicted_consumption: number;
   speed: number;
+  /** Vessel loading state: "Ballast", "Laden", or variations (from hull_performance.loading_condition) */
+  loading_condition: string;
 }
 
 /** Baseline curve point */

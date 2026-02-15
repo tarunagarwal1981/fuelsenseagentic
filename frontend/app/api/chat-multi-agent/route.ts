@@ -46,6 +46,19 @@ import {
   isFeatureEnabled,
 } from '@/lib/config/registry-loader';
 
+/** Normalize hull_performance_charts so JSON.stringify never drops keys (undefined → null). Single source of truth for wire format. */
+function normalizeHullPerformanceChartsForWire(
+  raw: unknown
+): { excessPower: unknown; speedLoss: unknown; speedConsumption: unknown } | null {
+  if (raw == null || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    excessPower: o.excessPower ?? o.excess_power ?? null,
+    speedLoss: o.speedLoss ?? o.speed_loss ?? null,
+    speedConsumption: o.speedConsumption ?? o.speed_consumption ?? null,
+  };
+}
+
 // ============================================================================
 // System Initialization
 // ============================================================================
@@ -282,6 +295,7 @@ export async function POST(req: Request) {
           let lastSentWeather = false;
           let lastSentBunker = false;
           let lastSentFinal = false;
+          let lastSentHullCharts = false;
           
           // Track previous agent to detect transitions
           let previousAgent = '';
@@ -297,6 +311,8 @@ export async function POST(req: Request) {
             port_prices: null,
             bunker_analysis: null,
             multi_bunker_plan: null,
+            hull_performance: null,
+            hull_performance_charts: null,
             final_recommendation: null,
             formatted_response: null,
             synthesized_insights: null,
@@ -428,7 +444,33 @@ export async function POST(req: Request) {
             if (event.formatted_response) accumulatedState.formatted_response = event.formatted_response;
             if (event.synthesized_response) accumulatedState.synthesized_response = event.synthesized_response;
             if (event.synthesis_data) accumulatedState.synthesis_data = event.synthesis_data;
+            if (event.hull_performance != null) accumulatedState.hull_performance = event.hull_performance;
+            if (event.hull_performance_charts != null) {
+              const eventChartsKeys = Object.keys(event.hull_performance_charts as object);
+              if (eventChartsKeys.length < 3) {
+                console.warn('📊 [STREAM] hull_performance_charts from event has only', eventChartsKeys.length, 'keys:', eventChartsKeys);
+              }
+              accumulatedState.hull_performance_charts = event.hull_performance_charts;
+            }
             if (event.agent_errors) accumulatedState.agent_errors = { ...accumulatedState.agent_errors, ...event.agent_errors };
+
+            // Send hull_performance_charts as soon as available (normalized so all keys present for JSON)
+            if (accumulatedState.hull_performance_charts != null && !lastSentHullCharts) {
+              lastSentHullCharts = true;
+              const chartsPayload = normalizeHullPerformanceChartsForWire(accumulatedState.hull_performance_charts);
+              const payloadKeys = chartsPayload ? Object.keys(chartsPayload) : [];
+              console.log('📤 [STREAM] Sending hull_charts, payload keys:', payloadKeys, 'hasSpeedLoss:', !!chartsPayload?.speedLoss, 'hasSpeedConsumption:', !!chartsPayload?.speedConsumption);
+              if (chartsPayload) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      type: 'hull_charts',
+                      hull_performance_charts: chartsPayload,
+                    })}\n\n`
+                  )
+                );
+              }
+            }
             if (event.agent_status) accumulatedState.agent_status = { ...accumulatedState.agent_status, ...event.agent_status };
 
             // Send granular route_data event immediately when available
@@ -586,6 +628,11 @@ export async function POST(req: Request) {
             // Stream final recommendation when available
             if (accumulatedState.final_recommendation && !lastSentFinal) {
               console.log('📤 [STREAM] Sending final recommendation');
+              const finalChartsPayload = accumulatedState.hull_performance_charts != null
+                ? normalizeHullPerformanceChartsForWire(accumulatedState.hull_performance_charts)
+                : null;
+              const finalChartsKeys = finalChartsPayload ? Object.keys(finalChartsPayload) : [];
+              console.log('📤 [STREAM] final_complete hull_performance_charts keys:', finalChartsKeys, 'hasSpeedLoss:', !!finalChartsPayload?.speedLoss, 'hasSpeedConsumption:', !!finalChartsPayload?.speedConsumption);
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({
@@ -593,6 +640,8 @@ export async function POST(req: Request) {
                     recommendation: accumulatedState.final_recommendation,
                     formatted_response: accumulatedState.formatted_response || null,
                     synthesis_data: accumulatedState.synthesis_data || accumulatedState.synthesized_response || null,
+                    hull_performance: accumulatedState.hull_performance ?? null,
+                    hull_performance_charts: finalChartsPayload,
                     errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                       agent_errors: accumulatedState.agent_errors,
                       agent_status: accumulatedState.agent_status,
@@ -615,6 +664,12 @@ export async function POST(req: Request) {
           // Final check: Send final recommendation if it wasn't sent yet
           if (accumulatedState.final_recommendation && !lastSentFinal) {
             console.log('📤 [STREAM] Sending final recommendation (final check)');
+            const finalChartsPayload = accumulatedState.hull_performance_charts != null
+              ? normalizeHullPerformanceChartsForWire(accumulatedState.hull_performance_charts)
+              : null;
+            if (finalChartsPayload) {
+              console.log('📤 [STREAM] final_complete (final check) hull_performance_charts keys:', Object.keys(finalChartsPayload));
+            }
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({
@@ -622,6 +677,8 @@ export async function POST(req: Request) {
                   recommendation: accumulatedState.final_recommendation,
                   formatted_response: accumulatedState.formatted_response || null,
                   synthesis_data: accumulatedState.synthesis_data || accumulatedState.synthesized_response || null,
+                  hull_performance: accumulatedState.hull_performance ?? null,
+                  hull_performance_charts: finalChartsPayload,
                   errors: Object.keys(accumulatedState.agent_errors).length > 0 ? {
                     agent_errors: accumulatedState.agent_errors,
                     agent_status: accumulatedState.agent_status,

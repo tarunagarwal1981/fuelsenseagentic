@@ -46,6 +46,7 @@ export interface HullPerformanceState {
     consumption: number;
     predicted_consumption: number;
     speed: number;
+    loading_condition: string;
   }>;
   baseline_curves?: {
     laden: Array<{ speed: number; consumption: number; power: number }>;
