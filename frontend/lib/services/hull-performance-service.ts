@@ -118,6 +118,11 @@ const HULL_CONDITION_THRESHOLDS = {
   },
 };
 
+/** Default analysis period (days) when user does not specify a time range: from vessel's last report date. */
+const DEFAULT_ANALYSIS_DAYS = 180;
+/** Wide fetch window (days) used to discover vessel's last report date when applying default period. */
+const WIDE_FETCH_DAYS = 730;
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -162,15 +167,19 @@ export class HullPerformanceService {
     );
 
     try {
-      const dateRange = options?.days != null
-        ? { days: options.days }
-        : options?.startDate && options?.endDate
-          ? { startDate: options.startDate, endDate: options.endDate }
-          : undefined;
+      const userSpecifiedPeriod =
+        options?.days != null || !!(options?.startDate && options?.endDate);
+      const dateRange = userSpecifiedPeriod
+        ? options?.days != null
+          ? { days: options.days }
+          : options?.startDate && options?.endDate
+            ? { startDate: options.startDate, endDate: options.endDate }
+            : undefined
+        : undefined;
 
       const result = await this.repository.getVesselPerformanceData(
         vesselIdentifier,
-        dateRange ?? { days: 90 }
+        dateRange ?? { days: WIDE_FETCH_DAYS }
       );
 
       if (!result.success) {
@@ -188,10 +197,60 @@ export class HullPerformanceService {
       }
 
       const records = result.data;
-      const { metadata } = result;
+      let { metadata } = result;
 
       // Filter to only records that match the requested vessel (avoid showing another vessel's data)
-      const recordsForVessel = this.filterRecordsByVessel(records, vesselIdentifier);
+      let recordsForVessel = this.filterRecordsByVessel(records, vesselIdentifier);
+
+      // When user did not specify a period: use last N days (default 180) from this vessel's last report date
+      if (!userSpecifiedPeriod && recordsForVessel.length > 0) {
+        const lastReportDate = recordsForVessel.reduce(
+          (latest, r) =>
+            (new Date(r.report_date).getTime() > new Date(latest).getTime()
+              ? r.report_date
+              : latest),
+          recordsForVessel[0].report_date
+        );
+        const requestedDays = options?.days ?? DEFAULT_ANALYSIS_DAYS;
+        const endDate = new Date(lastReportDate);
+        const cutoff = new Date(endDate);
+        cutoff.setDate(cutoff.getDate() - requestedDays);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        recordsForVessel = recordsForVessel.filter(
+          (r) => r.report_date >= cutoffStr
+        );
+        metadata = {
+          ...metadata,
+          date_range: {
+            start: cutoffStr,
+            end: lastReportDate.slice(0, 10),
+          },
+        };
+      }
+
+      // Filter to noon-at-sea only (case insensitive) when event is present
+      const noonAtSeaNorm = 'noon at sea';
+      const hasEvent = recordsForVessel.some((r) => (r.event ?? '').trim() !== '');
+      if (hasEvent) {
+        const before = recordsForVessel.length;
+        recordsForVessel = recordsForVessel.filter((r) =>
+          (r.event ?? '').trim().toLowerCase() === noonAtSeaNorm
+        );
+        if (before > 0 && recordsForVessel.length < before) {
+          logCustomEvent(
+            'hull_performance_noon_at_sea_filter',
+            this.correlationId,
+            {
+              vessel_imo: vesselIdentifier.imo ?? undefined,
+              vessel_name: vesselIdentifier.name ?? undefined,
+              before,
+              after: recordsForVessel.length,
+            },
+            'info'
+          );
+        }
+      }
+
       const totalRecords = recordsForVessel.length;
 
       if (recordsForVessel.length === 0) {
@@ -591,15 +650,15 @@ export class HullPerformanceService {
 
   /**
    * Get baseline curves and format for charts (laden + ballast).
+   * API returns all vessels; we filter by vessel_imo. Table load_type: Ballast = "Ballast",
+   * Laden = "Design" or "Scantling"; if both Design and Scantling exist we use only Scantling.
    */
   private async getBaselineCurves(
     vesselImo: number
   ): Promise<HullPerformanceAnalysis['baseline_curves'] | undefined> {
     try {
-      const [ladenRows, ballastRows] = await Promise.all([
-        this.repository.getVesselBaselineCurves(vesselImo, 'Laden'),
-        this.repository.getVesselBaselineCurves(vesselImo, 'Ballast'),
-      ]);
+      const allRows = await this.repository.getVesselBaselineCurves(vesselImo);
+      const forVessel = allRows.filter((r) => Number(r.vessel_imo) === vesselImo);
 
       const toCurve = (rows: VesselPerformanceModelRecord[]) =>
         rows.map((r) => ({
@@ -608,8 +667,20 @@ export class HullPerformanceService {
           power: r.me_power_kw,
         }));
 
-      const laden = toCurve(ladenRows).sort((a, b) => a.speed - b.speed);
+      const ballastRows = forVessel.filter((r) =>
+        /^ballast$/i.test(String(r.load_type ?? '').trim())
+      );
+      const designRows = forVessel.filter((r) =>
+        /^design$/i.test(String(r.load_type ?? '').trim())
+      );
+      const scantlingRows = forVessel.filter((r) =>
+        /^scantling$/i.test(String(r.load_type ?? '').trim())
+      );
+      const ladenRows =
+        scantlingRows.length > 0 ? scantlingRows : designRows;
+
       const ballast = toCurve(ballastRows).sort((a, b) => a.speed - b.speed);
+      const laden = toCurve(ladenRows).sort((a, b) => a.speed - b.speed);
 
       if (laden.length === 0 && ballast.length === 0) {
         return undefined;

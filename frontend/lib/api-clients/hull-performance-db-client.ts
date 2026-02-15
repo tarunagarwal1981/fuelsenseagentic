@@ -54,6 +54,7 @@ function mapRowToHullPerformanceRecord(row: Record<string, unknown>): HullPerfor
     windforce: toNum(row.windforce),
     weather_category: String(row.weather_category ?? ''),
     loading_condition: String(row.loading_condition ?? ''),
+    event: row.event != null ? String(row.event).trim() : undefined,
     displacement: toNum(row.displacement),
     total_cargo: toNum(row.total_cargo),
 

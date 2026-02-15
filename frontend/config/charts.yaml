@@ -1,0 +1,7 @@
+# Chart display and filtering configuration
+
+speed_consumption:
+  # Minimum speed (kts) and consumption (MT/day) to include in speed-consumption chart.
+  # Points with speed <= min_speed or consumption <= min_consumption are excluded.
+  min_speed: 5
+  min_consumption: 5

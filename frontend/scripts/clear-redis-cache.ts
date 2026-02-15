@@ -28,6 +28,9 @@ async function main() {
   const hullDeleted = await cache.clear('hull_perf:*');
   console.log(`  hull_perf:*     → ${hullDeleted} key(s) deleted`);
 
+  const baselineDeleted = await cache.clear('hull_baseline:*');
+  console.log(`  hull_baseline:* → ${baselineDeleted} key(s) deleted`);
+
   const intentDeleted = await cache.clear('fuelsense:intent:*');
   console.log(`  fuelsense:intent:* → ${intentDeleted} key(s) deleted`);
 

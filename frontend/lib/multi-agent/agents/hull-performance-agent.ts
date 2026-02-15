@@ -102,13 +102,13 @@ export async function hullPerformanceAgentNode(
     // 2. Determine time period from query or use default
     const timePeriod = extractTimePeriod(state.messages ?? []);
 
-    // 3. Call hull performance tool
+    // 3. Call hull performance tool (omit time_period when user didn't specify → service uses 180 days from vessel's last report)
     const toolInput = {
       vessel_identifier: {
         imo: vesselId.imo,
         name: vesselId.name,
       },
-      time_period: timePeriod,
+      ...(timePeriod != null && { time_period: timePeriod }),
     };
 
     const result = await executeFetchHullPerformanceTool(toolInput, {
@@ -151,9 +151,11 @@ export async function hullPerformanceAgentNode(
         const speedLossService = new SpeedLossChartService(correlationId);
         const speedConsumptionService = new SpeedConsumptionChartService(correlationId);
 
-        const excessResult = excessService.extractChartData(analysis);
-        const speedLossResult = speedLossService.extractChartData(analysis);
-        const speedConsumptionResult = speedConsumptionService.extractChartData(analysis);
+        const [excessResult, speedLossResult, speedConsumptionResult] = await Promise.all([
+          Promise.resolve(excessService.extractChartData(analysis)),
+          Promise.resolve(speedLossService.extractChartData(analysis)),
+          speedConsumptionService.extractChartData(analysis),
+        ]);
 
         chartData = {
           excessPower: excessResult ? toExcessPowerChartData(excessResult) : null,
@@ -263,12 +265,11 @@ export async function hullPerformanceAgentNode(
 // ============================================================================
 
 /**
- * Extract time period from user query.
- * Looks for patterns like "last 30 days", "this month", etc.
+ * Extract time period from user query when explicitly mentioned.
+ * When no pattern is found, returns undefined so the service uses default:
+ * 180 days from the vessel's last report date.
  */
-function extractTimePeriod(messages: any[]): { days: number } {
-  let days = 90;
-
+function extractTimePeriod(messages: any[]): { days: number } | undefined {
   const lastMessage =
     (messages.length > 0 && messages[messages.length - 1]) || null;
   const content =
@@ -282,12 +283,13 @@ function extractTimePeriod(messages: any[]): { days: number } {
 
   const daysMatch = text.match(/last\s+(\d+)\s+days?/i);
   if (daysMatch) {
-    days = parseInt(daysMatch[1], 10) || 90;
+    const days = parseInt(daysMatch[1], 10);
+    if (Number.isFinite(days) && days > 0) return { days };
   } else if (/this month|30 days/i.test(text)) {
-    days = 30;
+    return { days: 30 };
   } else if (/this week|7 days/i.test(text)) {
-    days = 7;
+    return { days: 7 };
   }
 
-  return { days };
+  return undefined;
 }

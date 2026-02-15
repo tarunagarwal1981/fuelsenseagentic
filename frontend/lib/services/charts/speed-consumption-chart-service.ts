@@ -2,13 +2,60 @@
  * Speed-Consumption Chart Service
  *
  * Builds speed vs consumption chart data with ballast/laden separation,
- * polynomial fits, and baseline comparison.
+ * polynomial fits, and baseline comparison. Filters points by min speed/consumption
+ * from config/charts.yaml (defaults: min_speed 5, min_consumption 5).
+ * For baseline: container / LPG tanker / LNG tanker plot full baseline; other vessel
+ * types plot baseline only in speed range 8–15 kts (from vessel_details vessel_type).
  */
 
 import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
 import type { HullPerformanceAnalysis } from '@/lib/services/hull-performance-service';
-import { calculatePolynomialRegression } from '@/lib/utils/polynomial-regression';
+import { calculateExponentialRegression } from '@/lib/utils/exponential-regression';
+import { loadYAML } from '@/lib/config/yaml-loader';
+import { VesselDetailsClient } from '@/lib/clients/vessel-details-client';
 import { BaseChartService } from './base-chart-service';
+
+const BASELINE_SPEED_MIN_OTHER = 8;
+const BASELINE_SPEED_MAX_OTHER = 15;
+
+/** Hard stops for all vessel types */
+const AXIS_SPEED_MAX = 25;
+const AXIS_CONSUMPTION_MAX_CONTAINER_LPG_LNG = 200;
+const AXIS_CONSUMPTION_MAX_OTHER = 50;
+
+/** Vessel types that plot full baseline; others use speed 8–15 only (case insensitive). */
+function isContainerOrLpgOrLngTanker(vesselType: string): boolean {
+  const t = String(vesselType ?? '').trim().toLowerCase();
+  return (
+    t.includes('container') ||
+    t.includes('lpg tanker') ||
+    t.includes('lng tanker')
+  );
+}
+
+/** Chart config from config/charts.yaml */
+interface ChartsConfig {
+  speed_consumption?: {
+    min_speed?: number;
+    min_consumption?: number;
+  };
+}
+
+const DEFAULT_MIN_SPEED = 5;
+const DEFAULT_MIN_CONSUMPTION = 5;
+
+function getChartThresholds(): { minSpeed: number; minConsumption: number } {
+  try {
+    const config = loadYAML<ChartsConfig>('charts.yaml', { throwOnError: false });
+    const sc = config?.speed_consumption;
+    return {
+      minSpeed: typeof sc?.min_speed === 'number' && Number.isFinite(sc.min_speed) ? sc.min_speed : DEFAULT_MIN_SPEED,
+      minConsumption: typeof sc?.min_consumption === 'number' && Number.isFinite(sc.min_consumption) ? sc.min_consumption : DEFAULT_MIN_CONSUMPTION,
+    };
+  } catch {
+    return { minSpeed: DEFAULT_MIN_SPEED, minConsumption: DEFAULT_MIN_CONSUMPTION };
+  }
+}
 
 /** Single speed-consumption point with required loading condition */
 export interface SpeedConsumptionPoint {
@@ -19,9 +66,10 @@ export interface SpeedConsumptionPoint {
   date?: string;
 }
 
-/** Polynomial regression result for curve fit (e.g. from polynomial-regression utils) */
-export interface PolynomialFit {
-  coefficients: [number, number, number];
+/** Exponential fit: y = a * exp(b*x) */
+export interface ExponentialFit {
+  a: number;
+  b: number;
   r_squared: number;
   equation_text: string;
 }
@@ -31,21 +79,21 @@ export interface SpeedConsumptionChartData {
   ballast: {
     actual: {
       dataPoints: SpeedConsumptionPoint[];
-      polynomialFit?: PolynomialFit;
+      exponentialFit?: ExponentialFit;
     };
     baseline: {
       dataPoints: Array<{ speed: number; consumption: number }>;
-      polynomialFit?: PolynomialFit;
+      exponentialFit?: ExponentialFit;
     };
   };
   laden: {
     actual: {
       dataPoints: SpeedConsumptionPoint[];
-      polynomialFit?: PolynomialFit;
+      exponentialFit?: ExponentialFit;
     };
     baseline: {
       dataPoints: Array<{ speed: number; consumption: number }>;
-      polynomialFit?: PolynomialFit;
+      exponentialFit?: ExponentialFit;
     };
   };
   statistics: {
@@ -66,17 +114,19 @@ export interface SpeedConsumptionChartData {
       dataPoints: number;
     };
   };
+  /** Hard stops for axes: speed max 25 kts, consumption max 200 (container/LPG/LNG) or 50 (others) */
+  axisLimits?: { maxSpeed: number; maxConsumption: number };
 }
 
 export class SpeedConsumptionChartService extends BaseChartService {
   /**
    * Build chart-ready speed-consumption data with ballast/laden separation.
-   * Separates trend_data by loading_condition, extracts baseline curves, computes
-   * polynomial fits (when >= 3 points) and statistics. Logs start/complete to Axiom.
+   * Fetches vessel_type from vessel_details; container/LPG tanker/LNG tanker plot full
+   * baseline, others plot baseline only in speed range 8–15 kts. Logs start/complete to Axiom.
    */
-  extractChartData(
+  async extractChartData(
     analysis: HullPerformanceAnalysis
-  ): SpeedConsumptionChartData | null {
+  ): Promise<SpeedConsumptionChartData | null> {
     try {
       logCustomEvent(
         'speed_consumption_chart_extract_start',
@@ -87,70 +137,171 @@ export class SpeedConsumptionChartService extends BaseChartService {
 
       const trendData = analysis?.trend_data ?? [];
       const baselineCurves = analysis?.baseline_curves;
+      const { minSpeed, minConsumption } = getChartThresholds();
+
+      // Vessel type from vessel_details: container / LPG tanker / LNG tanker → full baseline; else 8–15 kts only
+      let plotBaselineFullRange = false; // default restricted (8–15) so we don't show full baseline when type unknown/fetch fails
+      const imo = analysis?.vessel?.imo?.trim();
+      if (imo) {
+        try {
+          const vesselDetailsClient = new VesselDetailsClient();
+          const vessel = await vesselDetailsClient.getByIMO(imo);
+          const vesselType = vessel?.type ?? '';
+          plotBaselineFullRange = isContainerOrLpgOrLngTanker(vesselType);
+          logCustomEvent(
+            'speed_consumption_vessel_type',
+            this.correlationId,
+            { vessel_imo: imo, vessel_type: vesselType, plot_baseline_full_range: plotBaselineFullRange },
+            'info'
+          );
+        } catch (err) {
+          logCustomEvent(
+            'speed_consumption_vessel_type_fetch_error',
+            this.correlationId,
+            { vessel_imo: imo, error: err instanceof Error ? err.message : String(err) },
+            'warn'
+          );
+          // Keep plotBaselineFullRange false so baseline is restricted to 8–15 on error
+        }
+      }
 
       // 1. Separate trend_data into ballast and laden by loading_condition
-      const ballastActual = this.extractPointsByCondition(trendData, 'ballast');
-      const ladenActual = this.extractPointsByCondition(trendData, 'laden');
+      const ballastActual = this.extractPointsByCondition(trendData, 'ballast').filter(
+        (p) => p.speed > minSpeed && p.consumption > minConsumption
+      );
+      const ladenActual = this.extractPointsByCondition(trendData, 'laden').filter(
+        (p) => p.speed > minSpeed && p.consumption > minConsumption
+      );
 
-      // 2. Extract baseline curves (speed, consumption)
-      const ballastBaseline =
-        baselineCurves?.ballast?.map((p) => ({
-          speed: p.speed,
-          consumption: p.consumption,
-        })) ?? [];
-      const ladenBaseline =
-        baselineCurves?.laden?.map((p) => ({
-          speed: p.speed,
-          consumption: p.consumption,
-        })) ?? [];
+      // 2. Extract baseline curves (speed, consumption), filter by thresholds, then by speed range for non-container/LPG/LNG
+      const baselineSpeedFilter = (p: { speed: number; consumption: number }) => {
+        if (p.speed <= minSpeed || p.consumption <= minConsumption) return false;
+        if (plotBaselineFullRange) return true;
+        return p.speed >= BASELINE_SPEED_MIN_OTHER && p.speed <= BASELINE_SPEED_MAX_OTHER;
+      };
+      const ballastBaseline = (baselineCurves?.ballast?.map((p) => ({
+        speed: p.speed,
+        consumption: p.consumption,
+      })) ?? []).filter(baselineSpeedFilter);
+      const ladenBaseline = (baselineCurves?.laden?.map((p) => ({
+        speed: p.speed,
+        consumption: p.consumption,
+      })) ?? []).filter(baselineSpeedFilter);
 
-      // 3. Polynomial fits (x = speed, y = consumption); require >= 3 points
+      // 2b. Hard stops: speed max 25 kts, consumption max 200 (container/LPG/LNG) or 50 (others)
+      const maxConsumption = plotBaselineFullRange
+        ? AXIS_CONSUMPTION_MAX_CONTAINER_LPG_LNG
+        : AXIS_CONSUMPTION_MAX_OTHER;
+      const clipToAxisLimits = <T extends { speed: number; consumption: number }>(points: T[]): T[] =>
+        points.filter(
+          (p) =>
+            Number.isFinite(p.speed) &&
+            Number.isFinite(p.consumption) &&
+            p.speed >= 0 &&
+            p.speed <= AXIS_SPEED_MAX &&
+            p.consumption >= 0 &&
+            p.consumption <= maxConsumption
+        );
+      const ballastActualClipped = clipToAxisLimits(ballastActual);
+      const ladenActualClipped = clipToAxisLimits(ladenActual);
+      const ballastBaselineClipped = clipToAxisLimits(ballastBaseline);
+      const ladenBaselineClipped = clipToAxisLimits(ladenBaseline);
+
+      // 2c. Add three baseline points (speed 8, 10, 15) to actual for comparison on chart
+      const BASELINE_SPEEDS = [8, 10, 15] as const;
+      const interpolateConsumptionAtSpeed = (
+        points: Array<{ speed: number; consumption: number }>,
+        speed: number
+      ): number | null => {
+        const sorted = [...points].sort((a, b) => a.speed - b.speed);
+        if (sorted.length === 0) return null;
+        if (speed <= sorted[0].speed) return sorted[0].consumption;
+        if (speed >= sorted[sorted.length - 1].speed) return sorted[sorted.length - 1].consumption;
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const a = sorted[i];
+          const b = sorted[i + 1];
+          if (speed >= a.speed && speed <= b.speed) {
+            const t = (speed - a.speed) / (b.speed - a.speed);
+            return a.consumption + t * (b.consumption - a.consumption);
+          }
+        }
+        return null;
+      };
+      const addBaselinePointsToActual = (
+        actual: SpeedConsumptionPoint[],
+        baselineForInterpolation: Array<{ speed: number; consumption: number }>,
+        condition: 'ballast' | 'laden'
+      ): SpeedConsumptionPoint[] => {
+        const added: SpeedConsumptionPoint[] = [];
+        for (const s of BASELINE_SPEEDS) {
+          const c = interpolateConsumptionAtSpeed(baselineForInterpolation, s);
+          if (c != null && Number.isFinite(c) && c >= 0 && c <= maxConsumption && s <= AXIS_SPEED_MAX) {
+            added.push({ speed: s, consumption: c, condition });
+          }
+        }
+        return [...actual, ...added];
+      };
+      // Use unclipped baseline for interpolation so 8/10/15 kts points are added whenever baseline has data (even if clipped would be empty)
+      const ballastActualWithBaseline = addBaselinePointsToActual(
+        ballastActualClipped,
+        ballastBaseline,
+        'ballast'
+      );
+      const ladenActualWithBaseline = addBaselinePointsToActual(
+        ladenActualClipped,
+        ladenBaseline,
+        'laden'
+      );
+
+      // 3. Exponential fits y = a*exp(b*x) (x = speed, y = consumption); require >= 2 points with y > 0
       const toRegressionPoints = (
         points: Array<{ speed: number; consumption: number }>
       ) => points.map((p) => ({ x: p.speed, y: p.consumption }));
 
       const ballastActualFit =
-        ballastActual.length >= 3
-          ? calculatePolynomialRegression(toRegressionPoints(ballastActual))
+        ballastActualWithBaseline.length >= 2
+          ? calculateExponentialRegression(toRegressionPoints(ballastActualWithBaseline))
           : null;
       const ladenActualFit =
-        ladenActual.length >= 3
-          ? calculatePolynomialRegression(toRegressionPoints(ladenActual))
+        ladenActualWithBaseline.length >= 2
+          ? calculateExponentialRegression(toRegressionPoints(ladenActualWithBaseline))
           : null;
       const ballastBaselineFit =
-        ballastBaseline.length >= 3
-          ? calculatePolynomialRegression(toRegressionPoints(ballastBaseline))
+        ballastBaselineClipped.length >= 2
+          ? calculateExponentialRegression(toRegressionPoints(ballastBaselineClipped))
           : null;
       const ladenBaselineFit =
-        ladenBaseline.length >= 3
-          ? calculatePolynomialRegression(toRegressionPoints(ladenBaseline))
+        ladenBaselineClipped.length >= 2
+          ? calculateExponentialRegression(toRegressionPoints(ladenBaselineClipped))
           : null;
 
       const has_ballast_fit = ballastActualFit != null;
       const has_laden_fit = ladenActualFit != null;
 
-      // 4. Statistics via this.calculateStatistics()
-      const ballastStats = this.calculateStatistics(ballastActual);
-      const ladenStats = this.calculateStatistics(ladenActual);
+      // 4. Statistics via this.calculateStatistics() (on actual + baseline points)
+      const ballastStats = this.calculateStatistics(ballastActualWithBaseline);
+      const ladenStats = this.calculateStatistics(ladenActualWithBaseline);
 
-      // 5. Build result
+      // 5. Build result (actual + 3 baseline points, axis limits for UI)
       const result: SpeedConsumptionChartData = {
         ballast: {
           actual: {
-            dataPoints: ballastActual,
-            polynomialFit: ballastActualFit
+            dataPoints: ballastActualWithBaseline,
+            exponentialFit: ballastActualFit
               ? {
-                  coefficients: ballastActualFit.coefficients,
+                  a: ballastActualFit.a,
+                  b: ballastActualFit.b,
                   r_squared: ballastActualFit.r_squared,
                   equation_text: ballastActualFit.equation_text,
                 }
               : undefined,
           },
           baseline: {
-            dataPoints: ballastBaseline,
-            polynomialFit: ballastBaselineFit
+            dataPoints: ballastBaselineClipped,
+            exponentialFit: ballastBaselineFit
               ? {
-                  coefficients: ballastBaselineFit.coefficients,
+                  a: ballastBaselineFit.a,
+                  b: ballastBaselineFit.b,
                   r_squared: ballastBaselineFit.r_squared,
                   equation_text: ballastBaselineFit.equation_text,
                 }
@@ -159,20 +310,22 @@ export class SpeedConsumptionChartService extends BaseChartService {
         },
         laden: {
           actual: {
-            dataPoints: ladenActual,
-            polynomialFit: ladenActualFit
+            dataPoints: ladenActualWithBaseline,
+            exponentialFit: ladenActualFit
               ? {
-                  coefficients: ladenActualFit.coefficients,
+                  a: ladenActualFit.a,
+                  b: ladenActualFit.b,
                   r_squared: ladenActualFit.r_squared,
                   equation_text: ladenActualFit.equation_text,
                 }
               : undefined,
           },
           baseline: {
-            dataPoints: ladenBaseline,
-            polynomialFit: ladenBaselineFit
+            dataPoints: ladenBaselineClipped,
+            exponentialFit: ladenBaselineFit
               ? {
-                  coefficients: ladenBaselineFit.coefficients,
+                  a: ladenBaselineFit.a,
+                  b: ladenBaselineFit.b,
                   r_squared: ladenBaselineFit.r_squared,
                   equation_text: ladenBaselineFit.equation_text,
                 }
@@ -183,16 +336,17 @@ export class SpeedConsumptionChartService extends BaseChartService {
           ballast: ballastStats,
           laden: ladenStats,
         },
+        axisLimits: { maxSpeed: AXIS_SPEED_MAX, maxConsumption },
       };
 
       logCustomEvent(
         'speed_consumption_chart_extract_complete',
         this.correlationId,
         {
-          ballast_actual_points: ballastActual.length,
-          laden_actual_points: ladenActual.length,
-          ballast_baseline_points: ballastBaseline.length,
-          laden_baseline_points: ladenBaseline.length,
+          ballast_actual_points: ballastActualWithBaseline.length,
+          laden_actual_points: ladenActualWithBaseline.length,
+          ballast_baseline_points: ballastBaselineClipped.length,
+          laden_baseline_points: ladenBaselineClipped.length,
           has_ballast_fit,
           has_laden_fit,
         },

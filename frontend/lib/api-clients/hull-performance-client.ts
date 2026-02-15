@@ -35,6 +35,8 @@ export interface HullPerformanceRecord {
   windforce: number;
   weather_category: string;
   loading_condition: string;
+  /** Event type e.g. "Noon at Sea" for filtering actual data */
+  event?: string;
   displacement: number;
   total_cargo: number;
 
@@ -192,6 +194,7 @@ function mapToHullPerformanceRecord(row: Record<string, unknown>): HullPerforman
     windforce: toNum(row.windforce),
     weather_category: String(row.weather_category ?? ''),
     loading_condition: String(row.loading_condition ?? ''),
+    event: row.event != null ? String(row.event).trim() : undefined,
     displacement: toNum(row.displacement),
     total_cargo: toNum(row.total_cargo),
 
@@ -212,21 +215,21 @@ function mapToHullPerformanceRecord(row: Record<string, unknown>): HullPerforman
   };
 }
 
-/** Map raw API row to VesselPerformanceModelRecord */
+/** Map raw API row to VesselPerformanceModelRecord (API may return camelCase) */
 function mapToVesselPerformanceModelRecord(row: Record<string, unknown>): VesselPerformanceModelRecord {
   return {
     id: toNum(row.id),
-    vessel_imo: toNum(row.vessel_imo),
-    speed_kts: toNum(row.speed_kts),
-    me_consumption_: toNum(row['me_consumption_mt'] ?? row['me_consumption_']),
-    me_power_kw: toNum(row.me_power_kw),
-    beaufort_scale: toNum(row.beaufort_scale),
+    vessel_imo: toNum(row.vessel_imo ?? row.vesselImo),
+    speed_kts: toNum(row.speed_kts ?? row.speedKts),
+    me_consumption_: toNum(row['me_consumption_mt'] ?? row['me_consumption_'] ?? row.meConsumptionMt),
+    me_power_kw: toNum(row.me_power_kw ?? row.mePowerKw),
+    beaufort_scale: toNum(row.beaufort_scale ?? row.beaufortScale),
     displacement: toNum(row.displacement),
-    load_type: String(row.load_type ?? ''),
+    load_type: String(row.load_type ?? row.loadType ?? '').trim(),
     deadweight: toNum(row.deadweight),
     sfoc: toNum(row.sfoc),
-    me_rpm: toNum(row.me_rpm),
-    sea_trial_rpm: toNum(row.sea_trial_rpm),
+    me_rpm: toNum(row.me_rpm ?? row.meRpm),
+    sea_trial_rpm: toNum(row.sea_trial_rpm ?? row.seaTrialRpm),
   };
 }
 
