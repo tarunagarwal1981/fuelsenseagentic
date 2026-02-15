@@ -1058,66 +1058,6 @@ export function ChatInterfaceMultiAgent() {
             </div>
           </div>
         </div>
-
-        {/* Query area at bottom of left pane - light blue border, soft shadow, 3D lift */}
-        <div className="relative border-t border-l border-r border-sky-200 dark:border-sky-800 rounded-t-xl pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
-          {/* Bottom accent stripe (golden-orange) */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
-          <div className="flex gap-2 mb-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-              disabled
-            >
-              Show Critical Vessels
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-              disabled
-            >
-              Show Vessel Needing action
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs flex-1 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-              disabled
-            >
-              Show Monitoring Status
-            </Button>
-          </div>
-          <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
-            <div className="flex-1 relative rounded-xl overflow-visible">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="What can I help you with?"
-                className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                disabled={isLoading}
-                rows={1}
-              />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
-                disabled={!input.trim() || isLoading}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </form>
-        </div>
       </div>
 
       {/* 3. Right content: Sense AI Analysis (takes remaining width) - hidden when expanded */}
@@ -1152,6 +1092,39 @@ export function ChatInterfaceMultiAgent() {
         </div>
 
         {renderChatBody()}
+
+        {/* Query area at bottom of right pane */}
+        <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
+          <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
+          <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
+            <div className="flex-1 relative rounded-xl overflow-visible">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="What can I help you with?"
+                className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                disabled={isLoading}
+                rows={1}
+              />
+              <Button
+                type="submit"
+                variant="ghost"
+                size="sm"
+                className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
+                disabled={!input.trim() || isLoading}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
       )}
 

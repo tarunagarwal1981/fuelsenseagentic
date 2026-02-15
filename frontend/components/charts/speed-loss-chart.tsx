@@ -14,6 +14,25 @@ import {
 } from 'recharts';
 import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
 
+function YAxisLabel({
+  viewBox,
+  value,
+  fill = '#4b5563',
+}: {
+  viewBox?: { x: number; y: number; width: number; height: number };
+  value?: string;
+  fill?: string;
+}) {
+  if (!viewBox || !value) return null;
+  const x = viewBox.x + 6;
+  const y = viewBox.y + viewBox.height / 2;
+  return (
+    <text x={x} y={y} textAnchor="middle" fill={fill} fontSize={11} fontWeight={600} transform={`rotate(-90, ${x}, ${y})`}>
+      {value}
+    </text>
+  );
+}
+
 interface SpeedLossChartProps {
   data: SpeedLossChartData | null;
   height?: number;
@@ -139,17 +158,6 @@ export function SpeedLossChart({
         }))
       : [];
 
-  const getTrendQuality = (r2: number) => {
-    if (r2 > 0.9) return { label: 'Excellent', color: 'text-green-600' };
-    if (r2 > 0.7) return { label: 'Good', color: 'text-blue-600' };
-    if (r2 > 0.5) return { label: 'Moderate', color: 'text-yellow-600' };
-    return { label: 'Weak', color: 'text-gray-600' };
-  };
-
-  const trendQuality = data.regression
-    ? getTrendQuality(data.regression.r2)
-    : null;
-
   return (
     <div className={`space-y-4 ${className}`}>
       <div className="flex items-start justify-between px-4">
@@ -174,40 +182,14 @@ export function SpeedLossChart({
                 </span>
               )}
             </span>
-            {data.metadata?.cleaningStats && (
-              <span className="text-gray-500 dark:text-gray-500">
-                • {data.metadata.cleaningStats.zerosRemoved} zeros filtered
-                {data.metadata.cleaningStats.outliersRemoved > 0 &&
-                  ` • ${data.metadata.cleaningStats.outliersRemoved} outliers removed`}
-              </span>
-            )}
           </div>
         </div>
-
-        {data.regression && (
-          <div className="text-right space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Fit Quality:
-              </span>
-              <span className={`text-xs font-bold ${trendQuality?.color}`}>
-                {trendQuality?.label}
-              </span>
-            </div>
-            <div className="text-xs text-gray-600 dark:text-gray-400">
-              R² = {data.regression.r2.toFixed(3)}
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-500">
-              {data.dataPoints.length} data points
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-        <div style={{ height }}>
+      <div className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div style={{ height }} className="w-full">
           <ResponsiveContainer width="100%" height={height}>
-            <ScatterChart margin={{ top: 20, right: 40, bottom: 70, left: 70 }}>
+            <ScatterChart margin={{ top: 10, right: 12, bottom: 32, left: 44 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="#e5e7eb"
@@ -228,26 +210,21 @@ export function SpeedLossChart({
                 label={{
                   value: 'Date',
                   position: 'insideBottom',
-                  offset: -20,
-                  style: { fontSize: 13, fontWeight: 700, fill: '#4b5563' },
+                  offset: -14,
+                  style: { fontSize: 11, fontWeight: 600, fill: '#4b5563' },
                 }}
-                tick={{ fontSize: 11, fill: '#6b7280', fontWeight: 500 }}
+                tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
                 stroke="#9ca3af"
                 strokeWidth={1.5}
               />
 
               <YAxis
-                label={{
-                  value: 'Speed Loss (%)',
-                  angle: -90,
-                  position: 'insideLeft',
-                  offset: 15,
-                  style: { fontSize: 13, fontWeight: 700, fill: '#4b5563' },
-                }}
+                label={{ value: 'Speed Loss (%)', content: (props: { viewBox?: { x: number; y: number; width: number; height: number }; value?: string }) => <YAxisLabel {...props} fill="#4b5563" /> }}
                 domain={[0, 'auto']}
-                tick={{ fontSize: 11, fill: '#6b7280', fontWeight: 500 }}
+                tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
                 stroke="#9ca3af"
                 strokeWidth={1.5}
+                width={32}
               />
 
               <Tooltip
@@ -293,41 +270,6 @@ export function SpeedLossChart({
               )}
             </ScatterChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-4 gap-3 px-4">
-        <div className="text-center p-3 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 rounded-lg border border-purple-200 dark:border-purple-800">
-          <p className="text-xs font-semibold text-purple-700 dark:text-purple-300 uppercase tracking-wide">
-            Mean
-          </p>
-          <p className="text-xl font-bold text-purple-900 dark:text-purple-100 mt-1">
-            {data.statistics.mean.toFixed(1)}%
-          </p>
-        </div>
-        <div className="text-center p-3 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide">
-            Std Dev
-          </p>
-          <p className="text-xl font-bold text-blue-900 dark:text-blue-100 mt-1">
-            {data.statistics.stdDev.toFixed(1)}%
-          </p>
-        </div>
-        <div className="text-center p-3 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 rounded-lg border border-green-200 dark:border-green-800">
-          <p className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
-            Min
-          </p>
-          <p className="text-xl font-bold text-green-900 dark:text-green-100 mt-1">
-            {data.statistics.min.toFixed(1)}%
-          </p>
-        </div>
-        <div className="text-center p-3 bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 rounded-lg border border-red-200 dark:border-red-800">
-          <p className="text-xs font-semibold text-red-700 dark:text-red-300 uppercase tracking-wide">
-            Max
-          </p>
-          <p className="text-xl font-bold text-red-900 dark:text-red-100 mt-1">
-            {data.statistics.max.toFixed(1)}%
-          </p>
         </div>
       </div>
     </div>

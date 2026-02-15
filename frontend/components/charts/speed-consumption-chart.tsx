@@ -13,7 +13,26 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
-import { generatePolynomialCurve } from '@/lib/utils/polynomial-regression';
+import { generateExponentialCurve } from '@/lib/utils/exponential-regression';
+
+function YAxisLabel({
+  viewBox,
+  value,
+  fill = '#4b5563',
+}: {
+  viewBox?: { x: number; y: number; width: number; height: number };
+  value?: string;
+  fill?: string;
+}) {
+  if (!viewBox || !value) return null;
+  const x = viewBox.x + 4;
+  const y = viewBox.y + viewBox.height / 2;
+  return (
+    <text x={x} y={y} textAnchor="middle" fill={fill} fontSize={10} fontWeight={600} transform={`rotate(-90, ${x}, ${y})`}>
+      {value}
+    </text>
+  );
+}
 
 const TEAL = '#14b8a6';
 const BALLAST_BASELINE = '#3b82f6';
@@ -82,6 +101,18 @@ function DiamondDot(props: { cx?: number; cy?: number; color: string }) {
   );
 }
 
+function isValidChartData(data: SpeedConsumptionChartData): boolean {
+  return (
+    data != null &&
+    typeof data === 'object' &&
+    data.ballast != null &&
+    data.laden != null &&
+    data.statistics != null &&
+    data.statistics.ballast != null &&
+    data.statistics.laden != null
+  );
+}
+
 export function SpeedConsumptionChart({
   data,
   height = 450,
@@ -89,13 +120,24 @@ export function SpeedConsumptionChart({
 }: SpeedConsumptionChartProps) {
   const [selectedCondition, setSelectedCondition] = useState<'ballast' | 'laden'>('ballast');
 
+  if (!isValidChartData(data)) {
+    return (
+      <div
+        className={`flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 ${className}`}
+        style={{ height: height + 80 }}
+      >
+        <p className="text-sm font-medium">Chart data is loading or unavailable</p>
+      </div>
+    );
+  }
+
   const section = data[selectedCondition];
   const stats = data.statistics[selectedCondition];
   const baselineColor = selectedCondition === 'ballast' ? BALLAST_BASELINE : LADEN_BASELINE;
 
-  const hasActual = section.actual.dataPoints.length > 0;
-  const hasBaseline = section.baseline.dataPoints.length > 0;
-  const hasAnyData = data.statistics.ballast.dataPoints > 0 || data.statistics.laden.dataPoints > 0;
+  const hasActual = section?.actual?.dataPoints?.length > 0;
+  const hasBaseline = section?.baseline?.dataPoints?.length > 0;
+  const hasAnyData = (data.statistics.ballast.dataPoints > 0) || (data.statistics.laden.dataPoints > 0);
   const hasSectionData = hasActual || hasBaseline;
 
   const actualScatterData = useMemo(
@@ -113,40 +155,63 @@ export function SpeedConsumptionChart({
   );
 
   const speedDomain = useMemo(() => {
+    const hardMaxSpeed = data.axisLimits?.maxSpeed ?? 25;
     const speeds = [
       ...section.actual.dataPoints.map((p) => p.speed),
       ...section.baseline.dataPoints.map((p) => p.speed),
     ].filter(Number.isFinite);
-    if (speeds.length === 0) return [0, 15];
-    const min = Math.min(...speeds);
-    const max = Math.max(...speeds);
+    if (speeds.length === 0) return [0, hardMaxSpeed];
+    const min = Math.max(0, Math.min(...speeds));
+    const max = Math.min(hardMaxSpeed, Math.max(...speeds));
     const pad = (max - min) * 0.05 || 0.5;
-    return [Math.max(0, min - pad), max + pad];
-  }, [section.actual.dataPoints, section.baseline.dataPoints]);
+    return [Math.max(0, min - pad), Math.min(hardMaxSpeed, max + pad)];
+  }, [section.actual.dataPoints, section.baseline.dataPoints, data.axisLimits?.maxSpeed]);
+
+  const consumptionDomain = useMemo(() => {
+    const hardMaxConsumption = data.axisLimits?.maxConsumption ?? 200;
+    const consumptions = [
+      ...section.actual.dataPoints.map((p) => p.consumption),
+      ...section.baseline.dataPoints.map((p) => p.consumption),
+    ].filter(Number.isFinite);
+    if (consumptions.length === 0) return [0, hardMaxConsumption];
+    const min = Math.max(0, Math.min(...consumptions));
+    const max = Math.min(hardMaxConsumption, Math.max(...consumptions));
+    const pad = (max - min) * 0.05 || 0.5;
+    return [Math.max(0, min - pad), Math.min(hardMaxConsumption, max + pad)];
+  }, [section.actual.dataPoints, section.baseline.dataPoints, data.axisLimits?.maxConsumption]);
 
   const [minSpeed, maxSpeed] = speedDomain;
+  const maxConsumptionY = data.axisLimits?.maxConsumption ?? 200;
 
   const actualCurveData = useMemo(() => {
-    if (!section.actual.polynomialFit || section.actual.dataPoints.length < 3) return [];
-    const points = generatePolynomialCurve(
-      section.actual.polynomialFit.coefficients,
-      minSpeed,
-      maxSpeed,
-      50
-    );
-    return points.map((p) => ({ speed: p.x, consumption: p.y }));
-  }, [section.actual.polynomialFit, section.actual.dataPoints.length, minSpeed, maxSpeed]);
+    if (!section.actual.exponentialFit || section.actual.dataPoints.length < 2) return [];
+    const { a, b } = section.actual.exponentialFit;
+    const points = generateExponentialCurve(a, b, minSpeed, maxSpeed, 50);
+    return points.map((p) => ({
+      speed: p.x,
+      consumption: Math.max(0, Math.min(maxConsumptionY, p.y)),
+    }));
+  }, [section.actual.exponentialFit, section.actual.dataPoints.length, minSpeed, maxSpeed, maxConsumptionY]);
 
   const baselineCurveData = useMemo(() => {
-    if (!section.baseline.polynomialFit || section.baseline.dataPoints.length < 3) return [];
-    const points = generatePolynomialCurve(
-      section.baseline.polynomialFit.coefficients,
-      minSpeed,
-      maxSpeed,
-      50
-    );
-    return points.map((p) => ({ speed: p.x, consumption: p.y }));
-  }, [section.baseline.polynomialFit, section.baseline.dataPoints.length, minSpeed, maxSpeed]);
+    const pts = section.baseline.dataPoints;
+    if (section.baseline.exponentialFit) {
+      const { a, b } = section.baseline.exponentialFit;
+      const points = generateExponentialCurve(a, b, minSpeed, maxSpeed, 50);
+      return points.map((p) => ({
+        speed: p.x,
+        consumption: Math.max(0, Math.min(maxConsumptionY, p.y)),
+      }));
+    }
+    if (pts.length === 2) {
+      const sorted = [...pts].sort((a, b) => a.speed - b.speed);
+      return sorted.map((p) => ({
+        speed: p.speed,
+        consumption: Math.max(0, Math.min(maxConsumptionY, p.consumption)),
+      }));
+    }
+    return [];
+  }, [section.baseline.exponentialFit, section.baseline.dataPoints, minSpeed, maxSpeed, maxConsumptionY]);
 
   const ballastCount = data.statistics.ballast.dataPoints;
   const ladenCount = data.statistics.laden.dataPoints;
@@ -165,6 +230,11 @@ export function SpeedConsumptionChart({
 
   return (
     <div className={`space-y-4 ${className}`}>
+      {hasActual && !hasBaseline && (
+        <p className="text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+          Baseline curves are available when using the Hull Performance API (not when using DB source).
+        </p>
+      )}
       {/* Tabs */}
       <div className="flex gap-2">
         <button
@@ -191,19 +261,15 @@ export function SpeedConsumptionChart({
         </button>
       </div>
 
-      {/* Statistics grid: 4 cols desktop, 2 mobile */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Statistics: Avg Speed (1 dec), Avg Consumption (2 dec), Data Points; no correlation, no curve equations */}
+      <div className="grid grid-cols-3 gap-3">
         <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Speed</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-0.5">{stats.avgSpeed.toFixed(1)} kts</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-0.5">{stats.avgSpeed.toFixed(1)}</p>
         </div>
         <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Consumption</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-0.5">{stats.avgConsumption.toFixed(2)} MT/day</p>
-        </div>
-        <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Correlation</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-0.5">{stats.correlation.toFixed(3)}</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-0.5">{stats.avgConsumption.toFixed(2)}</p>
         </div>
         <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Data Points</p>
@@ -211,38 +277,8 @@ export function SpeedConsumptionChart({
         </div>
       </div>
 
-      {/* Polynomial equations */}
-      {(section.actual.polynomialFit || section.baseline.polynomialFit) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          {section.actual.polynomialFit && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700">
-              <span className="mt-1.5 w-2 h-2 rounded-full shrink-0 bg-teal-500" aria-hidden />
-              <div>
-                <p className="font-medium text-gray-700 dark:text-gray-300">Actual</p>
-                <p className="text-gray-600 dark:text-gray-400 font-mono text-xs break-all">{section.actual.polynomialFit.equation_text}</p>
-                <p className="text-gray-500 dark:text-gray-500 text-xs mt-0.5">R² = {section.actual.polynomialFit.r_squared.toFixed(3)}</p>
-              </div>
-            </div>
-          )}
-          {section.baseline.polynomialFit && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700">
-              <span
-                className="mt-1.5 w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: baselineColor }}
-                aria-hidden
-              />
-              <div>
-                <p className="font-medium text-gray-700 dark:text-gray-300">Baseline</p>
-                <p className="text-gray-600 dark:text-gray-400 font-mono text-xs break-all">{section.baseline.polynomialFit.equation_text}</p>
-                <p className="text-gray-500 dark:text-gray-500 text-xs mt-0.5">R² = {section.baseline.polynomialFit.r_squared.toFixed(3)}</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Chart */}
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 p-4">
+      {/* Chart - consistent margins for placement inside card */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 p-4 overflow-hidden">
         {!hasSectionData ? (
           <div
             className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400"
@@ -253,24 +289,35 @@ export function SpeedConsumptionChart({
         ) : (
         <div style={{ height }}>
           <ResponsiveContainer width="100%" height={height}>
-            <ScatterChart margin={{ top: 20, right: 24, bottom: 24, left: 24 }}>
+            <ScatterChart margin={{ top: 10, right: 12, bottom: 32, left: 54 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" strokeOpacity={0.5} />
               <XAxis
                 type="number"
                 dataKey="speed"
-                name="Speed"
-                unit=" kts"
+                name="Speed (kts)"
                 domain={speedDomain}
+                allowDataOverflow
+                tickFormatter={(v) => Number(v).toFixed(1)}
                 tick={{ fontSize: 11, fill: 'currentColor' }}
+                label={{
+                  value: 'Speed (kts)',
+                  position: 'insideBottom',
+                  offset: -14,
+                  style: { fontSize: 11, fontWeight: 600, fill: 'currentColor' },
+                }}
                 className="text-gray-600 dark:text-gray-400"
               />
               <YAxis
                 type="number"
                 dataKey="consumption"
-                name="Consumption"
-                unit=" MT/day"
-                tick={{ fontSize: 11, fill: 'currentColor' }}
+                name="Consumption (MT/day)"
+                domain={consumptionDomain}
+                allowDataOverflow
+                tickFormatter={(v) => Number(v).toFixed(2)}
+                tick={{ fontSize: 10, fill: 'currentColor' }}
+                label={{ value: 'Consumption (MT/day)', content: (props: { viewBox?: { x: number; y: number; width: number; height: number }; value?: string }) => <YAxisLabel {...props} fill="currentColor" /> }}
                 className="text-gray-600 dark:text-gray-400"
+                width={42}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '5 5', stroke: '#9ca3af' }} />
               <Legend

@@ -40,7 +40,7 @@ const fetchHullPerformanceInputSchema = z
       }),
     time_period: z
       .object({
-        days: z.number().optional().default(90),
+        days: z.number().optional(),
         start_date: z.string().optional(),
         end_date: z.string().optional(),
       })
