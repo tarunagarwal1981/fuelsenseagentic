@@ -28,7 +28,7 @@ function InsightCard({
   unit: string;
   color: string;
   bg: string;
-  Icon: React.ComponentType<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 }) {
   return (
     <button

@@ -222,7 +222,6 @@ export function HullPerformanceCard({ analysis, chartData }: HullPerformanceCard
                 <SpeedConsumptionChart
                   data={chartData.speedConsumption}
                   height={400}
-                  colorByDate={false}
                 />
               ) : (
                 <div className="h-[400px] flex items-center justify-center text-gray-500 dark:text-gray-400">

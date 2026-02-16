@@ -123,8 +123,8 @@ export async function hullPerformanceAgentNode(
 
     // 4. Extract chart data if analysis succeeded
     let chartData: {
-      excessPower?: ReturnType<typeof toExcessPowerChartData>;
-      speedLoss?: ReturnType<typeof toSpeedLossChartData>;
+      excessPower?: ReturnType<typeof toExcessPowerChartData> | null;
+      speedLoss?: ReturnType<typeof toSpeedLossChartData> | null;
       speedConsumption?: SpeedConsumptionChartData | null;
     } | undefined;
 

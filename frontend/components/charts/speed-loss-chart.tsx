@@ -14,18 +14,22 @@ import {
 } from 'recharts';
 import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
 
+/** Recharts may pass Cartesian or Polar viewBox; we only use Cartesian. */
+type CartesianViewBox = { x: number; y: number; width: number; height: number };
+
 function YAxisLabel({
   viewBox,
   value,
   fill = '#4b5563',
 }: {
-  viewBox?: { x: number; y: number; width: number; height: number };
+  viewBox?: CartesianViewBox | { [key: string]: unknown };
   value?: string;
   fill?: string;
 }) {
-  if (!viewBox || !value) return null;
-  const x = viewBox.x + 6;
-  const y = viewBox.y + viewBox.height / 2;
+  const vb = viewBox as CartesianViewBox | undefined;
+  if (!vb || typeof vb.x !== 'number' || typeof vb.y !== 'number' || typeof vb.height !== 'number' || !value) return null;
+  const x = vb.x + 6;
+  const y = vb.y + vb.height / 2;
   return (
     <text x={x} y={y} textAnchor="middle" fill={fill} fontSize={11} fontWeight={600} transform={`rotate(-90, ${x}, ${y})`}>
       {value}
@@ -219,7 +223,7 @@ export function SpeedLossChart({
               />
 
               <YAxis
-                label={{ value: 'Speed Loss (%)', content: (props: { viewBox?: { x: number; y: number; width: number; height: number }; value?: string }) => <YAxisLabel {...props} fill="#4b5563" /> }}
+                label={{ value: 'Speed Loss (%)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill="#4b5563" />) as unknown as React.ReactElement }}
                 domain={[0, 'auto']}
                 tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
                 stroke="#9ca3af"
