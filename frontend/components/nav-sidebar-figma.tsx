@@ -1,11 +1,12 @@
 "use client";
 
-import { Anchor, Bell, FileText, Clock, User, LogOut, Sparkles } from "lucide-react";
+import Image from "next/image";
+import { Bell, FileText, Clock, User, LogOut } from "lucide-react";
 
 /**
  * Nav sidebar – Figma frame 9140-67962 (FUEL-SENSE-VXD).
- * Dark vertical sidebar as-is: logo (anchor + teal + sparkles), notification bell with badge,
- * export/share, history, profile, logout. All buttons are placeholders.
+ * Dark vertical sidebar as-is: logo (anchor + teal + sparkle from sidebar-logo.png),
+ * notification bell with badge, export/share, history, profile, logout. All buttons are placeholders.
  * Uses tokens from Figma MCP get_variable_defs for node 9140-67962.
  */
 export function NavSidebarFigma() {
@@ -16,18 +17,16 @@ export function NavSidebarFigma() {
         backgroundColor: "var(--figma-Primary-Dark-Blue)",
       }}
     >
-      {/* Logo: anchor (orange) + teal circle/arrow + sparkles */}
+      {/* Logo: anchor + teal arch + sparkle (from public/sidebar-logo.png) */}
       <div className="flex flex-col items-center gap-2 mb-6">
         <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
-          <div
-            className="absolute inset-0 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: "var(--figma-Buttons-button-container-2)" }}
-          >
-            <Anchor className="h-5 w-5 relative z-10" style={{ color: "#f97316" }} />
-          </div>
-          <span className="absolute -top-0.5 -right-0.5 text-white">
-            <Sparkles className="h-2.5 w-2.5" />
-          </span>
+          <Image
+            src="/sidebar-logo.png"
+            alt="FuelSense"
+            width={40}
+            height={40}
+            className="object-contain"
+          />
         </div>
       </div>
 

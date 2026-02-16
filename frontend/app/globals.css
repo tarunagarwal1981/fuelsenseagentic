@@ -61,7 +61,7 @@
 :root {
   /* Figma design: FUEL-SENSE-VXD
      File: https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD
-     Frames: 9140-67960 (main), 9140-67964 (Alerts left panel). Tokens from Figma MCP get_variable_defs. */
+     Frames: 9140-67960 (main), 9140-67964 (Alerts), 9140-65000 (Playground welcome), 58045-833 (chat input). Tokens from Figma MCP get_variable_defs. */
   --figma-Surface-Faded-bg: #F9FAFB;
   --figma-Primary-Dark-Blue: #072638;
   --figma-Buttons-button-container-2: rgba(33, 148, 149, 0.2);

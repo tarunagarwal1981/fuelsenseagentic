@@ -6,6 +6,8 @@
 
 - **File:** [Figma: FUEL-SENSE-VXD](https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD)
 - **Main frame node-id:** `9140-67960` (use with Figma MCP: “get design context” / “get variables” for this node)
+- **Playground welcome dashboard (empty state):** `9140-65000` — "Good morning, John!" fleet insights and cards; implemented in [welcome-dashboard-figma.tsx](frontend/components/welcome-dashboard-figma.tsx).
+- **Chat input area:** `58045-833` — input field, suggested actions, send and paperclip; styling applied in [chat-interface-multi-agent.tsx](frontend/components/chat-interface-multi-agent.tsx) (behavior unchanged).
 - **Embed (for docs/Notion):** use the iframe below to reference the design.
 
 ```html

@@ -49,6 +49,7 @@ import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-
 import { HybridResponseRenderer } from './hybrid-response-renderer';
 import { AlertsPanelFigma } from './alerts-panel-figma';
 import { NavSidebarFigma } from './nav-sidebar-figma';
+import { WelcomeDashboardFigma } from './welcome-dashboard-figma';
 import { ExcessPowerChart } from './charts/excess-power-chart';
 import { SpeedLossChart } from './charts/speed-loss-chart';
 import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
@@ -643,12 +644,14 @@ export function ChatInterfaceMultiAgent() {
     }
   };
 
-  // Chat body: empty at start; when user sends a query, show messages + answer (right panel = placeholder until then)
+  // Chat body: Figma 9140-65000 welcome dashboard when empty; otherwise messages + answer
   const renderChatBody = () => (
     <>
+        {messages.length === 0 && !isLoading ? (
+          <WelcomeDashboardFigma />
+        ) : (
         <div className="flex-1 overflow-y-auto min-h-0 bg-white dark:bg-gray-900 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.06)_1px,transparent_0)] dark:bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.04)_1px,transparent_0)] bg-[size:16px_16px]">
           <div className="max-w-4xl mx-auto px-4 py-2">
-            {/* Show conversation only when there are messages or loading (empty at start per Figma) */}
             {(messages.length > 0 || isLoading) && (
             <>
             {messages.some((m) => m.role === "assistant") && (
@@ -880,6 +883,7 @@ export function ChatInterfaceMultiAgent() {
             )}
           </div>
         </div>
+        )}
     </>
   );
 
@@ -934,63 +938,87 @@ export function ChatInterfaceMultiAgent() {
 
         {renderChatBody()}
 
-        {/* Query area at bottom of right pane - Figma: input, suggested actions, thumbs up/down, menu, paperclip */}
-        <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
-          <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
-          <div className="flex gap-2 mb-2">
-            {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => setInput((prev) => (prev ? `${prev} ` : '') + label)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
-              >
-                {label}
-              </button>
-            ))}
+        {/* Query area – Figma 58045-833: colors, 3D shadow, Grey/03 buttons (size unchanged) */}
+        <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-white dark:bg-gray-800 border-t border-[var(--figma-Grey-03)]">
+          <div
+            className="rounded-xl border p-2"
+            style={{
+              backgroundColor: "var(--figma-Surface-Card)",
+              borderColor: "var(--figma-Surface-Card-stroke)",
+              boxShadow: "2px 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
+            }}
+          >
+            <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+              <div className="relative rounded-lg overflow-visible">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="What can I help you with?"
+                  className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-9 rounded-lg border resize-none focus:outline-none focus:ring-2 focus:ring-[var(--figma-Primary-Teal)]/30 focus:border-[var(--figma-Primary-Teal)] text-[13px] placeholder-[var(--figma-Text-Secondary)]"
+                  style={{
+                    backgroundColor: "var(--figma-Grey-01)",
+                    borderColor: "var(--figma-Surface-Card-stroke)",
+                    color: "var(--figma-Text-Primary)",
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit();
+                    }
+                  }}
+                  disabled={isLoading}
+                  rows={1}
+                />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 bottom-1 h-6 w-6 p-0 hover:opacity-90 min-w-0"
+                  style={{ color: "var(--figma-Primary-Teal)" }}
+                  disabled={!input.trim() || isLoading}
+                >
+                  <Send className="h-3 w-3" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      if (label === "Show Fleet Summary") {
+                        setMessages([]);
+                        setInput("");
+                      } else {
+                        setInput((prev) => (prev ? `${prev} ` : '') + label);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-md border text-[13px] font-normal hover:opacity-90"
+                    style={{
+                      backgroundColor: "var(--figma-Grey-03)",
+                      borderColor: "var(--figma-Surface-Card-stroke)",
+                      color: "var(--figma-Text-Title)",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--figma-Text-Icon)" }} title="Attach file">
+                  <Paperclip className="h-3 w-3" />
+                </button>
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Good response">
+                  <ThumbsUp className="h-3 w-3" />
+                </button>
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Bad response">
+                  <ThumbsDown className="h-3 w-3" />
+                </button>
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="More options">
+                  <MoreVertical className="h-3 w-3" />
+                </button>
+              </div>
+            </form>
           </div>
-          <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
-            <div className="flex-1 relative rounded-xl overflow-visible">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="What can I help you with?"
-                className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                disabled={isLoading}
-                rows={1}
-              />
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
-                disabled={!input.trim() || isLoading}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-1 pb-1">
-              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Good response">
-                <ThumbsUp className="h-4 w-4" />
-              </button>
-              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Bad response">
-                <ThumbsDown className="h-4 w-4" />
-              </button>
-              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="More options">
-                <MoreVertical className="h-4 w-4" />
-              </button>
-              <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" title="Attach file">
-                <Paperclip className="h-4 w-4" />
-              </button>
-            </div>
-          </form>
         </div>
       </div>
       )}
@@ -1013,54 +1041,86 @@ export function ChatInterfaceMultiAgent() {
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {renderChatBody()}
             </div>
-            {/* Query field at bottom of expanded window */}
-            <div className="relative border-t border-sky-200 dark:border-sky-800 pt-4 px-4 pb-5 flex-shrink-0 bg-white dark:bg-gray-800">
-              <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl bg-gradient-to-r from-amber-200 via-amber-300 to-orange-300 dark:from-amber-800/40 dark:via-amber-700/40 dark:to-orange-700/40" />
-              <div className="flex gap-2 mb-2">
-                {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setInput((prev) => (prev ? `${prev} ` : '') + label)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600"
-                  >
-                    {label}
-                  </button>
-                ))}
+            {/* Query field at bottom of expanded window – Figma 58045-833, same theme + 3D shadow */}
+            <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-white dark:bg-gray-800 border-t border-[var(--figma-Grey-03)]">
+              <div
+                className="rounded-xl border p-2"
+                style={{
+                  backgroundColor: "var(--figma-Surface-Card)",
+                  borderColor: "var(--figma-Surface-Card-stroke)",
+                  boxShadow: "2px 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
+                }}
+              >
+                <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+                  <div className="relative rounded-lg overflow-visible">
+                    <textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="What can I help you with?"
+                      className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-9 rounded-lg border resize-none focus:outline-none focus:ring-2 focus:ring-[var(--figma-Primary-Teal)]/30 focus:border-[var(--figma-Primary-Teal)] text-[13px] placeholder-[var(--figma-Text-Secondary)]"
+                      style={{
+                        backgroundColor: "var(--figma-Grey-01)",
+                        borderColor: "var(--figma-Surface-Card-stroke)",
+                        color: "var(--figma-Text-Primary)",
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSubmit();
+                        }
+                      }}
+                      disabled={isLoading}
+                      rows={1}
+                    />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 bottom-1 h-6 w-6 p-0 hover:opacity-90 min-w-0"
+                      style={{ color: "var(--figma-Primary-Teal)" }}
+                      disabled={!input.trim() || isLoading}
+                    >
+                      <Send className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {['Seek Expert advice', 'Generate Report', 'Generate Presentation', 'Generate Draft Email', 'Show Fleet Summary'].map((label) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          if (label === "Show Fleet Summary") {
+                            setMessages([]);
+                            setInput("");
+                          } else {
+                            setInput((prev) => (prev ? `${prev} ` : '') + label);
+                          }
+                        }}
+                        className="px-2 py-1 rounded-md border text-[13px] font-normal hover:opacity-90"
+                        style={{
+                          backgroundColor: "var(--figma-Grey-03)",
+                          borderColor: "var(--figma-Surface-Card-stroke)",
+                          color: "var(--figma-Text-Title)",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--figma-Text-Icon)" }} title="Attach file">
+                      <Paperclip className="h-3 w-3" />
+                    </button>
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Good response">
+                      <ThumbsUp className="h-3 w-3" />
+                    </button>
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Bad response">
+                      <ThumbsDown className="h-3 w-3" />
+                    </button>
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="More options">
+                      <MoreVertical className="h-3 w-3" />
+                    </button>
+                  </div>
+                </form>
               </div>
-              <form onSubmit={handleSubmit} className="flex items-end gap-2 relative">
-                <div className="flex-1 relative rounded-xl overflow-visible">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="What can I help you with?"
-                    className="w-full min-h-[48px] max-h-[160px] px-4 py-3 pr-12 rounded-xl border-2 border-sky-200 dark:border-sky-700/60 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200/50 focus:border-sky-400 dark:focus:border-sky-500 text-sm shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSubmit();
-                      }
-                    }}
-                    disabled={isLoading}
-                    rows={1}
-                  />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 bottom-2 h-8 w-8 p-0 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 hover:bg-teal-50/50 dark:hover:bg-teal-900/20"
-                    disabled={!input.trim() || isLoading}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex items-center gap-1 pb-1">
-                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ThumbsUp className="h-4 w-4" /></button>
-                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ThumbsDown className="h-4 w-4" /></button>
-                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><MoreVertical className="h-4 w-4" /></button>
-                  <button type="button" className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><Paperclip className="h-4 w-4" /></button>
-                </div>
-              </form>
             </div>
           </div>
         </div>
