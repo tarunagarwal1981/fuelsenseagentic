@@ -93,7 +93,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
     jest.clearAllMocks();
     mockGetVesselData.mockReturnValue(null);
     mockGetVesselProfile.mockReturnValue(null);
-    mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Unknown Vessel', 850, 100));
+    mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Default (no vessel specified)', 850, 100));
     mockGetVesselForVoyagePlanning.mockResolvedValue(null);
     mockProjectROBAtCurrentVoyageEnd.mockResolvedValue(null);
   });
@@ -137,7 +137,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
 
   it('should handle invalid vessel name with default profile fallback', async () => {
     mockGetVesselProfile.mockReturnValue(null);
-    mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Unknown Vessel', 850, 100));
+    mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Default (no vessel specified)', 850, 100));
 
     const result = await VesselSelectionEngine.analyzeVessel({
       vessel_name: 'MV Nonexistent XYZ',
@@ -146,7 +146,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
     });
 
     expect(result.vessel_name).toBe('MV Nonexistent XYZ');
-    expect(result.vessel_profile.vessel_name).toBe('Unknown Vessel');
+    expect(result.vessel_profile.vessel_name).toBe('Default (no vessel specified)');
     expect(result.projected_rob_at_start.VLSFO).toBe(850);
     expect(result.projected_rob_at_start.LSMGO).toBe(100);
   });

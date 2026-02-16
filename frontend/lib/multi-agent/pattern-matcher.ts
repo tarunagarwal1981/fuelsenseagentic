@@ -204,6 +204,17 @@ function intentToPatternType(agent_id: string): PatternMatch['type'] {
 }
 
 /**
+ * Returns true when the LLM intent string indicates the user's goal is bunker
+ * (options/planning along a route). Used so we set pattern type to bunker_planning
+ * when the first step is route_agent, ensuring route → bunker_agent → finalize.
+ * Narrow check to avoid affecting route-only or other intents.
+ */
+function isBunkerLikeIntent(intent: string): boolean {
+  if (!intent || typeof intent !== 'string') return false;
+  return intent.toLowerCase().includes('bunker');
+}
+
+/**
  * Build extracted_data from IntentClassifier extracted_params
  */
 function buildExtractedData(
@@ -242,7 +253,15 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
     const latencyMs = Date.now() - llmStart;
 
     if (classification && classification.confidence >= 0.7) {
-      const patternType = intentToPatternType(classification.agent_id);
+      let patternType = intentToPatternType(classification.agent_id);
+      // Multi-step workflow: user asked for bunker options but first step is route.
+      // Preserve overall intent so decision framework runs bunker_agent after route_agent.
+      if (
+        classification.agent_id === 'route_agent' &&
+        isBunkerLikeIntent(classification.intent)
+      ) {
+        patternType = 'bunker_planning';
+      }
 
       if (patternType !== 'ambiguous') {
         const confidencePercent = Math.round(classification.confidence * 100);

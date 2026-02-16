@@ -3202,11 +3202,10 @@ export async function bunkerAgentNode(
 
     if (resolvedVesselName && !vpFromDb) {
       console.warn(`⚠️ [BUNKER-WORKFLOW] Vessel "${resolvedVesselName}" not found in database`);
-      console.log('   Available vessels:', listAllVessels().join(', '));
       console.log('   📝 [BUNKER-WORKFLOW] Using default vessel profile to continue workflow');
       
       vp = getDefaultVesselProfile();
-      vesselNotFoundWarning = `⚠️ **Note:** Vessel "${resolvedVesselName}" not found in database. Using default vessel assumptions. Available vessels: ${listAllVessels().join(', ')}`;
+      vesselNotFoundWarning = `⚠️ **Note:** Vessel "${resolvedVesselName}" not found. Using default vessel assumptions.`;
     } else {
       vp = vpFromDb ?? getDefaultVesselProfile();
       if (vpFromDb) {
@@ -3481,7 +3480,7 @@ export async function bunkerAgentNode(
             rob_safety_status: robSafetyStatus ?? null,
             eca_consumption: ecaConsumptionResult ?? null,
             eca_summary: ecaSummaryResult ?? null,
-            vessel_name: resolvedVesselName || vp.vessel_name,
+            vessel_name: resolvedVesselName ?? (vpFromDb ? vp.vessel_name : null),
             vessel_profile: vp,
             agent_status: { 
               ...(state.agent_status || {}), 
@@ -3989,7 +3988,7 @@ export async function bunkerAgentNode(
       rob_safety_status: robSafetyStatus ?? null,
       eca_consumption: ecaConsumptionResult ?? null,
       eca_summary: ecaSummaryResult ?? null,
-      vessel_name: resolvedVesselName || vp.vessel_name,
+      vessel_name: resolvedVesselName ?? (vpFromDb ? vp.vessel_name : null),
       vessel_profile: vp,
       agent_status: {
         ...(state.agent_status || {}),
@@ -4037,7 +4036,7 @@ export async function bunkerAgentNode(
     }
     if (vp) {
       partialOutputs.vessel_profile = vp;
-      partialOutputs.vessel_name = resolvedVesselName || vp.vessel_name;
+      partialOutputs.vessel_name = resolvedVesselName ?? (vp?.vessel_data ? vp.vessel_name : null);
     }
 
     return {

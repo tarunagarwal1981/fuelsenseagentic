@@ -88,7 +88,6 @@ export function getVesselData(vesselName: string): VesselData | null {
   }
   
   console.warn(`❌ [VESSEL-SERVICE] Vessel "${vesselName}" not found in database`);
-  console.log('   Available vessels:', Object.keys(db).join(', '));
   return null;
 }
 
@@ -147,7 +146,7 @@ export function getVesselProfile(
  */
 export function getDefaultVesselProfile(): VesselProfile {
   return {
-    vessel_name: 'Unknown Vessel',
+    vessel_name: 'Default (no vessel specified)',
     vessel_data: null,
     initial_rob: { VLSFO: 850, LSMGO: 100 },
     capacity: { VLSFO: 2000, LSMGO: 200 },
