@@ -59,8 +59,9 @@
 }
 
 :root {
-  /* Figma design tokens from Builder.io Quick Copy (Frame 2147225272).
-     Source: builder.io/app/projects?showPasteHere=true&figmaQuickCopyData=... */
+  /* Figma design: FUEL-SENSE-VXD
+     File: https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD
+     Frames: 9140-67960 (main), 9140-67964 (Alerts left panel). Tokens from Figma MCP get_variable_defs. */
   --figma-Surface-Faded-bg: #F9FAFB;
   --figma-Primary-Dark-Blue: #072638;
   --figma-Buttons-button-container-2: rgba(33, 148, 149, 0.2);
@@ -76,7 +77,9 @@
   --figma-Grey-02: #F9FAFB;
   --figma-Surface-Teal-BG-1: #E5F9F9;
   --figma-Grey-11: #040406;
+  --figma-Grey-04: #E5E7EA;
   --figma-Grey-05: #D2D5DB;
+  --figma-Grey-08: #4D5461;
   --figma-secondary-elements-background: #F9FAFB;
   --figma-secondary-elements-foreground: #9EA2AE;
   --figma-Text-Primary: #132740;
@@ -87,6 +90,9 @@
   --figma-Primary-Teal: #219495;
   --figma-Grey-03: #F3F4F6;
   --figma-Tab-Unselected: #999;
+  /* Left panel (Alerts) – selected/hover card highlight */
+  --figma-Alert-selected-border: #A78BFA;
+  --figma-Alert-selected-bg: #F5F3FF;
   --figma-font-face: Poppins;
   --figma-font-size-body-1: 18px;
   --figma-line-height-body-1: 26px;
@@ -140,6 +146,26 @@
   --fs-surface-elevated: var(--figma-Surface-Faded-bg);
   --fs-border: var(--figma-Border-Main-Divider);
   --fs-input: var(--figma-Grey-03);
+}
+
+/* Left panel (Alerts) – Figma design tokens */
+.panel-alerts {
+  --panel-bg: var(--figma-Surface-Card);
+  --panel-border: var(--figma-Surface-Card-stroke);
+  --panel-header-icon-bg: var(--figma-Surface-Teal-BG-1);
+  --panel-header-icon-color: var(--figma-Primary-Teal);
+  --panel-tab-active-underline: var(--figma-Status-Error);
+  --panel-search-bg: var(--figma-Grey-03);
+  --panel-card-bg: var(--figma-Surface-Card);
+  --panel-card-border: var(--figma-Surface-Card-stroke);
+  --panel-card-vessel-color: var(--figma-Primary-Teal);
+  --panel-card-alert-value: var(--figma-Status-Error);
+  --panel-alert-selected-border: var(--figma-Alert-selected-border);
+  --panel-alert-selected-bg: var(--figma-Alert-selected-bg);
+}
+.dark .panel-alerts {
+  --panel-alert-selected-border: rgba(167, 139, 250, 0.6);
+  --panel-alert-selected-bg: rgba(167, 139, 250, 0.12);
 }
 
 .dark {

@@ -11,17 +11,14 @@ import {
   Send,
   Bot,
   User,
-  Ship,
   Route,
   Cloud,
   Fuel,
-  Clock,
   Activity,
   Sun,
   Moon,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
   FileStack,
   Lock,
   MessageCircle,
@@ -30,11 +27,8 @@ import {
   Settings,
   Compass,
   Maximize2,
-  Sparkles,
   X,
   FileText,
-  Anchor,
-  Bell,
   Save,
   FilePlus,
   ThumbsUp,
@@ -53,6 +47,8 @@ import type { FormattedResponse } from "@/lib/formatters/response-formatter";
 import { TemplateResponseContainer } from './template-response';
 import type { TemplateFormattedResponse } from '@/lib/formatters/template-aware-formatter';
 import { HybridResponseRenderer } from './hybrid-response-renderer';
+import { AlertsPanelFigma } from './alerts-panel-figma';
+import { NavSidebarFigma } from './nav-sidebar-figma';
 import { ExcessPowerChart } from './charts/excess-power-chart';
 import { SpeedLossChart } from './charts/speed-loss-chart';
 import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
@@ -890,195 +886,46 @@ export function ChatInterfaceMultiAgent() {
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-green-50/5 via-white to-orange-50/5 dark:from-green-950/5 dark:via-gray-900 dark:to-orange-950/5">
       <div className="flex flex-1 min-h-0">
-      {/* 1. Narrow dark nav sidebar - Figma: anchor, bell+badge, document, clock, profile, collapse */}
-      <div className="w-16 flex-shrink-0 flex flex-col items-center py-4 bg-fs-sidebar border-r border-fs-border">
-        <div className="flex flex-col items-center gap-2 mb-6">
-          <div className="w-10 h-10 rounded-full bg-fs-brand-gradient flex items-center justify-center flex-shrink-0">
-            <Anchor className="h-5 w-5 text-white" />
-          </div>
-        </div>
-        <nav className="flex-1 flex flex-col gap-1">
-          <button type="button" className="relative flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1 right-1 flex items-center justify-center min-w-[14px] h-[14px] rounded-full bg-fs-alert text-[10px] font-bold text-white">3</span>
-          </button>
-          <button type="button" className="flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
-            <FileText className="h-5 w-5" />
-          </button>
-          <button type="button" className="flex flex-col items-center justify-center w-10 h-10 rounded-md text-gray-400 hover:bg-fs-surface-elevated hover:text-white">
-            <Clock className="h-5 w-5" />
-          </button>
-        </nav>
-        <div className="mt-auto flex flex-col items-center gap-2">
-          <button type="button" className="w-10 h-10 rounded-full bg-fs-surface-elevated flex items-center justify-center text-white">
-            <User className="h-5 w-5" />
-          </button>
-          <button type="button" className="p-2 text-gray-500 hover:text-gray-300 rounded-md" title="Collapse sidebar">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
+      {/* 1. Nav sidebar – Figma frame 9140-67962 (as-is, all placeholders) */}
+      <NavSidebarFigma />
 
-      {/* 2. Left panel: Alerts (25) - Figma: search, tabs Active/Monitoring/WIP, alert list */}
-      <div className="w-[25%] flex-shrink-0 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
-        <div className="shrink-0 px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-600">
-          <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Alerts (25)</h2>
-          <div className="flex items-center gap-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 px-3 py-2">
-            <input
-              type="text"
-              placeholder="Search by Vessel Name, Alert type, & date"
-              className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none"
-            />
-            <button type="button" className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
-              <Clock className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex gap-3 mt-2 border-b border-gray-200 dark:border-gray-600">
-            <button type="button" className="text-xs font-bold text-gray-800 dark:text-gray-100 pb-1.5 pt-2 -mb-px border-b-2 border-red-500 dark:border-red-400">
-              Active <span className="font-normal text-gray-500 dark:text-gray-400">(15)</span>
-            </button>
-            <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
-              Monitoring (5)
-            </button>
-            <button type="button" className="text-xs font-normal text-gray-500 dark:text-gray-400 pb-1.5 pt-2 -mb-px">
-              WIP (5)
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          {/* Fleet Summary (placeholder) - rounded box with gradient border */}
-          <div className="mb-4 p-[1px] rounded-2xl bg-gradient-to-r from-[#ADD8E6] via-sky-100 to-[#FFDAB9] dark:from-sky-800/50 dark:via-slate-700/50 dark:to-amber-800/40 shadow-sm">
-            <div className="rounded-2xl bg-white dark:bg-gray-800 overflow-hidden">
-              <div className="px-3 pt-2 pb-2">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <div className="relative flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-teal-500 flex items-center justify-center">
-                      <Sparkles className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-teal-400 flex items-center justify-center">
-                      <Sparkles className="h-1.5 w-1.5 text-white" />
-                    </div>
-                  </div>
-                  <span className="text-sm font-bold text-gray-800 dark:text-gray-200">Fleet Summary</span>
-                </div>
-                <div className="border-b border-gray-200 dark:border-gray-600 mb-2" />
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
-                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
-                      <Ship className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Cost Exposure</p>
-                      <p className="text-xs font-normal text-gray-700 dark:text-gray-300 mt-0.5">Moderate</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
-                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
-                      <Ship className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Fuel Efficiency</p>
-                      <p className="text-xs font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">3 Vessel</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
-                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
-                      <Ship className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Emissions Risk</p>
-                      <p className="text-xs font-normal text-teal-600 dark:text-teal-400 underline cursor-pointer mt-0.5">1 Vessel</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8F8F8] dark:bg-gray-700/50 border border-teal-200 dark:border-teal-700/60">
-                    <div className="w-6 h-6 rounded-full bg-teal-400 flex items-center justify-center flex-shrink-0">
-                      <Ship className="h-3 w-3 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap leading-tight">Data Reliability</p>
-                      <p className="text-xs font-normal text-gray-700 dark:text-gray-300 mt-0.5">high</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Alert list - Figma: vessel, date, alert type, fuel message */}
-            <div className="space-y-0 max-h-[260px] overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 overflow-hidden">
-              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
-                    Hull Condition:{" "}
-                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Blue Ocean</span>
-                  </p>
-                  <span className="text-xs font-normal text-gray-500 dark:text-gray-400 flex-shrink-0">Date: 12 Jan</span>
-                </div>
-                <p className="text-xs font-normal text-gray-500 dark:text-gray-400 mt-0.5">Alert type: Hull Condition</p>
-                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
-                  Fuel consumption abnormal <span className="text-red-600 dark:text-red-400 font-semibold">15.5%</span> above expected range
-                </p>
-              </div>
-              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
-                    Hull Condition:{" "}
-                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
-                    <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-                  </div>
-                </div>
-                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
-                  Fuel Consumption is 18% above expect for MV Nova. Power and RPM are stable, indicating hull fouling as the primary cause.
-                </p>
-              </div>
-              <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-700/80 last:border-b-0 bg-white dark:bg-gray-800">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-bold text-gray-800 dark:text-gray-100 leading-tight min-w-0">
-                    Bad Weather:{" "}
-                    <span className="font-normal text-teal-600 dark:text-teal-400 cursor-pointer hover:underline">MV Nova</span>
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className="text-xs font-normal text-gray-500 dark:text-gray-400">Monitoring</span>
-                    <MessageCircle className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-                  </div>
-                </div>
-                <p className="text-xs font-normal text-gray-600 dark:text-gray-400 mt-1 leading-snug pr-2">
-                  Facing severe weather condition
-                </p>
-              </div>
-            </div>
-        </div>
-      </div>
+      {/* 2. Left panel: Figma Alerts frame (9140-67964) – as-is with placeholder content */}
+      <AlertsPanelFigma />
 
       {/* 3. Right content: Sense AI Analysis (takes remaining width) - hidden when expanded */}
       {!expandedPopup && (
       <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
-        {/* Sense AI header bar */}
-        <div className="h-14 border-b border-gray-700 bg-gray-800 dark:bg-gray-900 flex items-center justify-between px-4 flex-shrink-0">
-          <h1 className="text-lg font-bold text-white text-left">Sense AI Analysis</h1>
-          <div className="flex items-center gap-2 flex-1 justify-end">
-            <span className="flex items-center gap-1.5 text-sm font-normal text-white">
-              <FileText className="h-4 w-4 text-white" />
-              Save as Project
-            </span>
+        {/* Right panel header – Figma 9140-64986: Playground, Save, New, fullscreen */}
+        <div className="h-14 flex items-center justify-between px-4 flex-shrink-0 rounded-t-lg border-b bg-white dark:bg-gray-800 border-fs-border">
+          <h1 className="text-left font-semibold tracking-[2px] text-[length:var(--figma-font-size-header-4)] text-foreground">
+            Playground
+          </h1>
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <button type="button" className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground hover:text-foreground">
+              <Save className="h-4 w-4 text-muted-foreground" />
+              Save
+            </button>
+            <div className="w-px h-5 bg-fs-border" />
+            <button type="button" className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground hover:text-foreground">
+              <FilePlus className="h-4 w-4 text-muted-foreground" />
+              New
+            </button>
+            <div className="w-px h-5 bg-fs-border" />
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               onClick={() => setExpandedPopup(true)}
-              title="Expand chat"
+              title="Fullscreen"
             >
               <Maximize2 className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0 text-white hover:bg-gray-700 hover:text-white"
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               onClick={() => setDarkMode(!darkMode)}
+              title={darkMode ? "Light mode" : "Dark mode"}
             >
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>

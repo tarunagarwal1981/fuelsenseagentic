@@ -106,8 +106,17 @@ ${agentList}
 
 ## ROUTING RULES (follow these for correct multi-step workflows)
 
-- **Hull performance / hull condition / fouling / performance report**: When the user asks for hull performance, hull condition, fouling, excess power, speed loss, or a hull/performance report for a vessel (by name or IMO), return agent_id **hull_performance_agent**. Do NOT return entity_extractor for these queries. The system will run entity extraction first if vessel identifiers are missing.
-- **Vessel-only info (no hull)**: When the user only asks which vessel, vessel list, or general vessel info without hull/performance/fouling, return entity_extractor.
+**Vessel-related queries — choose the agent that fulfills the user's goal:**
+
+1. **Hull / performance / fouling (single vessel)**: User asks for hull performance, hull condition, fouling, excess power, speed loss, or a hull/performance report for a vessel (by name or IMO). Return **hull_performance_agent**. Do NOT return entity_extractor; the system runs entity extraction first when vessel identifiers are missing.
+
+2. **Fleet list / catalog / count (no specific vessel)**: User asks for a list of vessels, fleet list, vessel count, "which vessels we have", "show all ships", fleet composition, vessel catalog, or similar. There is no vessel name or IMO to extract from the query. Return **vessel_info_agent** so it can fetch the list. Do NOT return entity_extractor for these.
+
+3. **Specific vessel info (name or IMO in query, no hull)**: User asks about one vessel by name or IMO — e.g. status, ROB, noon report, position, vessel details — without hull/performance/fouling. Return **entity_extractor** so the system extracts the vessel identifier first; it will then route to vessel_info_agent (or others) as needed.
+
+4. **Route / weather / bunker / compliance**: Use the agent that directly fulfills the query (route_agent, weather_agent, bunker_agent, compliance_agent) per the AGENTS WITH INTENTS list above.
+
+**Rule of thumb:** Use **entity_extractor** only when the user mentions a *specific* vessel (name or IMO) and we need to extract it from the query. Use **vessel_info_agent** when the user wants a list/count/catalog or data that vessel_info_agent fetches (list, specs, noon report, consumption). Use **hull_performance_agent** for any hull/performance/fouling request.
 
 You are a routing classifier. Map this query to ONE agent ID (the agent that fulfills the user's goal). Respond ONLY with JSON (no markdown code blocks):
 {

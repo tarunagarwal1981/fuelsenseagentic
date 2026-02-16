@@ -2,7 +2,17 @@
 
 **Goal:** Align the FuelSense app’s visuals with Figma (design, borders, sizes, color theme, component dimensions). Agent capabilities, APIs, and business logic stay unchanged.
 
-**Prerequisites:** Builder.io is authenticated. You will need a single source of design truth: either a **Figma file URL** (or node IDs for key screens) or an exported **design tokens** file (e.g. colors, spacing, radius, typography from Figma).
+**Figma design source (FUEL-SENSE-VXD):**
+
+- **File:** [Figma: FUEL-SENSE-VXD](https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD)
+- **Main frame node-id:** `9140-67960` (use with Figma MCP: “get design context” / “get variables” for this node)
+- **Embed (for docs/Notion):** use the iframe below to reference the design.
+
+```html
+<iframe style="border: 1px solid rgba(0, 0, 0, 0.1);" width="800" height="450" src="https://embed.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD?node-id=9140-67960&m=dev&embed-host=share" allowfullscreen></iframe>
+```
+
+**Prerequisites:** Builder.io is authenticated. Use the file link and node-id above with Figma MCP or export design tokens from this frame.
 
 ---
 

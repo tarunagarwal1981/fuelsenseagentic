@@ -255,6 +255,17 @@ function determineNextAgent(match: PatternMatch, state: MultiAgentState): string
     return null;
   }
 
+  // Vessel info (list/count/specs/status): entity_extractor optional -> vessel_info_agent
+  // Covers: (1) list/catalog query routed to vessel_info_agent (no entity step), or
+  // (2) specific-vessel query routed to entity_extractor first, then vessel_info_agent
+  if (intent === 'vessel_info') {
+    const vesselInfoDone =
+      state.agent_status?.vessel_info_agent === 'success' &&
+      (state.vessel_specs?.length ?? 0) > 0;
+    if (vesselInfoDone) return null;
+    return 'vessel_info_agent';
+  }
+
   // Route-only or other: no next step
   return null;
 }

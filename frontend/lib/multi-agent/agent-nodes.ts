@@ -4740,7 +4740,8 @@ function deriveViewConfig(matchedIntent: string | undefined): ViewConfig {
 }
 
 /**
- * LLM synthesizes text-only response when no components available
+ * LLM synthesizes response when no UI component is available.
+ * The LLM decides how to present the results (tables, lists, sections) based on the data and query.
  */
 async function synthesizeTextOnlyResponse(
   state: MultiAgentState,
@@ -4748,7 +4749,7 @@ async function synthesizeTextOnlyResponse(
 ): Promise<string> {
   const modelName = llmConfig?.model || 'claude-sonnet-4-5';
   const temperature = llmConfig?.temperature ?? 0.3;
-  const maxTokens = llmConfig?.max_tokens ?? 2000;
+  const maxTokens = llmConfig?.max_tokens ?? 4000;
 
   const llm = new ChatAnthropic({
     model: modelName,
@@ -4759,15 +4760,28 @@ async function synthesizeTextOnlyResponse(
   const relevantData = extractRelevantStateData(state);
   const firstMsg = state.messages?.[0];
   const userQuery = firstMsg?.content?.toString?.() ?? 'Unknown query';
+  const queryType = state.routing_metadata?.matched_intent ?? 'general';
 
-  const prompt = `You're assisting a maritime professional. They asked a question and our system processed it, but we don't have specific UI components to visualize the answer.
+  const prompt = `You are assisting a maritime professional. They asked a question and our system has the answer data, but there is no dedicated UI component for this type of result. Your job is to decide how best to present the available data so the user gets a clear, useful answer.
 
-User's original query: "${userQuery}"
+**User's query:** "${userQuery}"
 
-Available data from agents:
+**Query type / intent:** ${queryType}
+
+**Available data from agents (use whatever is present and relevant):**
+\`\`\`json
 ${JSON.stringify(relevantData, null, 2)}
+\`\`\`
 
-Provide a clear, professional response in markdown format. Be concise but complete. Use bullet points where appropriate. Focus on actionable insights.`;
+**Instructions:**
+- Decide the best way to present the results based on the data type and the query. For example:
+  - Vessel list or fleet data → present as a clear list or markdown table (name, IMO, type, etc. as appropriate).
+  - Hull performance or metrics → use short sections, bullet points, or a small table.
+  - Weather, route, bunker, or compliance data → use sections and bullet points or tables as fits the content.
+- Include all relevant information from the data; do not omit important fields.
+- Use markdown: headers, **bold**, bullet points, or tables so the response is easy to scan.
+- Be professional and concise. If the data is empty or missing for the query, say so briefly and suggest what the user could try next.
+- Do not invent data; only present what is in the available data.`;
 
   try {
     const response = await llm.invoke([new HumanMessage({ content: prompt })]);
@@ -4812,7 +4826,8 @@ Keep it professional and concise. Use markdown formatting.`;
 }
 
 /**
- * Extract relevant state data for LLM synthesis
+ * Extract relevant state data for LLM synthesis when no UI component is available.
+ * Includes all result-bearing fields so the LLM can decide how to present them.
  */
 function extractRelevantStateData(state: MultiAgentState): Record<string, unknown> {
   const relevant: Record<string, unknown> = {};
@@ -4821,9 +4836,15 @@ function extractRelevantStateData(state: MultiAgentState): Record<string, unknow
     'route_data',
     'bunker_analysis',
     'weather_forecast',
+    'weather_consumption',
     'eca_segments',
     'compliance_data',
     'vessel_consumption',
+    'vessel_specs',
+    'hull_performance',
+    'hull_performance_charts',
+    'standalone_port_weather',
+    'port_prices',
     'final_recommendation',
     'agent_errors',
   ];
