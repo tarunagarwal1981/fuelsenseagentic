@@ -299,9 +299,9 @@ export function ChatInterfaceMultiAgent() {
     }]);
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const submitMessage = async (messageText: string) => {
+    const trimmed = messageText.trim();
+    if (!trimmed || isLoading) return;
 
     // Reset structured data for new query
     setStructuredData(null);
@@ -309,7 +309,7 @@ export function ChatInterfaceMultiAgent() {
     console.log("🚀 [MULTI-AGENT-FRONTEND] Starting chat submission");
     const userMessage: Message = {
       role: "user",
-      content: input.trim(),
+      content: trimmed,
       timestamp: new Date(),
     };
     console.log(
@@ -317,7 +317,6 @@ export function ChatInterfaceMultiAgent() {
       userMessage.content.substring(0, 100)
     );
     setMessages((prev) => [...prev, userMessage]);
-    setInput("");
     setIsLoading(true);
     setCurrentAgent("supervisor");
     setThinkingState("🎯 Planning analysis...");
@@ -644,6 +643,18 @@ export function ChatInterfaceMultiAgent() {
     }
   };
 
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || isLoading) return;
+    submitMessage(input.trim());
+    setInput("");
+  };
+
+  const handleRequestHullAnalysis = (vesselName: string) => {
+    if (!vesselName.trim() || isLoading) return;
+    submitMessage(`What is the hull condition of ${vesselName.trim()}?`);
+  };
+
   // Chat body: Figma 9140-65000 welcome dashboard when empty; otherwise messages + answer
   const renderChatBody = () => (
     <>
@@ -903,7 +914,7 @@ export function ChatInterfaceMultiAgent() {
       <NavSidebarFigma />
 
       {/* 2. Left panel: Figma Alerts frame (9140-67964) – as-is with placeholder content */}
-      <AlertsPanelFigma />
+      <AlertsPanelFigma onRequestHullAnalysis={handleRequestHullAnalysis} />
 
       {/* 3. Right content: Sense AI Analysis (takes remaining width) - hidden when expanded */}
       {!expandedPopup && (

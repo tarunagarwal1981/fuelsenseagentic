@@ -270,19 +270,24 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       });
     }
 
-    // Add bunker port markers (blue/gold)
-    bunkerPorts.forEach((port: any, index: number) => {
-      if (!port.coordinates) return;
+    // Add bunker port markers: gold = best option (rank 1), blue = other recommended, grey = all other ports
+    bunkerPorts.forEach((port: any) => {
+      const coords = port.coordinates;
+      if (!coords) return;
+      const lat = coords.lat ?? coords.latitude;
+      const lon = coords.lon ?? coords.longitude;
+      if (lat == null || lon == null) return;
 
-      const portCoords: [number, number] = [port.coordinates.lat, port.coordinates.lon];
+      const portCoords: [number, number] = [Number(lat), Number(lon)];
       allCoords.push(portCoords);
 
-      // Use gold marker for best option (rank 1), blue for others
       const isBest = port.rank === 1;
-      const markerColor = isBest ? 'gold' : 'blue';
+      const hasRank = port.rank != null;
       const iconUrl = isBest
         ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png'
-        : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png';
+        : hasRank
+          ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png'
+          : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-grey.png';
 
       const portMarker = L.marker(portCoords, {
         icon: L.icon({
@@ -295,19 +300,20 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
         }),
       }).addTo(map);
 
-      const totalCost = port.total_cost ? `$${port.total_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : 'N/A';
-      const savings = port.savings_vs_most_expensive ? `$${port.savings_vs_most_expensive.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : 'N/A';
-      const deviation = port.deviation_nm ? `${port.deviation_nm.toFixed(1)} nm` : 'N/A';
+      const totalCost = (port.total_cost ?? port.total_cost_usd) != null ? `$${Number(port.total_cost ?? port.total_cost_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : null;
+      const savings = port.savings_vs_most_expensive != null ? `$${Number(port.savings_vs_most_expensive).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : null;
+      const deviationNm = port.deviation_nm ?? (port.distance_from_route_nm != null ? port.distance_from_route_nm * 2 : null);
+      const deviation = deviationNm != null ? `${Number(deviationNm).toFixed(1)} nm` : null;
 
       portMarker.bindPopup(`
         <div style="font-weight: bold; margin-bottom: 4px;">
-          ${isBest ? '🏆 ' : '⚓ '}${port.name || port.port_name || port.port_code}
+          ${isBest ? '🏆 ' : '⚓ '}${port.name || port.port_name || port.port_code || 'Bunker port'}
         </div>
-        <div style="font-size: 12px; color: #666;">${port.port_code}</div>
-        ${port.rank ? `<div style="font-size: 12px; margin-top: 4px;"><strong>Rank:</strong> #${port.rank}</div>` : ''}
-        ${port.total_cost ? `<div style="font-size: 12px;"><strong>Total Cost:</strong> ${totalCost}</div>` : ''}
-        ${port.savings_vs_most_expensive ? `<div style="font-size: 12px; color: ${isBest ? '#10b981' : '#ef4444'};"><strong>${isBest ? 'Savings:' : 'Extra Cost:'}</strong> ${savings}</div>` : ''}
-        ${port.deviation_nm ? `<div style="font-size: 12px;"><strong>Deviation:</strong> ${deviation}</div>` : ''}
+        <div style="font-size: 12px; color: #666;">${port.port_code || ''}</div>
+        ${port.rank != null ? `<div style="font-size: 12px; margin-top: 4px;"><strong>Rank:</strong> #${port.rank}</div>` : ''}
+        ${totalCost != null ? `<div style="font-size: 12px;"><strong>Total Cost:</strong> ${totalCost}</div>` : ''}
+        ${savings != null ? `<div style="font-size: 12px; color: ${isBest ? '#10b981' : '#ef4444'};"><strong>${isBest ? 'Savings:' : 'Extra Cost:'}</strong> ${savings}</div>` : ''}
+        ${deviation != null ? `<div style="font-size: 12px;"><strong>Deviation:</strong> ${deviation}</div>` : ''}
       `);
     });
 

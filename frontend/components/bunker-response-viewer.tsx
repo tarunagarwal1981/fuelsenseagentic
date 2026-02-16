@@ -122,13 +122,25 @@ export function BunkerResponseViewer({ state }: BunkerResponseViewerProps) {
           : null))
     : null;
   
-  // Prepare bunker ports with coordinates
+  // Prepare bunker ports with coordinates (FoundPort format: { port, distance_from_route_nm } or flat)
   const bunkerPortsWithCoords = (state.bunker_ports || [])
-    .map((port: any) => {
-      const portDetails = getPortDetails(port.port_code);
-      return portDetails ? { ...portDetails, ...port } : null;
+    .map((item: any) => {
+      const port = item.port ?? item;
+      const code = port.port_code ?? item.port_code;
+      const portDetails = code ? getPortDetails(code) : null;
+      const coords = port.coordinates ?? item.coordinates ?? portDetails?.coordinates;
+      if (!portDetails && !coords) return null;
+      return {
+        ...(portDetails || {}),
+        ...port,
+        port_code: code,
+        name: port.name ?? portDetails?.name ?? item.port_name ?? code,
+        port_name: port.name ?? portDetails?.name ?? item.port_name ?? code,
+        coordinates: coords ?? portDetails?.coordinates,
+        distance_from_route_nm: item.distance_from_route_nm ?? port.distance_from_route_nm,
+      };
     })
-    .filter((p): p is NonNullable<typeof p> => p !== null);
+    .filter((p): p is NonNullable<typeof p> => p !== null && p.coordinates);
   
   return (
     <div className="space-y-6">

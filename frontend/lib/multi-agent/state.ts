@@ -405,6 +405,59 @@ export interface BunkerAnalysis {
   max_savings_usd: number;
   /** Human-readable analysis summary */
   analysis_summary: string;
+  /** Query subtype when from vessel-specific workflow */
+  query_type?: 'VESSEL_SPECIFIC' | 'SIMPLE_PORT_TO_PORT' | 'FLEET_COMPARISON' | 'CONSTRAINT_FIRST';
+  /** Vessel context (vessel-specific only) */
+  vessel_context?: {
+    vessel_id: string;
+    vessel_name: string;
+    current_rob: number;
+    tank_capacity: number;
+    rob_after_bunkering?: number;
+  };
+  /** Fuel requirement calculation (vessel-specific only) */
+  fuel_requirement?: {
+    voyageFuelConsumption: number;
+    requiredFuel: number;
+    bunkerQuantity: number;
+    needsBunkering: boolean;
+    safetyMarginApplied: number;
+    weatherFactorApplied: number;
+    ecaDistanceUsed?: number;
+  };
+  /** Top recommended ports with ROB before/after (vessel-specific only) */
+  recommended_ports?: Array<{
+    port_code: string;
+    port_name: string;
+    total_cost_usd: number;
+    bunker_quantity_mt: number;
+    rob_before_mt: number;
+    rob_after_mt: number;
+    deviation_nm: number;
+  }>;
+  /** ISO timestamp when analysis was run */
+  analysis_timestamp?: string;
+  /** Constraint-first: extracted constraints */
+  constraints_specified?: unknown;
+  /** Constraint-first: number of ports evaluated */
+  ports_evaluated?: number;
+  /** Constraint-first: number meeting all constraints */
+  ports_meeting_constraints?: number;
+  /** Constraint-first: which constraints were relaxed (if any) */
+  constraints_relaxed?: unknown;
+  /** Strategy used: single port vs multi-port */
+  strategy?: 'SINGLE_PORT' | 'MULTI_PORT';
+  /** Whether a multi-port option was evaluated and is available */
+  multi_port_available?: boolean;
+  /** Best multi-port strategy when recommended */
+  multi_port_strategy?: unknown;
+  /** Single vs multi-port cost comparison */
+  single_vs_multi_comparison?: {
+    single_port_cost: number;
+    multi_port_cost: number;
+    savings: number;
+    recommended: 'MULTI_PORT' | 'SINGLE_PORT';
+  };
 }
 
 // ============================================================================
@@ -536,10 +589,10 @@ export interface VesselComparisonAnalysis {
 
 /**
  * Aggregate vessel comparison analysis result
- * Contains full analysis output from Vessel Selection Agent
+ * Contains full analysis output from Vessel Selection Agent or Bunker Agent (fleet comparison).
  */
 export interface VesselComparisonAnalysisResult {
-  /** Per-vessel analysis results (VesselAnalysisResult[]) */
+  /** Per-vessel analysis results (VesselAnalysisResult[] or VesselComparison[]) */
   vessels_analyzed: unknown[];
   /** Vessels ranked by cost and feasibility */
   rankings: unknown[];
@@ -549,6 +602,20 @@ export interface VesselComparisonAnalysisResult {
   analysis_summary: string;
   /** Comparison matrix: vessel -> metric -> value */
   comparison_matrix: Record<string, unknown>;
+  /** Bunker fleet comparison: 'FLEET_FOR_VOYAGE' */
+  comparison_type?: 'FLEET_FOR_VOYAGE';
+  /** Target voyage (origin, destination, laycan) for fleet comparison */
+  target_voyage?: {
+    origin: string;
+    destination: string;
+    laycan?: string;
+  };
+  /** Per-vessel comparison (suitability, costs, laycan, recommendation) */
+  vessel_comparisons?: unknown[];
+  /** Best vessel full comparison object */
+  recommended_vessel_detail?: unknown;
+  /** ISO timestamp when analysis was run */
+  analysis_timestamp?: string;
 }
 
 /**

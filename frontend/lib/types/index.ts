@@ -90,6 +90,19 @@ export interface FuelPrice {
   last_updated: string;
 }
 
+export type {
+  BunkerPricing,
+  DateRange,
+  FleetFilters,
+  PortCapabilities,
+  PriceHistory,
+  ROBSnapshot,
+  VesselSpecs,
+  VesselStatus,
+} from './bunker';
+
+export type { AgentState, PriceFetcherOutputLike } from './state';
+
 /**
  * Represents a bunker fueling recommendation with optimization details
  */

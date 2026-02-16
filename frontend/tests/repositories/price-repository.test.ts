@@ -19,6 +19,12 @@ import * as path from 'path';
 jest.mock('@/lib/repositories/cache-client');
 jest.mock('@supabase/supabase-js');
 jest.mock('fs/promises');
+let mockBunkerGetByPortName: jest.Mock;
+jest.mock('@/lib/clients/bunker-pricing-client', () => ({
+  BunkerPricingClient: jest.fn().mockImplementation(() => ({
+    getByPortName: (...args: unknown[]) => (mockBunkerGetByPortName ?? jest.fn().mockResolvedValue([]))(...args),
+  })),
+}));
 
 describe('PriceRepository', () => {
   let priceRepository: PriceRepository;
@@ -44,6 +50,11 @@ describe('PriceRepository', () => {
     last_updated: '2025-01-26T10:00:00.000Z',
   };
 
+  /** Chain for getPriceHistory: .gte().order().order() - gte returns this, then .order() returns orderChain, then .order() returns Promise */
+  let orderChain: { order: jest.Mock };
+  /** Returned by gte: thenable for getAveragePrices, and has .order() for getPriceHistory */
+  let gteReturn: { order: jest.Mock; then: (resolve: (v: any) => void) => void; catch: (fn: (e: any) => void) => void };
+
   beforeEach(() => {
     // Create mocks
     mockCache = {
@@ -53,19 +64,26 @@ describe('PriceRepository', () => {
       clear: jest.fn(),
     } as any;
 
+    orderChain = { order: jest.fn().mockResolvedValue({ data: [], error: null }) };
+    gteReturn = {
+      order: jest.fn().mockReturnValue(orderChain),
+      then: (resolve: (v: any) => void) => resolve({ data: [], error: null }),
+      catch: (_fn: (e: any) => void) => gteReturn,
+    };
     mockDb = {
       from: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       in: jest.fn().mockReturnThis(),
-      gte: jest.fn().mockReturnThis(),
-      order: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnValue(gteReturn),
+      order: jest.fn().mockReturnValue(orderChain),
       insert: jest.fn().mockReturnThis(),
       single: jest.fn(),
     } as any;
 
     priceRepository = new PriceRepository(mockCache, mockDb);
 
+    mockBunkerGetByPortName = jest.fn().mockResolvedValue([]);
     // Reset mocks
     jest.clearAllMocks();
   });
@@ -99,58 +117,47 @@ describe('PriceRepository', () => {
       expect(result.LSFO).toBeUndefined();
     });
 
-    it('should query database and cache result on cache miss', async () => {
+    it('should use BunkerPricing API on cache miss when portName provided and cache result', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockResolvedValue({
-        data: [mockPrice],
-        error: null,
+      mockBunkerGetByPortName.mockResolvedValue([
+        { portCode: 'SGSIN', portName: 'Singapore', fuelType: 'VLSFO', priceUSD: 650, date: '2025-01-26', updatedAt: new Date('2025-01-26') },
+        { portCode: 'SGSIN', portName: 'Singapore', fuelType: 'MGO', priceUSD: 820, date: '2025-01-26', updatedAt: new Date('2025-01-26') },
+      ]);
+
+      const result = await priceRepository.getLatestPrices({
+        portName: 'Singapore',
+        fuelTypes: ['VLSFO', 'MGO'],
       });
 
-      const result = await priceRepository.getLatestPrices(query);
-
       expect(result.VLSFO).toBe(650);
-      expect(mockDb.from).toHaveBeenCalledWith('fuel_prices');
-      expect(mockDb.eq).toHaveBeenCalledWith('portCode', 'SGSIN');
-      expect(mockDb.in).toHaveBeenCalledWith('fuelType', ['VLSFO', 'MGO']);
+      expect(result.MGO).toBe(820);
       expect(mockCache.set).toHaveBeenCalled();
     });
 
-    it('should return latest price when multiple prices exist', async () => {
+    it('should return latest price when API returns multiple dates', async () => {
       mockCache.get.mockResolvedValue(null);
-      const olderPrice = {
-        ...mockPrice,
-        date: '2025-01-25',
-        priceUSD: 640,
-      };
-      mockDb.order.mockResolvedValue({
-        data: [mockPrice, olderPrice],
-        error: null,
-      });
+      mockBunkerGetByPortName.mockResolvedValue([
+        { portCode: 'SGSIN', portName: 'Singapore', fuelType: 'VLSFO', priceUSD: 640, date: '2025-01-25', updatedAt: new Date('2025-01-25') },
+        { portCode: 'SGSIN', portName: 'Singapore', fuelType: 'VLSFO', priceUSD: 650, date: '2025-01-26', updatedAt: new Date('2025-01-26') },
+      ]);
 
       const result = await priceRepository.getLatestPrices({
-        portCode: 'SGSIN',
+        portName: 'Singapore',
         fuelTypes: ['VLSFO'],
       });
 
-      expect(result.VLSFO).toBe(650); // Latest price
+      expect(result.VLSFO).toBe(650);
     });
 
-    it('should fallback to JSON when DB fails', async () => {
+    it('should return empty object when cache miss and BunkerPricing API returns no data', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockRejectedValue(new Error('DB error'));
-
-      const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
-      mockReadFile.mockResolvedValue(JSON.stringify([mockJsonPrice]));
-
       const result = await priceRepository.getLatestPrices(query);
-
-      expect(result.VLSFO).toBe(650);
-      expect(mockCache.set).toHaveBeenCalled();
+      expect(result).toEqual({});
     });
 
     it('should return empty object when no prices found', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockResolvedValue({
+      orderChain.order.mockResolvedValue({
         data: [],
         error: null,
       });
@@ -166,12 +173,12 @@ describe('PriceRepository', () => {
   describe('getPriceHistory', () => {
     it('should return price history sorted by date descending', async () => {
       const prices = [
-        { ...mockPrice, date: '2025-01-24', priceUSD: 640 },
         { ...mockPrice, date: '2025-01-26', priceUSD: 650 },
         { ...mockPrice, date: '2025-01-25', priceUSD: 645 },
+        { ...mockPrice, date: '2025-01-24', priceUSD: 640 },
       ];
 
-      mockDb.order.mockResolvedValue({
+      orderChain.order.mockResolvedValue({
         data: prices,
         error: null,
       });
@@ -187,7 +194,7 @@ describe('PriceRepository', () => {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 7);
 
-      mockDb.order.mockResolvedValue({
+      orderChain.order.mockResolvedValue({
         data: [mockPrice],
         error: null,
       });
@@ -197,19 +204,16 @@ describe('PriceRepository', () => {
       expect(mockDb.gte).toHaveBeenCalled();
     });
 
-    it('should fallback to JSON when DB fails', async () => {
-      mockDb.order.mockRejectedValue(new Error('DB error'));
-
-      const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
-      mockReadFile.mockResolvedValue(JSON.stringify([mockJsonPrice]));
+    it('should return empty array when DB fails (no JSON fallback for getPriceHistory)', async () => {
+      orderChain.order.mockRejectedValue(new Error('DB error'));
 
       const result = await priceRepository.getPriceHistory('SGSIN', 'VLSFO', 7);
 
-      expect(result.length).toBeGreaterThan(0);
+      expect(result).toEqual([]);
     });
 
     it('should return empty array on error', async () => {
-      mockDb.order.mockRejectedValue(new Error('DB error'));
+      orderChain.order.mockRejectedValue(new Error('DB error'));
       const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
       mockReadFile.mockRejectedValue(new Error('File error'));
 
@@ -229,11 +233,7 @@ describe('PriceRepository', () => {
         { fuelType: 'MGO', priceUSD: 800 },
         { fuelType: 'MGO', priceUSD: 820 },
       ];
-
-      mockDb.order.mockResolvedValue({
-        data: prices,
-        error: null,
-      });
+      mockDb.gte.mockResolvedValue({ data: prices, error: null });
 
       const result = await priceRepository.getAveragePrices('SGSIN', 7);
 
@@ -253,7 +253,7 @@ describe('PriceRepository', () => {
 
     it('should cache averages with 6-hour TTL', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockResolvedValue({
+      mockDb.gte.mockResolvedValue({
         data: [{ fuelType: 'VLSFO', priceUSD: 650 }],
         error: null,
       });
@@ -267,16 +267,13 @@ describe('PriceRepository', () => {
       );
     });
 
-    it('should fallback to JSON when DB fails', async () => {
+    it('should return empty object when DB fails (no JSON fallback for getAveragePrices)', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockRejectedValue(new Error('DB error'));
-
-      const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
-      mockReadFile.mockResolvedValue(JSON.stringify([mockJsonPrice]));
+      mockDb.gte.mockRejectedValue(new Error('DB error'));
 
       const result = await priceRepository.getAveragePrices('SGSIN', 7);
 
-      expect(result.VLSFO).toBe(650);
+      expect(result).toEqual({});
     });
   });
 
@@ -381,7 +378,7 @@ describe('PriceRepository', () => {
   describe('error handling', () => {
     it('should handle cache errors gracefully', async () => {
       mockCache.get.mockRejectedValue(new Error('Cache error'));
-      mockDb.order.mockResolvedValue({
+      orderChain.order.mockResolvedValue({
         data: [mockPrice],
         error: null,
       });
@@ -396,7 +393,7 @@ describe('PriceRepository', () => {
 
     it('should handle database errors gracefully', async () => {
       mockCache.get.mockResolvedValue(null);
-      mockDb.order.mockRejectedValue(new Error('Database error'));
+      orderChain.order.mockRejectedValue(new Error('Database error'));
 
       const mockReadFile = fs.readFile as jest.MockedFunction<typeof fs.readFile>;
       mockReadFile.mockResolvedValue(JSON.stringify([mockJsonPrice]));

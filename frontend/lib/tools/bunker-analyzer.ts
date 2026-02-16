@@ -174,6 +174,16 @@ export interface BunkerRecommendation {
   staleness_level: 'fresh' | 'warning' | 'moderate' | 'high' | 'critical';
   /** Freshness penalty applied to ranking (1.0 = no penalty) */
   freshness_penalty: number;
+
+  // State/formatter compatibility aliases (one-way distance, USD-named fields)
+  /** One-way distance from route in nautical miles */
+  distance_from_route_nm?: number;
+  /** Deviation cost in USD (alias for deviation_fuel_cost) */
+  deviation_cost_usd?: number;
+  /** Total cost in USD (alias for total_cost) */
+  total_cost_usd?: number;
+  /** Fuel cost in USD (alias for fuel_cost) */
+  fuel_cost_usd?: number;
 }
 
 /**
@@ -371,17 +381,22 @@ export async function analyzeBunkerOptions(
       distanceFromRoute = portWithDistance.distance_from_route_nm;
     }
 
-    // Validate port has port_code
-    if (!port || !port.port_code) {
+    const hasCode = port?.port_code != null && String(port.port_code).trim() !== '';
+    const hasName = port?.name != null && String(port.name).trim() !== '';
+    if (!port || (!hasCode && !hasName)) {
       console.log(`   ⚠️  Invalid port data, skipping:`, portWithDistance);
       continue;
     }
 
-    // Find price data for this port
-    const portPriceData = pricesByPort[port.port_code];
+    // Find price data: try port_code first, then port name (API may key by name when port_code is null)
+    const portPriceData =
+      pricesByPort[port.port_code] ??
+      pricesByPort[port.name ?? ''] ??
+      (port.name && pricesByPort[port.name.trim()]);
 
+    const portLabel = port.port_code || port.name || 'unknown';
     if (!portPriceData || portPriceData.length === 0) {
-      console.log(`   ⚠️  No price data for ${port.port_code}, skipping`);
+      console.log(`   ⚠️  No price data for ${portLabel}, skipping`);
       continue;
     }
 
@@ -392,7 +407,7 @@ export async function analyzeBunkerOptions(
 
     if (!fuelPriceData) {
       console.log(
-        `   ⚠️  No ${fuel_type} price for ${port.port_code}, skipping`
+        `   ⚠️  No ${fuel_type} price for ${portLabel}, skipping`
       );
       continue;
     }
@@ -432,7 +447,7 @@ export async function analyzeBunkerOptions(
         // Last resort: estimate MGO as VLSFO * 1.4 (MGO typically 40% more expensive)
         mgoPrice = fuelPrice * 1.4;
         mgoIsEstimated = true;
-        console.log(`   ℹ️ Estimating LSMGO price for ${port.port_code}: $${mgoPrice.toFixed(0)}/MT (VLSFO × 1.4)`);
+        console.log(`   ℹ️ Estimating LSMGO price for ${portLabel}: $${mgoPrice.toFixed(0)}/MT (VLSFO × 1.4)`);
       }
       
       mgoCost = mgo_quantity_mt * mgoPrice;
@@ -483,8 +498,8 @@ export async function analyzeBunkerOptions(
     }
     
     recommendations.push({
-      port_code: port.port_code,
-      port_name: port.name,
+      port_code: port.port_code || port.name || portLabel,
+      port_name: port.name || port.port_code || portLabel,
       rank: 0, // Will be set after sorting
       fuel_price_per_mt: fuelPrice,
       fuel_cost: fuelCost,
@@ -504,6 +519,11 @@ export async function analyzeBunkerOptions(
       is_price_stale: isPriceStale || (mgoPriceData ? !mgoPriceData.is_fresh : false),
       staleness_level: stalenessLevel,
       freshness_penalty: freshnessPenalty,
+      // State/formatter compatibility: one-way distance and USD-named fields
+      distance_from_route_nm: distanceFromRoute,
+      deviation_cost_usd: deviationFuelCost,
+      total_cost_usd: totalCost,
+      fuel_cost_usd: fuelCost,
     });
   }
 

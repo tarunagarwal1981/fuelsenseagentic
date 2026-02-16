@@ -59,6 +59,7 @@ function adaptRichMapProps(
   return {
     route: props.route,
     analysis: props.analysis,
+    bunkerPorts: props.bunker_ports,
     mapOverlays: mapOverlays ?? null,
   };
 }

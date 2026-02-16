@@ -19,6 +19,7 @@ components:
     
     optional_state_fields:
       - bunker_analysis.recommendations
+      - bunker_ports
       - compliance_data.eca_zones
     
     render_conditions:
@@ -33,6 +34,7 @@ components:
     props_mapping:
       route: "route_data"
       analysis: "bunker_analysis"
+      bunker_ports: "bunker_ports"
 
   # ========================================
   # Bunker Cost Comparison

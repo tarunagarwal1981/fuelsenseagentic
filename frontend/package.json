@@ -49,6 +49,8 @@
     "test:performance": "tsx tests/integration/performance-benchmark.test.ts",
     "test:vessel-foundation": "tsx tests/vessel-performance-foundation.test.ts",
     "test:vessel-selection": "jest tests/unit/engines/vessel-selection-engine.test.ts",
+    "test:bunker": "jest tests/services/bunker-data-service.test.ts tests/engines/rob-calculator.test.ts tests/engines/fleet-optimizer.test.ts tests/engines/multi-port-optimizer.test.ts tests/agents/bunker-agent.test.ts",
+    "test:bunker:coverage": "jest --config jest.bunker.config.js tests/services/bunker-data-service.test.ts tests/engines/rob-calculator.test.ts tests/engines/fleet-optimizer.test.ts tests/engines/multi-port-optimizer.test.ts tests/agents/bunker-agent.test.ts --coverage",
     "test:dynamic-routing": "jest tests/unit/multi-agent/dynamic-routing.test.ts",
     "test:all": "npm run type-check && npm run test:synthesis && npm run test:template-formatter && npm run test:components",
     "type-check": "tsc --noEmit"
@@ -71,6 +73,7 @@
     "@types/leaflet": "^1.9.21",
     "@upstash/redis": "^1.36.1",
     "ai": "^5.0.115",
+    "axios": "^1.13.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "handlebars": "^4.7.8",

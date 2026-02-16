@@ -81,14 +81,46 @@ export function RichMap({
     );
   }
 
-  const bunkerPorts =
-    bunkerPortsProp ??
-    analysis?.recommendations
-      ?.map((rec: any) => {
-        const portDetails = getPortDetails(rec.port_code);
-        return portDetails ? { ...portDetails, ...rec } : null;
-      })
-      .filter((p: any) => p !== null) ?? [];
+  // Use all bunker ports when provided (FoundPort[] from state); merge in rank/cost from analysis
+  const recByCode = new Map<string, any>();
+  if (analysis?.recommendations?.length) {
+    for (const r of analysis.recommendations) {
+      const code = r.port_code || r.port_name;
+      if (code) recByCode.set(String(code), r);
+    }
+  }
+  const bunkerPorts: any[] =
+    Array.isArray(bunkerPortsProp) && bunkerPortsProp.length > 0
+      ? bunkerPortsProp
+          .map((item: any) => {
+            const port = item.port ?? item;
+            const code = port.port_code ?? item.port_code ?? port.port_code;
+            const name = port.name ?? item.port_name ?? port.port_name ?? code;
+            const details = code ? getPortDetails(code) : null;
+            const coords = port.coordinates ?? item.coordinates ?? details?.coordinates;
+            const rec = code ? recByCode.get(String(code)) : null;
+            if (!coords) return null;
+            return {
+              ...(details || {}),
+              port_code: code,
+              name,
+              port_name: name,
+              coordinates: coords,
+              rank: rec?.rank,
+              total_cost: rec?.total_cost ?? rec?.total_cost_usd,
+              total_cost_usd: rec?.total_cost_usd ?? rec?.total_cost,
+              savings_vs_most_expensive: rec?.savings_vs_most_expensive,
+              deviation_nm: rec?.deviation_nm ?? (item.distance_from_route_nm != null ? item.distance_from_route_nm * 2 : undefined),
+              distance_from_route_nm: rec?.distance_from_route_nm ?? item.distance_from_route_nm,
+            };
+          })
+          .filter((p: any) => p != null)
+      : (analysis?.recommendations
+          ?.map((rec: any) => {
+            const portDetails = getPortDetails(rec.port_code);
+            return portDetails ? { ...portDetails, ...rec } : null;
+          })
+          .filter((p: any) => p !== null) ?? []);
 
   return (
     <div className="my-4 rounded-lg overflow-hidden border">
