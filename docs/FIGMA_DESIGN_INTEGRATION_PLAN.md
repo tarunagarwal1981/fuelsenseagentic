@@ -8,6 +8,7 @@
 - **Main frame node-id:** `9140-67960` (use with Figma MCP: “get design context” / “get variables” for this node)
 - **Playground welcome dashboard (empty state):** `9140-65000` — "Good morning, John!" fleet insights and cards; implemented in [welcome-dashboard-figma.tsx](frontend/components/welcome-dashboard-figma.tsx).
 - **Chat input area:** `58045-833` — input field, suggested actions, send and paperclip; styling applied in [chat-interface-multi-agent.tsx](frontend/components/chat-interface-multi-agent.tsx) (behavior unchanged).
+- **Response tabs (e.g. hull charts):** `9140-68088` — tab design for chat response components: active = Primary Teal + white bold, inactive = Text/Title, separator below. Used for hull performance chart tabs in [chat-interface-multi-agent.tsx](frontend/components/chat-interface-multi-agent.tsx) and [hull-performance-card.tsx](frontend/components/cards/hull-performance-card.tsx). CSS class `.tabs-figma-68088` in [globals.css](frontend/app/globals.css) for reuse. UI only; no agent or logic changes.
 - **Embed (for docs/Notion):** use the iframe below to reference the design.
 
 ```html

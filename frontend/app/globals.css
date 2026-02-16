@@ -61,7 +61,7 @@
 :root {
   /* Figma design: FUEL-SENSE-VXD
      File: https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD
-     Frames: 9140-67960 (main), 9140-67964 (Alerts), 9140-65000 (Playground welcome), 58045-833 (chat input). Tokens from Figma MCP get_variable_defs. */
+     Frames: 9140-67960 (main), 9140-67964 (Alerts), 9140-65000 (Playground welcome), 58045-833 (chat input), 9140-68088 (response tabs). Tokens from Figma MCP get_variable_defs. */
   --figma-Surface-Faded-bg: #F9FAFB;
   --figma-Primary-Dark-Blue: #072638;
   --figma-Buttons-button-container-2: rgba(33, 148, 149, 0.2);
@@ -166,6 +166,38 @@
 .dark .panel-alerts {
   --panel-alert-selected-border: rgba(167, 139, 250, 0.6);
   --panel-alert-selected-bg: rgba(167, 139, 250, 0.12);
+}
+
+/* Response tabs – Figma 9140-68088 (FUEL-SENSE-VXD): active = teal + white bold, inactive = dark text, separator below */
+.tabs-figma-68088 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--figma-Surface-Card-stroke);
+  padding-bottom: 0;
+}
+.tabs-figma-68088 [role="tab"],
+.tabs-figma-68088 .tab-trigger-figma {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
+  border: none;
+  background: transparent;
+  color: var(--figma-Text-Title);
+  cursor: pointer;
+}
+.tabs-figma-68088 [role="tab"]:hover,
+.tabs-figma-68088 .tab-trigger-figma:hover {
+  background: var(--figma-Grey-03);
+}
+.tabs-figma-68088 [role="tab"][data-state="active"],
+.tabs-figma-68088 [role="tab"][aria-selected="true"],
+.tabs-figma-68088 .tab-trigger-figma.tab-trigger-figma-active {
+  background: var(--figma-Primary-Teal);
+  color: var(--figma-Grey-01);
+  font-weight: 600;
 }
 
 .dark {

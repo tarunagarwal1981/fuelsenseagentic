@@ -769,17 +769,20 @@ export function ChatInterfaceMultiAgent() {
                         )}
                       </div>
                       {message.role === 'assistant' && isLastAssistant && hullPerformanceCharts && (hullPerformanceCharts.excessPower || hullPerformanceCharts.speedLoss || hullPerformanceCharts.speedConsumption) && (
-                        <div className="mt-4 border-t border-fs-border pt-4">
-                          <div className="flex gap-0 border-b border-fs-border">
+                        <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--figma-Surface-Card-stroke)" }}>
+                          <div className="flex flex-wrap gap-1 border-b pb-0" style={{ borderColor: "var(--figma-Surface-Card-stroke)" }}>
                             {hullPerformanceCharts.excessPower && (
                               <button
                                 type="button"
+                                role="tab"
+                                aria-selected={hullChartTab === 'excessPower'}
                                 onClick={() => setHullChartTab('excessPower')}
-                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
-                                  hullChartTab === 'excessPower'
-                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
-                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
-                                }`}
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                style={{
+                                  backgroundColor: hullChartTab === 'excessPower' ? "var(--figma-Primary-Teal)" : "transparent",
+                                  color: hullChartTab === 'excessPower' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  fontWeight: hullChartTab === 'excessPower' ? 600 : 500,
+                                }}
                               >
                                 Excess Power
                               </button>
@@ -787,12 +790,15 @@ export function ChatInterfaceMultiAgent() {
                             {hullPerformanceCharts.speedLoss && (
                               <button
                                 type="button"
+                                role="tab"
+                                aria-selected={hullChartTab === 'speedLoss'}
                                 onClick={() => setHullChartTab('speedLoss')}
-                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
-                                  hullChartTab === 'speedLoss'
-                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
-                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
-                                }`}
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                style={{
+                                  backgroundColor: hullChartTab === 'speedLoss' ? "var(--figma-Primary-Teal)" : "transparent",
+                                  color: hullChartTab === 'speedLoss' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  fontWeight: hullChartTab === 'speedLoss' ? 600 : 500,
+                                }}
                               >
                                 Speed Loss
                               </button>
@@ -800,12 +806,15 @@ export function ChatInterfaceMultiAgent() {
                             {hullPerformanceCharts.speedConsumption && (
                               <button
                                 type="button"
+                                role="tab"
+                                aria-selected={hullChartTab === 'speedConsumption'}
                                 onClick={() => setHullChartTab('speedConsumption')}
-                                className={`px-4 py-2.5 text-sm font-medium transition-colors -mb-px ${
-                                  hullChartTab === 'speedConsumption'
-                                    ? 'text-fs-brand border-b-2 border-fs-brand bg-fs-brand-light/50 dark:bg-fs-brand-light/10'
-                                    : 'text-[var(--figma-Tab-Unselected)] dark:text-muted-foreground border-b-2 border-transparent hover:text-foreground hover:bg-fs-input/50 dark:hover:bg-fs-input/30'
-                                }`}
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                style={{
+                                  backgroundColor: hullChartTab === 'speedConsumption' ? "var(--figma-Primary-Teal)" : "transparent",
+                                  color: hullChartTab === 'speedConsumption' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  fontWeight: hullChartTab === 'speedConsumption' ? 600 : 500,
+                                }}
                               >
                                 Speed-Consumption
                               </button>

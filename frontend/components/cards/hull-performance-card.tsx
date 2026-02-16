@@ -164,14 +164,23 @@ export function HullPerformanceCard({ analysis, chartData }: HullPerformanceCard
       <CardContent className="pt-0">
         {hasChartData ? (
           <Tabs defaultValue="power" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-4">
-              <TabsTrigger value="power" className="text-xs md:text-sm">
+            <TabsList className="tabs-figma-68088 grid w-full grid-cols-3 mb-4 bg-transparent p-0 h-auto rounded-none border-0 border-b border-[var(--figma-Surface-Card-stroke)]">
+              <TabsTrigger
+                value="power"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+              >
                 Power Loss
               </TabsTrigger>
-              <TabsTrigger value="speed" className="text-xs md:text-sm">
+              <TabsTrigger
+                value="speed"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+              >
                 Speed Loss
               </TabsTrigger>
-              <TabsTrigger value="consumption" className="text-xs md:text-sm">
+              <TabsTrigger
+                value="consumption"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+              >
                 Speed-Consumption
               </TabsTrigger>
             </TabsList>
