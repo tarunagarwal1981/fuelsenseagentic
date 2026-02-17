@@ -1,0 +1,12 @@
+# Compliance domain data-policy (placeholder)
+
+id: compliance
+domain: compliance
+description: Data sources for compliance validation. Placeholder for future data-source configuration.
+
+instructions: Compliance data sources to be defined when implementing.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

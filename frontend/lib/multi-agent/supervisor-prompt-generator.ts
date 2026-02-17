@@ -93,6 +93,7 @@ ${this.generateRoutingExamples()}
 - Skip agents whose required data is already in state
 - For vessel comparison queries, ensure vessel_info_agent runs before vessel_selection_agent
 - For ROB projection queries, ensure vessel_info_agent and route_agent run before rob_tracking_agent
+- When intent requires a vessel-specific agent (bunker, hull, noon report, etc.) and state has vessel name but not IMO (or vice versa), route to entity_extractor or vessel_info_agent first to resolve vessel identifier via vessel_details API, then run the specialist so no agent fails for missing IMO/name
 
 ## YOUR RESPONSE
 

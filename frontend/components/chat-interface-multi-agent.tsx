@@ -56,6 +56,7 @@ import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
 import type { ExcessPowerChartData } from '@/lib/services/charts/excess-power-chart-service';
 import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
 import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
+import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
 
 type HullChartsState = {
   excessPower?: ExcessPowerChartData | null;
@@ -184,6 +185,13 @@ export function ChatInterfaceMultiAgent() {
   const [agentLogExpanded, setAgentLogExpanded] = useState(true);
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [senseInsightTab, setSenseInsightTab] = useState<'CP Risk' | 'Performance Drift' | 'Low ROB' | 'Fuel Anomalies' | 'Action Taken'>('CP Risk');
+  /** When set, show HITL form for bunker speed/load; on submit send resume with thread_id */
+  const [pendingBunkerHitl, setPendingBunkerHitl] = useState<{
+    thread_id: string;
+    data: { type?: string; question?: string; missing?: string[] };
+  } | null>(null);
+  const [hitlFormSpeed, setHitlFormSpeed] = useState(12);
+  const [hitlFormLoad, setHitlFormLoad] = useState<'ballast' | 'laden'>('laden');
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
     id: string;
     origin_port_code: string;
@@ -299,32 +307,43 @@ export function ChatInterfaceMultiAgent() {
     }]);
   };
 
-  const submitMessage = async (messageText: string) => {
+  const submitMessage = async (
+    messageText: string,
+    options?: { resume: BunkerHITLResume; thread_id: string }
+  ) => {
     const trimmed = messageText.trim();
-    if (!trimmed || isLoading) return;
+    const isResume = Boolean(options?.resume && options?.thread_id);
+    if (!isResume && (!trimmed || isLoading)) return;
+    if (isResume && isLoading) return;
 
-    // Reset structured data for new query
-    setStructuredData(null);
+    // Reset structured data for new query (skip when resuming HITL)
+    if (!isResume) setStructuredData(null);
 
-    console.log("🚀 [MULTI-AGENT-FRONTEND] Starting chat submission");
-    const userMessage: Message = {
-      role: "user",
-      content: trimmed,
-      timestamp: new Date(),
-    };
-    console.log(
-      "📝 [MULTI-AGENT-FRONTEND] User message:",
-      userMessage.content.substring(0, 100)
-    );
-    setMessages((prev) => [...prev, userMessage]);
+    console.log("🚀 [MULTI-AGENT-FRONTEND] Starting chat submission", isResume ? "(resume)" : "");
+    if (!isResume) {
+      const userMessage: Message = {
+        role: "user",
+        content: trimmed,
+        timestamp: new Date(),
+      };
+      console.log(
+        "📝 [MULTI-AGENT-FRONTEND] User message:",
+        userMessage.content.substring(0, 100)
+      );
+      setMessages((prev) => [...prev, userMessage]);
+    }
     setIsLoading(true);
     setCurrentAgent("supervisor");
-    setThinkingState("🎯 Planning analysis...");
-    setAgentActivities([]);
-    setPerformanceMetrics(null);
-    setAnalysisData(null);
-    setHullPerformanceCharts(null);
-    addAgentLog("supervisor", "Starting analysis...", "start");
+    setThinkingState(isResume ? "Resuming bunker analysis..." : "🎯 Planning analysis...");
+    if (!isResume) {
+      setAgentActivities([]);
+      setPerformanceMetrics(null);
+      setAnalysisData(null);
+      setHullPerformanceCharts(null);
+      addAgentLog("supervisor", "Starting analysis...", "start");
+    } else {
+      addAgentLog("supervisor", "Resuming with speed/load...", "start");
+    }
 
     const startTime = Date.now();
 
@@ -332,18 +351,19 @@ export function ChatInterfaceMultiAgent() {
       const endpoint = "/api/chat-multi-agent";
 
       console.log(`🌐 [MULTI-AGENT-FRONTEND] Fetching ${endpoint}...`);
-      
-      // Build request body (entity extraction handled by backend LLM)
-      const requestBody = {
-        message: userMessage.content,
-        ...(selectedRouteId && { selectedRouteId }),
-      };
-      
-      if (selectedRouteId) {
+
+      const requestBody = isResume
+        ? { message: "", thread_id: options!.thread_id, resume: options!.resume }
+        : {
+            message: trimmed,
+            ...(selectedRouteId && { selectedRouteId }),
+          };
+
+      if (!isResume && selectedRouteId) {
         console.log(`🎯 [MULTI-AGENT-FRONTEND] Using cached route: ${selectedRouteId}`);
         addAgentLog("system", `Using cached route: ${selectedRouteId}`, "complete");
       }
-      
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -388,6 +408,7 @@ export function ChatInterfaceMultiAgent() {
         let weatherData: any = null;
         let bunkerData: any = null;
         const activities: AgentActivity[] = [];
+        let streamEndedByInterrupt = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -412,6 +433,18 @@ export function ChatInterfaceMultiAgent() {
                 console.log(`📨 [MULTI-AGENT-FRONTEND] Event type: ${data.type}`);
 
                 switch (data.type) {
+                  case "session":
+                    // thread_id and correlation_id for continuity; interrupt event carries thread_id for resume
+                    break;
+
+                  case "interrupt":
+                    setPendingBunkerHitl({
+                      thread_id: data.thread_id ?? "",
+                      data: (data.data as { type?: string; question?: string; missing?: string[] }) ?? {},
+                    });
+                    streamEndedByInterrupt = true;
+                    break;
+
                   case "agent_start":
                     setCurrentAgent(data.agent);
                     setThinkingState(getAgentThinkingLabel(data.agent));
@@ -570,52 +603,56 @@ export function ChatInterfaceMultiAgent() {
                     setThinkingState(null);
                     throw new Error(data.error || "Unknown error");
                 }
+                if (streamEndedByInterrupt) break;
               } catch (parseError) {
                 console.error("❌ [MULTI-AGENT-FRONTEND] Parse error:", parseError, "Data:", dataStr.substring(0, 200));
               }
             }
+            if (streamEndedByInterrupt) break;
           }
         }
 
         const executionTime = Date.now() - startTime;
 
-        // Set analysis data (merge with any existing data from progressive updates)
-        setAnalysisData(prev => ({
-          route: routeData || prev?.route,
-          ports: bunkerData?.recommendations?.map((r: any) => ({
-            code: r.port_code,
-            name: r.port_name,
-            distance_from_route_nm: r.distance_from_route_nm || r.deviation_nm,
-          })) || prev?.ports,
-          prices: bunkerData?.recommendations?.map((r: any) => ({
-            port_code: r.port_code,
-            prices: {
-              VLSFO: r.fuel_cost_usd / 1000,
+        if (!streamEndedByInterrupt) {
+          // Set analysis data (merge with any existing data from progressive updates)
+          setAnalysisData(prev => ({
+            route: routeData || prev?.route,
+            ports: bunkerData?.recommendations?.map((r: any) => ({
+              code: r.port_code,
+              name: r.port_name,
+              distance_from_route_nm: r.distance_from_route_nm || r.deviation_nm,
+            })) || prev?.ports,
+            prices: bunkerData?.recommendations?.map((r: any) => ({
+              port_code: r.port_code,
+              prices: {
+                VLSFO: r.fuel_cost_usd / 1000,
+              },
+            })) || prev?.prices,
+            analysis: bunkerData || prev?.analysis,
+            weather: weatherData || prev?.weather,
+          }));
+
+          // Set performance metrics
+          setPerformanceMetrics({
+            totalExecutionTime: executionTime,
+            agentTimes: {},
+            totalToolCalls: activities.reduce((sum, a) => sum + (a.toolCalls || 0), 0),
+            agentsCalled: activities.map((a) => a.agent),
+          });
+
+          // Add assistant message
+          console.log('📝 [MULTI-AGENT-FRONTEND] Adding assistant message, length:', assistantMessage?.length || 0);
+          console.log('📝 [MULTI-AGENT-FRONTEND] Assistant message preview:', assistantMessage?.substring(0, 200));
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: assistantMessage || "Analysis completed.",
+              timestamp: new Date(),
             },
-          })) || prev?.prices,
-          analysis: bunkerData || prev?.analysis,
-          weather: weatherData || prev?.weather,
-        }));
-
-        // Set performance metrics
-        setPerformanceMetrics({
-          totalExecutionTime: executionTime,
-          agentTimes: {},
-          totalToolCalls: activities.reduce((sum, a) => sum + (a.toolCalls || 0), 0),
-          agentsCalled: activities.map((a) => a.agent),
-        });
-
-        // Add assistant message
-        console.log('📝 [MULTI-AGENT-FRONTEND] Adding assistant message, length:', assistantMessage?.length || 0);
-        console.log('📝 [MULTI-AGENT-FRONTEND] Assistant message preview:', assistantMessage?.substring(0, 200));
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: assistantMessage || "Analysis completed.",
-            timestamp: new Date(),
-          },
-        ]);
+          ]);
+        }
 
         setCurrentAgent(null);
     } catch (error) {
@@ -648,6 +685,13 @@ export function ChatInterfaceMultiAgent() {
     if (!input.trim() || isLoading) return;
     submitMessage(input.trim());
     setInput("");
+  };
+
+  const handleResumeBunkerHitl = (speed: number, load_condition: 'ballast' | 'laden') => {
+    if (!pendingBunkerHitl?.thread_id || isLoading) return;
+    const thread_id = pendingBunkerHitl.thread_id;
+    setPendingBunkerHitl(null);
+    submitMessage('', { resume: { speed, load_condition }, thread_id });
   };
 
   const handleRequestHullAnalysis = (vesselName: string) => {
@@ -896,6 +940,49 @@ export function ChatInterfaceMultiAgent() {
                     )}
                   </div>
                 </div>
+              )}
+              {pendingBunkerHitl && (pendingBunkerHitl.data?.type === 'bunker_analysis_input' || !pendingBunkerHitl.data?.type) && (
+                <Card className="mt-4 p-4 rounded-xl border-2 border-teal-200 dark:border-teal-700 bg-gradient-to-r from-teal-50/80 to-green-50/80 dark:from-teal-950/40 dark:to-green-950/40">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
+                    {pendingBunkerHitl.data?.question ?? 'Please provide sailing speed (knots) and load condition for bunker analysis.'}
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="hitl-speed" className="text-xs font-medium text-gray-600 dark:text-gray-400">Speed (knots)</label>
+                      <input
+                        id="hitl-speed"
+                        type="number"
+                        min={1}
+                        max={30}
+                        step={0.5}
+                        value={hitlFormSpeed}
+                        onChange={(e) => setHitlFormSpeed(Number(e.target.value) || 12)}
+                        className="w-24 px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="hitl-load" className="text-xs font-medium text-gray-600 dark:text-gray-400">Load condition</label>
+                      <select
+                        id="hitl-load"
+                        value={hitlFormLoad}
+                        onChange={(e) => setHitlFormLoad(e.target.value as 'ballast' | 'laden')}
+                        className="px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                      >
+                        <option value="ballast">Ballast</option>
+                        <option value="laden">Laden</option>
+                      </select>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleResumeBunkerHitl(hitlFormSpeed, hitlFormLoad)}
+                      disabled={isLoading}
+                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                    >
+                      Submit
+                    </Button>
+                  </div>
+                </Card>
               )}
               <div ref={messagesEndRef} />
             </div>

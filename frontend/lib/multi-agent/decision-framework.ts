@@ -93,6 +93,15 @@ export function makeRoutingDecision(
       // Agent already completed - check what else needs to be done
       const nextAgent = determineNextAgent(match, state);
       if (nextAgent) {
+        // Don't retry an agent that has already failed (avoids infinite loop)
+        if (state.agent_status?.[nextAgent] === 'failed') {
+          return {
+            decision: 'finalize',
+            confidence: 100,
+            agent: 'finalize',
+            reason: `${nextAgent} failed previously, finalizing with available data`,
+          };
+        }
         return {
           decision: 'immediate_action',
           confidence: 90,
@@ -218,8 +227,14 @@ function isAllWorkComplete(match: PatternMatch, state: MultiAgentState): boolean
 function determineNextAgent(match: PatternMatch, state: MultiAgentState): string | null {
   const intent = state.original_intent || match.type;
 
-  // Bunker planning: route -> bunker (weather optional for richer analysis)
+  // Bunker planning: vessel_info (if vessel name was extracted) -> route -> bunker
   if (intent === 'bunker_planning') {
+    const hasVesselIds =
+      state.vessel_identifiers &&
+      ((state.vessel_identifiers.names?.length ?? 0) > 0 ||
+        (state.vessel_identifiers.imos?.length ?? 0) > 0);
+    const hasVesselSpecs = (state.vessel_specs?.length ?? 0) > 0;
+    if (hasVesselIds && !hasVesselSpecs) return 'vessel_info_agent';
     if (!state.route_data) return 'route_agent';
     if (!state.bunker_analysis) return 'bunker_agent';
     return null;

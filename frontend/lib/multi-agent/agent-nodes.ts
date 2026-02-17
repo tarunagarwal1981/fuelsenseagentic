@@ -104,7 +104,16 @@ import type {
   VesselContext,
   VoyageTarget,
 } from '@/lib/types/bunker';
+import { interrupt } from '@langchain/langgraph';
 import { bunkerDataService } from '@/lib/services/bunker-data-service';
+import { resolveVesselIdentifier } from '@/lib/services/vessel-identifier-service';
+import { getRobFromDatalogs } from '@/lib/services/rob-from-datalogs-service';
+import {
+  buildVesselSpecsFromPerformance,
+  getTankCapacityDefault,
+} from '@/lib/services/vessel-specs-from-performance';
+import { getConfigManager } from '@/lib/config/config-manager';
+import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
 import type { PriceFetcherOutput, PriceData } from '@/lib/tools/price-fetcher';
 import { calculateBunkerRequirement } from '@/lib/engines/rob-calculator';
 import { compareVesselsForVoyage } from '@/lib/engines/fleet-optimizer';
@@ -3148,6 +3157,11 @@ function buildECASegmentsFromCompliance(
  * Vessel-specific bunker workflow: uses vessel specs and current ROB to calculate
  * fuel requirement, validates tank capacity, finds ports, fetches pricing, ranks options.
  */
+/** Returns true if the string looks like an IMO (7 digits). */
+function looksLikeIMO(id: string): boolean {
+  return /^\d{7}$/.test(String(id).trim());
+}
+
 async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<MultiAgentState>> {
   console.log('🔀 [BUNKER-WORKFLOW] Vessel-specific workflow');
 
@@ -3160,6 +3174,21 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     return await handleSimplePortToPort(state);
   }
   const vesselId = vesselIds[0];
+  const policy = getConfigManager().getDataPolicy('bunker');
+
+  // Resolve name to IMO via vessel_details API when policy says vessel_details_api (Option A)
+  let imo: string = vesselId;
+  let vesselName: string = vesselId;
+  if (!looksLikeIMO(vesselId) && policy?.vessel_identifier_source === 'vessel_details_api') {
+    const resolved = await resolveVesselIdentifier({ name: vesselId }, policy);
+    if (resolved.imo) {
+      imo = resolved.imo;
+      vesselName = resolved.vessel?.name ?? resolved.name ?? vesselId;
+      console.log(`   Resolved vessel "${vesselId}" to IMO ${imo}`);
+    }
+  } else if (looksLikeIMO(vesselId)) {
+    imo = String(vesselId).trim();
+  }
 
   if (!state.route_data?.waypoints?.length) {
     return {
@@ -3188,10 +3217,92 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     Array.isArray(wp) ? { lat: wp[0], lon: wp[1] } : { lat: wp.lat, lon: wp.lon }
   );
 
-  const [vesselSpecs, currentROB] = await Promise.all([
-    bunkerDataService.fetchVesselSpecs(vesselId),
-    bunkerDataService.fetchCurrentROB(vesselId),
-  ]);
+  // Vessel specs: from vessel_performance_model when policy says so (with HITL for speed/load), else bunker API
+  let vesselSpecs: Awaited<ReturnType<typeof bunkerDataService.fetchVesselSpecs>>;
+  let speedKnots: number = 14;
+  let bunkerLoadCondition: 'ballast' | 'laden' | undefined;
+  const usePerformanceModel = policy?.consumption_source === 'vessel_performance_model';
+
+  if (usePerformanceModel) {
+    let speed = state.bunker_analysis_speed;
+    let loadCondition = state.bunker_analysis_load_condition;
+    if (speed == null || loadCondition == null) {
+      const missing: ('speed' | 'load_condition')[] = [];
+      if (speed == null) missing.push('speed');
+      if (loadCondition == null) missing.push('load_condition');
+      const interruptPayload = {
+        type: 'bunker_analysis_input' as const,
+        missing,
+        question:
+          'Please provide sailing speed (knots) and load condition (ballast or laden) for bunker analysis.',
+      };
+      const resumeValue = interrupt(interruptPayload) as BunkerHITLResume;
+      speed = resumeValue.speed;
+      loadCondition = resumeValue.load_condition;
+    }
+    speedKnots = speed;
+    bunkerLoadCondition = loadCondition;
+    const built = await buildVesselSpecsFromPerformance(
+      imo,
+      vesselName,
+      speed,
+      loadCondition,
+      policy
+    );
+    if (!built) {
+      return {
+        agent_status: { ...(state.agent_status || {}), bunker_agent: 'failed' },
+        agent_errors: {
+          bunker_agent: {
+            error: 'No consumption data available for this vessel from the performance model.',
+            timestamp: Date.now(),
+          },
+        },
+        messages: [
+          ...state.messages,
+          new AIMessage({
+            content: JSON.stringify({
+              type: 'bunker_workflow_complete',
+              message: 'No consumption data available for this vessel.',
+              subtype: 'VESSEL_SPECIFIC',
+            }),
+          }),
+        ],
+      };
+    }
+    vesselSpecs = built;
+  } else {
+    try {
+      vesselSpecs = await bunkerDataService.fetchVesselSpecs(imo);
+    } catch {
+      vesselSpecs = await bunkerDataService.fetchVesselSpecs(vesselId);
+    }
+  }
+
+  // ROB: from datalogs when policy says rob_source datalogs, else bunker API
+  let currentROB: { totalROB: number; vesselId: string; timestamp: string; robVLSFO?: number; robLSMGO?: number; robMGO?: number };
+  if (policy?.rob_source === 'datalogs') {
+    const datalogsRob = await getRobFromDatalogs(imo, policy);
+    if (datalogsRob) {
+      const totalROB = Object.values(datalogsRob).reduce((a, b) => a + b, 0);
+      currentROB = {
+        vesselId: imo,
+        timestamp: new Date().toISOString(),
+        totalROB,
+        robVLSFO: datalogsRob.VLSFO,
+        robLSMGO: datalogsRob.LSMGO,
+        robMGO: datalogsRob.MDO,
+      };
+    } else {
+      currentROB = { vesselId: imo, timestamp: new Date().toISOString(), totalROB: 0 };
+    }
+  } else {
+    try {
+      currentROB = await bunkerDataService.fetchCurrentROB(imo);
+    } catch {
+      currentROB = await bunkerDataService.fetchCurrentROB(vesselId);
+    }
+  }
 
   const weatherFactor =
     state.weather_consumption?.consumption_increase_percent != null
@@ -3204,7 +3315,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     routeEstimatedHours: route.estimated_hours,
     weatherFactor,
     safetyMargin: 0.15,
-    speedKnots: 14,
+    speedKnots,
   });
 
   const tankCapacity = vesselSpecs.tankCapacity;
@@ -3246,10 +3357,11 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
       `Voyage consumption: ${bunkerRequirement.voyageFuelConsumption.toFixed(1)} MT`,
       `Bunker required: ${bunkerRequirement.bunkerQuantity.toFixed(1)} MT`,
       `Tank capacity: ${tankCapacity} MT`,
+      ...(usePerformanceModel && policy?.tank_capacity_note ? [policy.tank_capacity_note] : []),
       'No bunker ports found within 150 nm of the route.',
     ].join('\n');
     const vesselContext: VesselContext = {
-      vessel_id: vesselId,
+      vessel_id: imo,
       vessel_name: vesselSpecs.vesselName,
       current_rob: currentROB.totalROB,
       tank_capacity: tankCapacity,
@@ -3335,6 +3447,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     `Required fuel (incl. ${(bunkerRequirement.safetyMarginApplied * 100).toFixed(0)}% safety): ${bunkerRequirement.requiredFuel.toFixed(1)} MT`,
     `Bunker quantity: ${bunkerRequirement.bunkerQuantity.toFixed(1)} MT`,
     `Tank capacity: ${tankCapacity} MT`,
+    ...(usePerformanceModel && policy?.tank_capacity_note ? [policy.tank_capacity_note] : []),
     exceedsCapacity
       ? 'Single port cannot supply full quantity; consider split or multi-port bunkering.'
       : tankValidation === 'near_full'
@@ -3346,7 +3459,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
       : '',
   ];
   const vesselContext: VesselContext = {
-    vessel_id: vesselId,
+    vessel_id: imo,
     vessel_name: vesselSpecs.vesselName,
     current_rob: robBefore,
     tank_capacity: tankCapacity,
@@ -3431,7 +3544,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
       : undefined;
   }
 
-  return {
+  const stateUpdate: Partial<MultiAgentState> = {
     bunker_ports: portsToUse as any,
     port_prices,
     bunker_analysis: fullAnalysis as any,
@@ -3443,6 +3556,21 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
       }),
     ],
   };
+  if (imo !== vesselId && state.vessel_identifiers) {
+    const existingImos = state.vessel_identifiers.imos ?? [];
+    if (!existingImos.includes(imo)) {
+      stateUpdate.vessel_identifiers = {
+        ...state.vessel_identifiers,
+        imos: [imo, ...existingImos],
+        names: state.vessel_identifiers.names ?? [],
+      };
+    }
+  }
+  if (usePerformanceModel && speedKnots != null && bunkerLoadCondition != null) {
+    stateUpdate.bunker_analysis_speed = speedKnots;
+    stateUpdate.bunker_analysis_load_condition = bunkerLoadCondition;
+  }
+  return stateUpdate;
 }
 
 /** Build vessel-specific bunker analysis object (recommendations + vessel fields). */

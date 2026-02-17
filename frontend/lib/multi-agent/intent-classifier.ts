@@ -104,6 +104,16 @@ async function classifyWithLLM(
 
 ${agentList}
 
+## INTENT (USER GOAL) vs AGENT_ID (FIRST STEP)
+
+- **intent**: The user's end goal. Use exactly one of: bunker_planning, route_calculation, weather_analysis, port_weather, compliance, vessel_info, hull_analysis.
+- **agent_id**: The first agent we should run (they can differ for multi-step workflows).
+
+**Multi-step examples:**
+- User asks for bunker/fuel options and mentions a route or ports → intent **bunker_planning**, agent_id **route_agent** (or **entity_extractor** if a vessel name must be resolved first).
+- User asks for weather along a route or between ports → intent **weather_analysis**, agent_id **route_agent**.
+- User asks only for route/distance/map → intent **route_calculation**, agent_id **route_agent**.
+
 ## ROUTING RULES (follow these for correct multi-step workflows)
 
 **Vessel-related queries — choose the agent that fulfills the user's goal:**
@@ -114,20 +124,22 @@ ${agentList}
 
 3. **Specific vessel info (name or IMO in query, no hull)**: User asks about one vessel by name or IMO — e.g. status, ROB, noon report, position, vessel details — without hull/performance/fouling. Return **entity_extractor** so the system extracts the vessel identifier first; it will then route to vessel_info_agent (or others) as needed.
 
-4. **Route / weather / bunker / compliance**: Use the agent that directly fulfills the query (route_agent, weather_agent, bunker_agent, compliance_agent) per the AGENTS WITH INTENTS list above.
+4. **Route / weather / bunker / compliance**: Use the agent that directly fulfills the query (route_agent, weather_agent, bunker_agent, compliance_agent) per the AGENTS WITH INTENTS list above. For bunker or weather along a route, set intent to bunker_planning or weather_analysis and agent_id to route_agent.
 
 **Rule of thumb:** Use **entity_extractor** only when the user mentions a *specific* vessel (name or IMO) and we need to extract it from the query. Use **vessel_info_agent** when the user wants a list/count/catalog or data that vessel_info_agent fetches (list, specs, noon report, consumption). Use **hull_performance_agent** for any hull/performance/fouling request.
 
-You are a routing classifier. Map this query to ONE agent ID (the agent that fulfills the user's goal). Respond ONLY with JSON (no markdown code blocks):
+You are a routing classifier. Set **intent** to the user's end goal (from the list above) and **agent_id** to the first agent to run. Respond ONLY with JSON (no markdown code blocks):
 {
   "agent_id": "<agent_id>",
-  "intent": "<matched intent string>",
+  "intent": "<bunker_planning|route_calculation|weather_analysis|port_weather|compliance|vessel_info|hull_analysis>",
   "confidence": <0-1 number>,
   "reasoning": "<brief explanation>",
   "extracted_params": { "vessel_name": "...", "origin_port": "...", "destination_port": "...", "date": "..." }
 }
 
-Valid agent IDs must be from the list above. If ambiguous, use confidence < 0.6.`;
+Example for "bunker options for vessel X between Singapore and Rotterdam": { "agent_id": "route_agent", "intent": "bunker_planning", "confidence": 0.95, "reasoning": "User wants bunker options; route must be computed first." }
+
+Valid agent IDs must be from the AGENTS list. intent must be one of the seven values above. If ambiguous, use confidence < 0.6.`;
 
   const userPrompt = `Query: "${query}"`;
 

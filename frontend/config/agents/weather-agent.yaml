@@ -5,6 +5,7 @@ id: weather_agent
 name: Weather Analyzer Agent
 description: Fetches marine weather forecasts from Open-Meteo API, calculates weather-adjusted fuel consumption, and validates bunker port weather safety. Deterministic workflow - no LLM tool-calling.
 type: specialist
+dataPolicy: weather
 
 domain:
   - weather_analysis

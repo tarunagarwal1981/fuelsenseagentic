@@ -5,6 +5,7 @@ id: compliance_agent
 name: Compliance Validator Agent
 description: Validates regulatory compliance including ECA zones, EU ETS, FuelEU Maritime, and CII ratings. Deterministic workflow - no LLM tool-calling.
 type: specialist
+dataPolicy: compliance
 
 domain:
   - compliance

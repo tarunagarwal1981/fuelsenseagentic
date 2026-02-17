@@ -21,6 +21,7 @@ import type {
   FeatureFlag,
   FeatureFlagsConfig,
   FuelSenseConfig,
+  DataPolicyConfig,
 } from '@/lib/types/config';
 
 // ============================================================================
@@ -72,6 +73,7 @@ export class ConfigManager {
         this.loadWorkflowConfigs(),
         this.loadBusinessRules(),
         this.loadFeatureFlags(),
+        this.loadDataPolicies(),
       ]);
 
       this.loaded = true;
@@ -189,6 +191,22 @@ export class ConfigManager {
     }
   }
 
+  /**
+   * Load data-policy configurations (domain-specific data sources)
+   */
+  async loadDataPolicies(): Promise<void> {
+    try {
+      const policyFiles = loadAllYAMLFromDirectory<DataPolicyConfig>('data-policies');
+      policyFiles.forEach((content, id) => {
+        const policyId = content?.id ?? id;
+        this.configs.set(`data-policy:${policyId}`, content);
+      });
+      console.log(`   📂 Data policies: ${policyFiles.size} loaded`);
+    } catch (error) {
+      console.log(`   📂 Data policies: 0 loaded (directory may not exist)`);
+    }
+  }
+
   // ==========================================================================
   // Normalization Helpers
   // ==========================================================================
@@ -238,6 +256,7 @@ export class ConfigManager {
       humanApproval: raw.human_approval || raw.humanApproval,
       enabled: raw.enabled ?? (raw.status === 'available'),
       featureFlag: raw.featureFlag,
+      dataPolicy: raw.dataPolicy,
       metadata: raw.metadata
         ? {
             version: raw.metadata.version,
@@ -351,6 +370,13 @@ export class ConfigManager {
    */
   getWorkflowConfig(workflowId: string): WorkflowConfig | undefined {
     return this.get<WorkflowConfig>(`workflow:${workflowId}`);
+  }
+
+  /**
+   * Get data-policy configuration by ID (domain-specific data sources)
+   */
+  getDataPolicy(policyId: string): DataPolicyConfig | undefined {
+    return this.get<DataPolicyConfig>(`data-policy:${policyId}`);
   }
 
   /**

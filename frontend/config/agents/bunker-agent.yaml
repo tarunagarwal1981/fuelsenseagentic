@@ -5,6 +5,7 @@ id: bunker_agent
 name: Bunker Planner Agent
 description: Finds bunker ports along route, validates weather safety, fetches fuel prices, and analyzes optimal bunkering options with cost-benefit analysis. Deterministic workflow - executes workflow directly without LLM tool-calling.
 type: specialist
+dataPolicy: bunker
 
 domain:
   - bunker_planning

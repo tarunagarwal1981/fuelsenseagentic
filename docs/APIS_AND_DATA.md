@@ -2,6 +2,8 @@
 
 All external APIs and the data fetched from them. Repositories and clients use these for real data only.
 
+**Bunker workflow (Option A):** IMO resolution uses **vessel_details API** only (VesselDetailsClient). ROB for bunker planning comes from **datalogs API** (data_logs) per domain data-policy, with non-zero-only filter. No Supabase; APIs only.
+
 ---
 
 ## 1. FuelSense UAT (Primary Backend)
@@ -10,12 +12,15 @@ All external APIs and the data fetched from them. Repositories and clients use t
 
 ### 1.1 Bunker / BunkerDataService
 
+- **IMO for bunker:** Resolved from vessel name via **vessel_details API** (VesselDetailsClient). See §1.4.
+- **ROB for bunker:** When data-policy `rob_source: datalogs`, ROB is taken from **datalogs API** (data_logs) with columns ROB_VLSFO, ROB_LSMGO, ROB_HSFO, ROB_ULSFO, ROB_MDO, ROB_LNG and filter `non_zero_only`. Otherwise from `/api/vessels/:vesselId/rob` below.
+
 | Endpoint | Method | Data Fetched |
 |----------|--------|--------------|
 | `/api/bunker-pricing?ports=...&fuelTypes=...&startDate=...&endDate=...` | GET | **BunkerPricing[]**: port, fuelType, pricePerMT, currency, lastUpdated, supplier?, availableQuantity? |
 | `/api/ports/:portCode/capabilities` | GET | **PortCapabilities**: portCode, availableFuelTypes[], maxSupplyRate?, berthAvailability?, ecaZone |
-| `/api/vessels/:vesselId/specs` | GET | **VesselSpecs**: vesselId, vesselName, vesselType, consumptionRate, tankCapacity, currentPosition?, fuelCompatibility[] |
-| `/api/vessels/:vesselId/rob` | GET | **ROBSnapshot**: vesselId, timestamp, robVLSFO?, robLSMGO?, robMGO?, totalROB, location? |
+| `/api/vessels/:vesselId/specs` | GET | **VesselSpecs**: vesselId, vesselName, vesselType, consumptionRate, tankCapacity, currentPosition?, fuelCompatibility[] (use IMO as vesselId) |
+| `/api/vessels/:vesselId/rob` | GET | **ROBSnapshot**: vesselId, timestamp, robVLSFO?, robLSMGO?, robMGO?, totalROB, location? (used when policy does not use datalogs for ROB) |
 | `/api/fleet/status?availableAfter=...&currentRegion=...&vesselTypes=...&minCapacity=...` | GET | **VesselStatus[]**: vesselId, vesselName, currentVoyage?, eta?, nextAvailable?, currentPosition?, currentROB? |
 | `/api/bunker-pricing/history?port=...&fuelType=...&lookbackDays=...` | GET | **PriceHistory[]**: date, price, port, fuelType |
 

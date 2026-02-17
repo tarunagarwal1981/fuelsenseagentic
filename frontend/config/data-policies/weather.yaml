@@ -1,0 +1,12 @@
+# Weather domain data-policy (placeholder)
+
+id: weather
+domain: weather
+description: Data sources for weather analysis. Placeholder for future data-source configuration.
+
+instructions: Weather data sources to be defined when implementing.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

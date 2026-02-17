@@ -23,6 +23,7 @@ export interface DatalogRow {
   ROB_HSFO?: number;
   ROB_ULSFO?: number;
   ROB_MDO?: number;
+  ROB_LNG?: number;
   SPEED?: number;
   DISTANCETOGO?: number;
   FROM_PORT?: string;
@@ -100,6 +101,17 @@ export class DatalogsClient {
     const rows = await this.fetchUrl(url);
     if (rows.length === 0) return null;
     return mapRowToNoonReport(rows[0]);
+  }
+
+  /**
+   * Fetch latest raw datalog row by IMO (for ROB snapshot builders that need raw ROB_* columns).
+   */
+  async getLatestRawByIMO(imo: string): Promise<DatalogRow | null> {
+    if (!imo || String(imo).trim() === '') return null;
+    const normalizedIMO = String(imo).trim();
+    const url = `${this.baseURL}/datalogs?filter=VESSEL_IMO||$eq||${encodeURIComponent(normalizedIMO)}&limit=1&sort=REPORT_DATE,DESC`;
+    const rows = await this.fetchUrl(url);
+    return rows.length > 0 ? rows[0] : null;
   }
 
   /**

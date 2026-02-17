@@ -1,0 +1,15 @@
+# Vessel info domain data-policy (placeholder)
+# Vessel identifier resolution via vessel_details API (Option A).
+
+id: vessel-info
+domain: vessel_info
+description: Data sources for vessel lookup. IMO and vessel name resolution via vessel_details API.
+
+vessel_identifier_source: vessel_details_api
+
+instructions: Resolve vessel name to IMO or IMO to name via vessel_details API when any agent needs vessel identity.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

@@ -9,6 +9,7 @@ description: >
   the WorldPortIndex database. Returns route with waypoints, distance, and vessel
   timeline. No port pre-processing required - handles all port resolution internally.
 type: specialist
+dataPolicy: route
 
 domain:
   - route_planning

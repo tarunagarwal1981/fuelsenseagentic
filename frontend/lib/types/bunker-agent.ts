@@ -4,6 +4,12 @@
  * and provides detectBunkerQuerySubtype for workflow routing.
  */
 
+/** Payload for resuming bunker workflow after HITL (speed and load condition). */
+export interface BunkerHITLResume {
+  speed: number;
+  load_condition: 'ballast' | 'laden';
+}
+
 import type { MultiAgentState } from '@/lib/multi-agent/state';
 import type { BunkerQueryType } from '@/lib/types/bunker';
 

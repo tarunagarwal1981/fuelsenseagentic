@@ -1,0 +1,12 @@
+# Route domain data-policy (placeholder)
+
+id: route
+domain: route
+description: Data sources for route calculation. Placeholder for future data-source configuration.
+
+instructions: Route data sources to be defined when implementing.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

@@ -75,6 +75,7 @@ export const vesselInfoAgent: AgentDefinition = {
   domain: ['vessel_operations', 'vessel_data', 'fleet_management'],
   capabilities: [
     'vessel_lookup',
+    'vessel_identifier_resolution',
     'noon_report_fetch',
     'vessel_list',
     'consumption_profile',

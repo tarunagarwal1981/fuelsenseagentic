@@ -1,0 +1,35 @@
+# Bunker domain data-policy (Option A: vessel_details API + datalogs for ROB)
+# Placeholder structure; fill vessel_identifier_source, rob_* when implementing bunker flow.
+
+id: bunker
+domain: bunker
+description: Data sources and filters for bunker planning. IMO from vessel_details API; ROB from datalogs (data_logs), non-zero only.
+
+# Stubs for implementation (Option A only; no Supabase)
+vessel_identifier_source: vessel_details_api
+rob_source: datalogs
+rob_columns:
+  - ROB_VLSFO
+  - ROB_LSMGO
+  - ROB_HSFO
+  - ROB_ULSFO
+  - ROB_MDO
+  - ROB_LNG
+rob_filter: non_zero_only
+
+# Vessel specs (consumption, tank) when bunker API /vessels/:id/specs unavailable
+consumption_source: vessel_performance_model
+consumption_api: hull_performance
+consumption_load_mapping:
+  ballast: Ballast
+  laden: [Scantling, Design]
+
+tank_capacity_default: 3000
+tank_capacity_note: "Assumed (no tank capacity table available)"
+
+instructions: Resolve vessel name to IMO via vessel_details API before bunker or datalogs. Bunker planning uses IMO and ROB from datalogs; only non-zero ROBs are considered. Consumption from vessel_performance_model; tank capacity placeholder until table exists.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

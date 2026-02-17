@@ -960,6 +960,24 @@ export const MultiAgentStateAnnotation = Annotation.Root({
     default: () => null,
   }),
 
+  /** User-chosen speed (knots) for bunker analysis (HITL or extracted) */
+  bunker_analysis_speed: Annotation<number | undefined>({
+    reducer: (x, y) => (y !== null && y !== undefined ? y : x),
+    default: () => undefined,
+  }),
+
+  /** User-chosen load condition for bunker analysis (HITL or extracted) */
+  bunker_analysis_load_condition: Annotation<'ballast' | 'laden' | undefined>({
+    reducer: (x, y) => (y !== null && y !== undefined ? y : x),
+    default: () => undefined,
+  }),
+
+  /** Pending HITL question for bunker (speed/load); passed to client on interrupt */
+  bunker_hitl_pending: Annotation<{ question: string; missing: ('speed' | 'load_condition')[] } | undefined>({
+    reducer: (_, y) => y,
+    default: () => undefined,
+  }),
+
   /**
    * Multi-port bunker plan (when single stop is insufficient due to capacity constraints)
    * Phase 1: Maximum 2 stops (departure + 1 mid-voyage port)

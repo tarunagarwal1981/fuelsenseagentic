@@ -45,7 +45,7 @@ export const INTENT_CAPABILITY_MAP: Record<string, string[]> = {
   bunker_planning: ['port_finding', 'price_fetching', 'bunker_analysis', 'deviation_cost'],
   
   // Vessel Information
-  vessel_information: ['vessel_lookup', 'noon_report_fetch', 'vessel_list', 'consumption_profile'],
+  vessel_information: ['vessel_lookup', 'vessel_identifier_resolution', 'noon_report_fetch', 'vessel_list', 'consumption_profile'],
   
   // Vessel Selection (Multi-vessel comparison)
   vessel_selection: ['vessel_comparison', 'multi_vessel_analysis', 'voyage_feasibility_check', 'vessel_ranking'],
@@ -100,7 +100,8 @@ export const CAPABILITY_DESCRIPTIONS: Record<string, string> = {
   deviation_cost: 'Calculate cost of deviating to bunker port',
   
   // Vessel Information
-  vessel_lookup: 'Find vessel by name or IMO and retrieve master data',
+  vessel_lookup: 'Find vessel by name or IMO and retrieve master data; vessel identifier resolution (name↔IMO) is available via vessel_details API—use when an agent needs IMO or vessel name and state has only the other',
+  vessel_identifier_resolution: 'Resolve vessel name to IMO or IMO to name via vessel_details API; use when a specialist agent needs IMO or vessel name and state has only the other',
   noon_report_fetch: 'Get latest noon report with ROB, position, consumption',
   vessel_list: 'List vessels by fleet, type, or other criteria',
   consumption_profile: 'Get vessel consumption profile by speed',

@@ -112,8 +112,42 @@ export interface AgentConfig {
   enabled: boolean;
   featureFlag?: string;
 
+  // Data policy (domain-specific data-source YAML reference)
+  dataPolicy?: string;
+
   // Metadata
   metadata?: AgentMetadata;
+}
+
+// ============================================================================
+// Data Policy Configuration (domain-specific data sources)
+// ============================================================================
+
+export interface DataPolicyConfig {
+  id: string;
+  domain: string;
+  description?: string;
+  /** IMO resolution: vessel_details_api only (Option A; no Supabase) */
+  vessel_identifier_source?: 'vessel_details_api';
+  /** ROB source: datalogs (data_logs API) */
+  rob_source?: string;
+  /** ROB columns from data_logs, e.g. ROB_VLSFO, ROB_LSMGO, ... */
+  rob_columns?: string[];
+  /** Include only non-zero, non-null fuel types */
+  rob_filter?: 'non_zero_only';
+  /** Vessel specs: consumption from vessel_performance_model when bunker API specs 404 */
+  consumption_source?: 'vessel_performance_model';
+  consumption_api?: string;
+  /** Load type mapping: ballast = Ballast, laden = Scantling else Design */
+  consumption_load_mapping?: { ballast?: string; laden?: string | string[] };
+  /** Tank capacity placeholder (MT) until table exists */
+  tank_capacity_default?: number;
+  /** Disclaimer text for assumed tank capacity */
+  tank_capacity_note?: string;
+  instructions?: string;
+  systemPromptFragment?: string;
+  enabled?: boolean;
+  metadata?: { version?: string; lastUpdated?: string };
 }
 
 // ============================================================================

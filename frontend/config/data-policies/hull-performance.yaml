@@ -1,0 +1,13 @@
+# Hull performance domain data-policy (placeholder)
+
+id: hull-performance
+domain: hull_performance
+description: Data sources for hull performance analysis. Placeholder for future data-source configuration.
+
+# Placeholder; no keys required yet
+instructions: Hull performance data sources to be defined when implementing.
+
+enabled: true
+metadata:
+  version: "1.0.0"
+  lastUpdated: "2025-02-16"

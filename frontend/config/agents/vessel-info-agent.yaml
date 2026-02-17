@@ -5,6 +5,7 @@ id: vessel_info_agent
 name: Vessel Information Agent
 description: Fetches vessel data from FuelSense APIs - vessel count/list, vessel specs, noon reports (ROB, position), consumption profiles. Uses VesselDetailsClient and vessel performance tools.
 type: specialist
+dataPolicy: vessel-info
 
 domain:
   - vessel_operations

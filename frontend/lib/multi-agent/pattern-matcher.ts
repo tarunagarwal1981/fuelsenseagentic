@@ -18,6 +18,19 @@ import { getCorrelationId } from '@/lib/monitoring/correlation-context';
 // Types
 // ============================================================================
 
+/** Canonical intent types used by the decision framework (original_intent). */
+export const CANONICAL_PATTERN_TYPES = [
+  'bunker_planning',
+  'route_calculation',
+  'weather_analysis',
+  'port_weather',
+  'compliance',
+  'vessel_info',
+  'hull_analysis',
+] as const;
+
+export type CanonicalPatternType = (typeof CANONICAL_PATTERN_TYPES)[number];
+
 export interface PatternMatch {
   /** Whether a pattern was matched */
   matched: boolean;
@@ -26,6 +39,7 @@ export interface PatternMatch {
     | 'port_weather'
     | 'route_calculation'
     | 'bunker_planning'
+    | 'weather_analysis'
     | 'compliance'
     | 'vessel_info'
     | 'hull_analysis'
@@ -185,6 +199,18 @@ const GENERIC_WORDS = ['port', 'there', 'here', 'location', 'place', 'somewhere'
 // ============================================================================
 
 /**
+ * If the LLM intent string is one of the canonical types (user goal), return it as PatternMatch type.
+ * Used so we prefer LLM intent when valid and only fall back to agent_id mapping otherwise.
+ */
+function getCanonicalPatternTypeFromIntent(intent: string): PatternMatch['type'] | null {
+  if (!intent || typeof intent !== 'string') return null;
+  const normalized = intent.trim().toLowerCase();
+  return CANONICAL_PATTERN_TYPES.includes(normalized as CanonicalPatternType)
+    ? (normalized as PatternMatch['type'])
+    : null;
+}
+
+/**
  * Maps agent_id from IntentClassifier to PatternMatch type.
  * Used when LLM intent classification resolves an ambiguous query.
  */
@@ -212,6 +238,17 @@ function intentToPatternType(agent_id: string): PatternMatch['type'] {
 function isBunkerLikeIntent(intent: string): boolean {
   if (!intent || typeof intent !== 'string') return false;
   return intent.toLowerCase().includes('bunker');
+}
+
+/**
+ * Returns true when the classification reasoning indicates the user's goal is
+ * bunkering (e.g. "before proceeding to find bunkering options"). Used when
+ * the first step is entity_extractor so we store original_intent as bunker_planning
+ * and run route_agent + bunker_agent after vessel_info_agent.
+ */
+function isBunkerLikeReasoning(reasoning: string | undefined): boolean {
+  if (!reasoning || typeof reasoning !== 'string') return false;
+  return reasoning.toLowerCase().includes('bunker');
 }
 
 /**
@@ -253,12 +290,24 @@ export async function matchQueryPattern(query: string): Promise<PatternMatch> {
     const latencyMs = Date.now() - llmStart;
 
     if (classification && classification.confidence >= 0.7) {
-      let patternType = intentToPatternType(classification.agent_id);
-      // Multi-step workflow: user asked for bunker options but first step is route.
-      // Preserve overall intent so decision framework runs bunker_agent after route_agent.
+      // Prefer LLM intent when it is a valid canonical type (user goal); else derive from agent_id.
+      let patternType =
+        getCanonicalPatternTypeFromIntent(classification.intent) ??
+        intentToPatternType(classification.agent_id);
+      // Safety net: route_agent chosen but user goal is bunker (intent or reasoning) — e.g. cached/wrong intent.
       if (
         classification.agent_id === 'route_agent' &&
-        isBunkerLikeIntent(classification.intent)
+        patternType !== 'bunker_planning' &&
+        (isBunkerLikeIntent(classification.intent) || isBunkerLikeReasoning(classification.reasoning))
+      ) {
+        patternType = 'bunker_planning';
+      }
+      // User asked for bunkering with a vessel name: LLM routes to entity_extractor first.
+      // Preserve overall intent as bunker_planning so we run route_agent → bunker_agent
+      // after entity_extractor → vessel_info_agent instead of finalizing after vessel info.
+      if (
+        classification.agent_id === 'entity_extractor' &&
+        (isBunkerLikeIntent(classification.intent) || isBunkerLikeReasoning(classification.reasoning))
       ) {
         patternType = 'bunker_planning';
       }

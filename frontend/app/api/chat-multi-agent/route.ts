@@ -12,10 +12,12 @@
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
+import { Command, isGraphInterrupt } from '@langchain/langgraph';
 import { getMultiAgentApp } from '@/lib/multi-agent/graph';
 import { validateMultiAgentStateShape } from '@/lib/multi-agent/state';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { randomUUID } from 'crypto';
+import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
 import { generateCorrelationId, formatLogWithCorrelation } from '@/lib/utils/correlation';
 import { runWithCorrelation } from '@/lib/monitoring/correlation-context';
 import {
@@ -144,6 +146,8 @@ interface MultiAgentRequest {
   thread_id?: string;
   /** For tracing; send on continuation to keep the same ID. */
   correlation_id?: string;
+  /** Resume from HITL interrupt (bunker speed/load). Requires thread_id. */
+  resume?: BunkerHITLResume;
 }
 
 export async function POST(req: Request) {
@@ -178,16 +182,26 @@ export async function POST(req: Request) {
   try {
     // Parse request body
     const body: MultiAgentRequest = await req.json();
-    const { message, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId } = body;
+    const { message, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId, resume } = body;
 
     correlation_id = bodyCorrelationId?.trim() || correlation_id;
-    const thread_id = bodyThreadId?.trim() || randomUUID();
+    const isResume = !!resume && typeof resume === 'object' && typeof resume.speed === 'number' && (resume.load_condition === 'ballast' || resume.load_condition === 'laden');
+    const thread_id = bodyThreadId?.trim() || (isResume ? '' : randomUUID());
+    if (isResume && !thread_id) {
+      return NextResponse.json(
+        { error: 'thread_id is required when resuming from an interrupt.' },
+        { status: 400, headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': correlation_id } }
+      );
+    }
     const isContinuation = !!bodyThreadId?.trim();
     if (isContinuation) {
       console.log(formatLogWithCorrelation(correlation_id, 'Checkpoint recovery: loading state', { thread_id }));
     }
+    if (isResume) {
+      console.log(formatLogWithCorrelation(correlation_id, 'Resuming from HITL', { thread_id, resume }));
+    }
 
-    console.log(formatLogWithCorrelation(correlation_id, 'Request started', { message: message.substring(0, 80) }));
+    console.log(formatLogWithCorrelation(correlation_id, 'Request started', { message: (message || '').substring(0, 80) }));
     console.log('📝 [MULTI-AGENT-API] Request details:');
     console.log(`   - Message: ${message.substring(0, 100)}...`);
     console.log(`   - Selected Route: ${selectedRouteId || 'none'}`);
@@ -206,8 +220,8 @@ export async function POST(req: Request) {
     //   userMessage = `${message}\n\nContext:\n${contextParts.join('\n')}`;
     // }
 
-    // Use the clean user message without any context appending
-    const userMessage = message;
+    // Use the clean user message without any context appending (empty when resuming from HITL)
+    const userMessage = message ?? '';
     const humanMessage = new HumanMessage(userMessage);
 
     // Start performance monitoring
@@ -358,63 +372,46 @@ export async function POST(req: Request) {
             }
           }
 
-          // Build input: for continuation only send the new message (checkpoint has the rest, including correlation_id)
-          const input = isContinuation
-            ? { messages: [humanMessage] }
-            : {
-                messages: [humanMessage],
-                correlation_id,
-                next_agent: '',
-                route_data: initialRouteData,
-                vessel_timeline: null,
-                weather_forecast: null,
-                weather_consumption: null,
-                port_weather_status: null,
-                bunker_ports: null,
-                port_prices: null,
-                bunker_analysis: null,
-                multi_bunker_plan: null,
-                final_recommendation: null,
-                agent_errors: {},
-                agent_status: {},
-                agent_context: null,
-                selected_route_id: selectedRouteId || null,
-              };
+          // Build input: resume from HITL, or normal/continuation
+          const streamInput = isResume
+            ? new Command({ resume })
+            : isContinuation
+              ? { messages: [humanMessage] }
+              : {
+                  messages: [humanMessage],
+                  correlation_id,
+                  next_agent: '',
+                  route_data: initialRouteData,
+                  vessel_timeline: null,
+                  weather_forecast: null,
+                  weather_consumption: null,
+                  port_weather_status: null,
+                  bunker_ports: null,
+                  port_prices: null,
+                  bunker_analysis: null,
+                  multi_bunker_plan: null,
+                  final_recommendation: null,
+                  agent_errors: {},
+                  agent_status: {},
+                  agent_context: null,
+                  selected_route_id: selectedRouteId || null,
+                };
 
-          // Stream graph execution with checkpoint config for persistence and recovery
-          console.log('🎬 [STREAM] Stream started, calling app.stream()...');
-          
-          // Add debug logging before stream call
-          console.log('🔍 [DEBUG] About to call app.stream() with:');
-          console.log('🔍 [DEBUG] initialInput:', JSON.stringify({
-            messages: input.messages?.length || 0,
-            correlation_id: input.correlation_id,
-            hasOtherFields: Object.keys(input).filter(k => k !== 'messages' && k !== 'correlation_id')
-          }, null, 2));
-          
           const streamConfig = {
             streamMode: 'values' as const,
             recursionLimit: 60,
             configurable: { thread_id, correlation_id },
           };
-          console.log('🔍 [DEBUG] streamConfig:', JSON.stringify(streamConfig, null, 2));
-          
-          // THIS IS WHERE IT FAILS - Add detailed logging
+
           let streamResult;
           try {
-            streamResult = await app.stream(input, streamConfig);
-            console.log('✅ [STREAM] app.stream() returned iterator');
+            streamResult = await app.stream(streamInput, streamConfig);
           } catch (streamError) {
             console.error('❌ [STREAM] app.stream() failed:', streamError);
-            console.error('❌ [STREAM] Error name:', streamError instanceof Error ? streamError.name : 'unknown');
-            console.error('❌ [STREAM] Error message:', streamError instanceof Error ? streamError.message : String(streamError));
-            console.error('❌ [STREAM] Error stack:', streamError instanceof Error ? streamError.stack : 'no stack');
-            console.error('❌ [STREAM] initialInput:', JSON.stringify(input, null, 2));
-            console.error('❌ [STREAM] streamConfig:', JSON.stringify(streamConfig, null, 2));
             throw streamError;
           }
 
-          // Process stream events
+          // Process stream events (interrupt throws and is caught below)
           for await (const event of streamResult) {
             // Detect agent transitions and send agent_start events
             if (event.next_agent && event.next_agent !== previousAgent && event.next_agent !== '__end__') {
@@ -714,9 +711,26 @@ export async function POST(req: Request) {
           controller.close();
         } catch (error) {
           const executionTime = Date.now() - startTime;
+          if (isGraphInterrupt(error)) {
+            const interruptValue = (error as { interrupts?: { value: unknown }[] }).interrupts?.[0]?.value;
+            console.log(formatLogWithCorrelation(correlation_id, 'HITL interrupt', { thread_id, interruptValue }));
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: 'interrupt',
+                  data: interruptValue ?? null,
+                  thread_id,
+                  correlation_id,
+                })}\n\n`
+              )
+            );
+            recordRequest(true, executionTime);
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
           const errorMessage = error instanceof Error ? error.message : String(error);
           const errorStack = error instanceof Error ? error.stack : 'no stack';
-          
           console.error('❌ [STREAM] Stream controller error:', error);
           console.error('❌ [STREAM] Full error details:');
           console.error('   Error:', errorMessage);

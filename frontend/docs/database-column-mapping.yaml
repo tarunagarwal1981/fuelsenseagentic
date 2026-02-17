@@ -8,10 +8,12 @@ noon_reports_table:
       - VESSEL_NAME: "Vessel name"
 
     current_rob:
+      # Bunker workflow uses these from datalogs API (data_logs) per data-policy with non_zero_only filter. No Supabase.
       - ROB_VLSFO: "Current Very Low Sulfur Fuel Oil remaining"
       - ROB_LSMGO: "Current Low Sulfur Marine Gas Oil remaining"
       - ROB_MDO: "Current Marine Diesel Oil remaining"
       - ROB_HSFO: "Current Heavy Sulfur Fuel Oil remaining"
+      - ROB_ULSFO: "Current Ultra Low Sulfur Fuel Oil remaining"
       - ROB_LNG: "Current LNG remaining"
 
     current_voyage:
