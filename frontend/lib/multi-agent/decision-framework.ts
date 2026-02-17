@@ -227,15 +227,17 @@ function isAllWorkComplete(match: PatternMatch, state: MultiAgentState): boolean
 function determineNextAgent(match: PatternMatch, state: MultiAgentState): string | null {
   const intent = state.original_intent || match.type;
 
-  // Bunker planning: vessel_info (if vessel name was extracted) -> route -> bunker
+  // Bunker planning: route -> entity_extractor (when no vessel ids) -> vessel_info (if needed) -> bunker
   if (intent === 'bunker_planning') {
     const hasVesselIds =
       state.vessel_identifiers &&
       ((state.vessel_identifiers.names?.length ?? 0) > 0 ||
         (state.vessel_identifiers.imos?.length ?? 0) > 0);
     const hasVesselSpecs = (state.vessel_specs?.length ?? 0) > 0;
-    if (hasVesselIds && !hasVesselSpecs) return 'vessel_info_agent';
+    const entityExtractorRan = state.agent_status?.entity_extractor === 'success';
     if (!state.route_data) return 'route_agent';
+    if (!hasVesselIds && !entityExtractorRan) return 'entity_extractor';
+    if (hasVesselIds && !hasVesselSpecs) return 'vessel_info_agent';
     if (!state.bunker_analysis) return 'bunker_agent';
     return null;
   }

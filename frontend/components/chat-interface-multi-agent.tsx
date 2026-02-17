@@ -86,6 +86,25 @@ function mergeHullCharts(prev: HullChartsState, next: HullChartsState): HullChar
   };
 }
 
+/** Parse "14 knots laden" / "ballast 12 kt" style text into HITL resume values. Returns null if both speed and load cannot be determined. */
+function parseBunkerHitlFromText(
+  text: string
+): { speed: number; load_condition: 'ballast' | 'laden' } | null {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+  let speed: number | null = null;
+  const speedMatch = t.match(/(\d+(?:\.\d+)?)\s*(?:knots?|kt\.?|kts?)?/i);
+  if (speedMatch) {
+    const n = parseFloat(speedMatch[1]);
+    if (Number.isFinite(n) && n >= 1 && n <= 30) speed = Math.round(n * 2) / 2;
+  }
+  let load_condition: 'ballast' | 'laden' | null = null;
+  if (/\bballast\b/.test(t)) load_condition = 'ballast';
+  if (/\bladen\b/.test(t)) load_condition = 'laden';
+  if (speed != null && load_condition != null) return { speed, load_condition };
+  return null;
+}
+
 // Dynamic import for map (prevents SSR issues with Leaflet)
 const MapViewer = dynamic(
   () => import("./map-viewer").then((mod) => mod.MapViewer),
@@ -682,8 +701,18 @@ export function ChatInterfaceMultiAgent() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    submitMessage(input.trim());
+    if (isLoading) return;
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    if (pendingBunkerHitl?.thread_id && (pendingBunkerHitl.data?.type === 'bunker_analysis_input' || !pendingBunkerHitl.data?.type)) {
+      const parsed = parseBunkerHitlFromText(trimmed);
+      if (parsed) {
+        handleResumeBunkerHitl(parsed.speed, parsed.load_condition);
+        setInput('');
+        return;
+      }
+    }
+    submitMessage(trimmed);
     setInput("");
   };
 
@@ -942,44 +971,59 @@ export function ChatInterfaceMultiAgent() {
                 </div>
               )}
               {pendingBunkerHitl && (pendingBunkerHitl.data?.type === 'bunker_analysis_input' || !pendingBunkerHitl.data?.type) && (
-                <Card className="mt-4 p-4 rounded-xl border-2 border-teal-200 dark:border-teal-700 bg-gradient-to-r from-teal-50/80 to-green-50/80 dark:from-teal-950/40 dark:to-green-950/40">
+                <Card className="mt-4 p-4 rounded-xl border-2 border-teal-200 dark:border-teal-700 bg-gradient-to-r from-teal-50/80 to-green-50/80 dark:from-teal-950/40 dark:to-green-950/40 shadow-sm max-w-2xl">
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
                     {pendingBunkerHitl.data?.question ?? 'Please provide sailing speed (knots) and load condition for bunker analysis.'}
                   </p>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="flex flex-col gap-1">
-                      <label htmlFor="hitl-speed" className="text-xs font-medium text-gray-600 dark:text-gray-400">Speed (knots)</label>
-                      <input
-                        id="hitl-speed"
-                        type="number"
-                        min={1}
-                        max={30}
-                        step={0.5}
-                        value={hitlFormSpeed}
-                        onChange={(e) => setHitlFormSpeed(Number(e.target.value) || 12)}
-                        className="w-24 px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-                      />
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Speed (knots)</p>
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Select speed">
+                        {[10, 12, 14, 15, 16, 18].map((knots) => (
+                          <button
+                            key={knots}
+                            type="button"
+                            aria-pressed={hitlFormSpeed === knots}
+                            onClick={() => setHitlFormSpeed(knots)}
+                            className={`min-w-[2.5rem] px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                              hitlFormSpeed === knots
+                                ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-teal-400 dark:hover:border-teal-500'
+                            }`}
+                          >
+                            {knots}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1">
-                      <label htmlFor="hitl-load" className="text-xs font-medium text-gray-600 dark:text-gray-400">Load condition</label>
-                      <select
-                        id="hitl-load"
-                        value={hitlFormLoad}
-                        onChange={(e) => setHitlFormLoad(e.target.value as 'ballast' | 'laden')}
-                        className="px-2.5 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-                      >
-                        <option value="ballast">Ballast</option>
-                        <option value="laden">Laden</option>
-                      </select>
+                    <div>
+                      <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Load condition</p>
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Select load condition">
+                        {(['ballast', 'laden'] as const).map((load) => (
+                          <button
+                            key={load}
+                            type="button"
+                            aria-pressed={hitlFormLoad === load}
+                            onClick={() => setHitlFormLoad(load)}
+                            className={`min-w-[5rem] px-4 py-2 rounded-lg border text-sm font-medium transition-colors capitalize ${
+                              hitlFormLoad === load
+                                ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-teal-400 dark:hover:border-teal-500'
+                            }`}
+                          >
+                            {load}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <Button
                       type="button"
                       size="sm"
                       onClick={() => handleResumeBunkerHitl(hitlFormSpeed, hitlFormLoad)}
                       disabled={isLoading}
-                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                      className="bg-teal-600 hover:bg-teal-700 text-white mt-1"
                     >
-                      Submit
+                      Continue
                     </Button>
                   </div>
                 </Card>

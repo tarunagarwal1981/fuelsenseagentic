@@ -405,14 +405,37 @@ export async function POST(req: Request) {
 
           let streamResult;
           try {
-            streamResult = await app.stream(streamInput, streamConfig);
+            // Cast needed: Command<BunkerHITLResume> uses string for node id; graph expects literal node names
+            streamResult = await app.stream(streamInput as Parameters<typeof app.stream>[0], streamConfig);
           } catch (streamError) {
             console.error('❌ [STREAM] app.stream() failed:', streamError);
             throw streamError;
           }
 
-          // Process stream events (interrupt throws and is caught below)
+          // Process stream events (interrupt may appear as __interrupt__ on a chunk when using stream())
           for await (const event of streamResult) {
+            // Detect HITL interrupt from stream (LangGraph yields __interrupt__ on the chunk instead of throwing)
+            const interruptList = (event as { __interrupt__?: { value?: unknown }[] }).__interrupt__;
+            if (interruptList && Array.isArray(interruptList) && interruptList.length > 0) {
+              const interruptValue = interruptList[0]?.value ?? null;
+              console.log(formatLogWithCorrelation(correlation_id, 'HITL interrupt (from stream)', { thread_id, interruptValue }));
+              clearInterval(keepAliveInterval);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'interrupt',
+                    data: interruptValue,
+                    thread_id,
+                    correlation_id,
+                  })}\n\n`
+                )
+              );
+              recordRequest(true, Date.now() - startTime);
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              controller.close();
+              return;
+            }
+
             // Detect agent transitions and send agent_start events
             if (event.next_agent && event.next_agent !== previousAgent && event.next_agent !== '__end__') {
               console.log(`📤 [STREAM] Agent transition: ${previousAgent} → ${event.next_agent}`);

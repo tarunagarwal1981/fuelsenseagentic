@@ -104,7 +104,7 @@ import type {
   VesselContext,
   VoyageTarget,
 } from '@/lib/types/bunker';
-import { interrupt } from '@langchain/langgraph';
+import { interrupt, isGraphInterrupt } from '@langchain/langgraph';
 import { bunkerDataService } from '@/lib/services/bunker-data-service';
 import { resolveVesselIdentifier } from '@/lib/services/vessel-identifier-service';
 import { getRobFromDatalogs } from '@/lib/services/rob-from-datalogs-service';
@@ -3272,10 +3272,68 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     }
     vesselSpecs = built;
   } else {
+    let specsFromApi: Awaited<ReturnType<typeof bunkerDataService.fetchVesselSpecs>> | null = null;
     try {
-      vesselSpecs = await bunkerDataService.fetchVesselSpecs(imo);
+      specsFromApi = await bunkerDataService.fetchVesselSpecs(imo);
     } catch {
-      vesselSpecs = await bunkerDataService.fetchVesselSpecs(vesselId);
+      try {
+        specsFromApi = await bunkerDataService.fetchVesselSpecs(vesselId);
+      } catch {
+        specsFromApi = null;
+      }
+    }
+    const hasUsableSpecs =
+      specsFromApi &&
+      typeof (specsFromApi as { consumptionRate?: number }).consumptionRate === 'number' &&
+      (specsFromApi as { consumptionRate: number }).consumptionRate > 0 &&
+      typeof (specsFromApi as { tankCapacity?: number }).tankCapacity === 'number' &&
+      (specsFromApi as { tankCapacity: number }).tankCapacity > 0;
+    if (hasUsableSpecs) {
+      vesselSpecs = specsFromApi!;
+    } else {
+      // Fallback: bunker API failed or returned unusable specs — use HITL + performance model so user can still get analysis
+      console.log('🔀 [BUNKER-WORKFLOW] Vessel specs unavailable from API; using HITL + performance model');
+      let speed = state.bunker_analysis_speed;
+      let loadCondition = state.bunker_analysis_load_condition;
+      if (speed == null || loadCondition == null) {
+        const missing: ('speed' | 'load_condition')[] = [];
+        if (speed == null) missing.push('speed');
+        if (loadCondition == null) missing.push('load_condition');
+        const interruptPayload = {
+          type: 'bunker_analysis_input' as const,
+          missing,
+          question:
+            'Please provide sailing speed (knots) and load condition (ballast or laden) for bunker analysis.',
+        };
+        const resumeValue = interrupt(interruptPayload) as BunkerHITLResume;
+        speed = resumeValue.speed;
+        loadCondition = resumeValue.load_condition;
+      }
+      speedKnots = speed;
+      bunkerLoadCondition = loadCondition;
+      const built = await buildVesselSpecsFromPerformance(imo, vesselName, speed, loadCondition, policy ?? undefined);
+      if (!built) {
+        return {
+          agent_status: { ...(state.agent_status || {}), bunker_agent: 'failed' },
+          agent_errors: {
+            bunker_agent: {
+              error: 'No consumption data available for this vessel from the performance model.',
+              timestamp: Date.now(),
+            },
+          },
+          messages: [
+            ...state.messages,
+            new AIMessage({
+              content: JSON.stringify({
+                type: 'bunker_workflow_complete',
+                message: 'No consumption data available for this vessel.',
+                subtype: 'VESSEL_SPECIFIC',
+              }),
+            }),
+          ],
+        };
+      }
+      vesselSpecs = built;
     }
   }
 
@@ -3412,9 +3470,9 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
   const analyzerInput = {
     bunker_ports: portsToUse,
     port_prices,
-    fuel_quantity_mt: Math.max(0, bunkerQuantityMt),
+    fuel_quantity_mt: Math.max(100, Math.max(0, bunkerQuantityMt)),
     fuel_type: 'VLSFO' as const,
-    vessel_speed_knots: 14,
+    vessel_speed_knots: state.bunker_analysis_speed ?? 14,
     vessel_consumption_mt_per_day: vesselSpecs.consumptionRate,
     port_weather: [],
   };
@@ -4067,7 +4125,7 @@ async function handleSimplePortToPort(state: MultiAgentState): Promise<Partial<M
   const analyzerInput = {
     bunker_ports: portsArray,
     port_prices,
-    fuel_quantity_mt: vlsfoRequired,
+    fuel_quantity_mt: Math.max(100, vlsfoRequired),
     fuel_type: 'VLSFO' as const,
     vessel_speed_knots: 14,
     vessel_consumption_mt_per_day: consumptionVlsfo,
@@ -4239,6 +4297,9 @@ export async function bunkerAgentNode(
     }
 
   } catch (error: any) {
+    if (isGraphInterrupt(error)) {
+      throw error;
+    }
     const duration = Date.now() - startTime;
     logError(extractCorrelationId(state), error, { agent: 'bunker_agent' });
     console.error(`❌ [BUNKER-WORKFLOW] Error after ${duration}ms:`, error.message);
@@ -4415,6 +4476,96 @@ function formatSynthesisAsNarrative(state: MultiAgentState): string {
   // ============================================================================
   
   return parts.join('\n');
+}
+
+/**
+ * Format a structured bunker planning summary (voyage, ROB, speed, consumption calc, best port).
+ * Used as the intro text for bunker_planning hybrid responses. No LLM call.
+ */
+function formatBunkerPlanningSummary(state: MultiAgentState): string {
+  const lines: string[] = [];
+  const route = state.route_data;
+  const analysis = state.bunker_analysis;
+  const fuelReq = analysis?.fuel_requirement;
+  const weatherConsumption = state.weather_consumption;
+  const speedKnots = state.bunker_analysis_speed ?? 14;
+
+  // --- Voyage ---
+  if (route) {
+    const origin = (route.origin_port_name ?? route.origin_port_code) || 'Origin';
+    const dest = (route.destination_port_name ?? route.destination_port_code) || 'Destination';
+    const distanceNm = route.distance_nm?.toFixed(0) ?? '—';
+    const days = route.estimated_hours != null ? route.estimated_hours / 24 : null;
+    const daysRounded = days != null ? Math.round(days) : null;
+    lines.push(`**Next voyage:** ${origin} → ${dest}`);
+    lines.push(`**Total distance:** ${distanceNm} nm${daysRounded != null ? ` · ~${daysRounded} days at ${speedKnots} knots` : ''}`);
+  }
+
+  // --- Current ROB ---
+  const vc = analysis?.vessel_context;
+  if (vc?.current_rob != null) {
+    let robStr = `**Current ROB:** ${vc.current_rob.toFixed(0)} MT`;
+    if (state.rob_waypoints?.[0]?.rob_after_action) {
+      const ra = state.rob_waypoints[0].rob_after_action;
+      const vlsfo = 'VLSFO' in ra ? (ra as { VLSFO?: number }).VLSFO : undefined;
+      const lsmgo = 'LSMGO' in ra ? (ra as { LSMGO?: number }).LSMGO : undefined;
+      if (vlsfo != null || lsmgo != null) {
+        const tokens = [];
+        if (vlsfo != null) tokens.push(`${vlsfo.toFixed(0)} MT VLSFO`);
+        if (lsmgo != null) tokens.push(`${lsmgo.toFixed(0)} MT LSMGO`);
+        robStr = `**Current ROB:** ${tokens.join(', ')}`;
+      }
+    }
+    lines.push(robStr);
+  }
+
+  lines.push(`**Speed for next voyage:** ${speedKnots} knots`);
+
+  // --- Consumption calculation (vessel model, days × rate, weather, safety) ---
+  if (fuelReq && route?.estimated_hours != null && route.estimated_hours > 0) {
+    const voyageDays = route.estimated_hours / 24;
+    const weatherFactor = fuelReq.weatherFactorApplied;
+    const baseNoWeather =
+      weatherFactor > 0
+        ? fuelReq.voyageFuelConsumption / weatherFactor
+        : fuelReq.voyageFuelConsumption;
+    const consumptionPerDay = baseNoWeather / voyageDays;
+    const weatherPct =
+      weatherConsumption?.consumption_increase_percent != null
+        ? weatherConsumption.consumption_increase_percent
+        : (weatherFactor - 1) * 100;
+    const totalExpected = fuelReq.requiredFuel ?? fuelReq.voyageFuelConsumption * (1 + (fuelReq.safetyMarginApplied ?? 0.15));
+
+    lines.push('');
+    lines.push('**Total consumption calculation:**');
+    lines.push(
+      `At **${speedKnots} knots**, vessel consumption **${consumptionPerDay.toFixed(1)} MT/day** (from vessel model).`
+    );
+    const daysRounded = Math.round(voyageDays);
+    lines.push(
+      `Voyage **${daysRounded} days** × ${consumptionPerDay.toFixed(1)} MT/day = **${baseNoWeather.toFixed(0)} MT** base.`
+    );
+    if (weatherPct > 0) {
+      lines.push(`× weather adjustment **+${weatherPct.toFixed(1)}%** (forecast) = **${fuelReq.voyageFuelConsumption.toFixed(0)} MT**.`);
+    } else if (weatherFactor !== 1) {
+      lines.push(`× weather factor **${weatherFactor.toFixed(2)}** = **${fuelReq.voyageFuelConsumption.toFixed(0)} MT**.`);
+    }
+    const safetyPct = ((fuelReq.safetyMarginApplied ?? 0.15) * 100).toFixed(0);
+    lines.push(`+ **${safetyPct}%** safety margin → **${totalExpected.toFixed(0)} MT** total required.`);
+  }
+
+  // --- Best bunker option ---
+  const best = analysis?.best_option;
+  if (best) {
+    lines.push('');
+    const portName = best.port_name ?? best.port_code ?? '—';
+    const deviationNm = best.distance_from_route_nm != null ? best.distance_from_route_nm.toFixed(0) : '—';
+    const costUsd = best.total_cost_usd ?? best.fuel_cost_usd;
+    const costStr = costUsd != null ? `$${costUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—';
+    lines.push(`**Best bunker option:** ${portName} — ${deviationNm} nm deviation, ${costStr} total.`);
+  }
+
+  return lines.join('\n\n');
 }
 
 /**
@@ -5438,15 +5589,34 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       // ======================================================================
       console.log(`🎨 [FINALIZE] Building hybrid response with ${renderableComponents.length} components...`);
 
-      const componentManifest = renderableComponents.map((comp) => ({
-        id: comp.id,
-        component: comp.component,
-        props: comp.props,
-        tier: comp.tier,
-        priority: comp.priority,
-      }));
+      const BUNKER_PLANNING_DISPLAY_ORDER: Record<string, number> = {
+        bunker_table: 0,
+        route_map: 1,
+        weather_timeline: 2,
+        eca_compliance: 3,
+      };
 
-      finalTextOutput = await generateContextualText(state, renderableComponents, queryType);
+      const componentManifest = renderableComponents.map((comp) => {
+        const display_order = queryType === 'bunker_planning' ? BUNKER_PLANNING_DISPLAY_ORDER[comp.id] : undefined;
+        const props =
+          queryType === 'bunker_planning' && comp.id === 'bunker_table'
+            ? { ...comp.props, density: 'compact' as const }
+            : comp.props;
+        return {
+          id: comp.id,
+          component: comp.component,
+          props,
+          tier: comp.tier,
+          priority: comp.priority,
+          ...(display_order != null && { display_order }),
+        };
+      });
+
+      if (queryType === 'bunker_planning') {
+        finalTextOutput = formatBunkerPlanningSummary(state);
+      } else {
+        finalTextOutput = await generateContextualText(state, renderableComponents, queryType);
+      }
 
       formattedResponse = {
         type: 'hybrid',

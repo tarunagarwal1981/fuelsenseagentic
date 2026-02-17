@@ -194,7 +194,7 @@ describe('bunker-agent', () => {
       expect(result.agent_status?.bunker_agent).toBe('success');
       expect(result.bunker_analysis).toBeDefined();
       if (result.bunker_analysis && typeof result.bunker_analysis === 'object') {
-        const a = result.bunker_analysis as Record<string, unknown>;
+        const a = result.bunker_analysis as unknown as Record<string, unknown>;
         expect(a.query_type).toBe('VESSEL_SPECIFIC');
         expect(a.vessel_context).toBeDefined();
       }

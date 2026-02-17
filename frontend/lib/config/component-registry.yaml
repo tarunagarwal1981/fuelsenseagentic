@@ -171,7 +171,6 @@ query_type_mappings:
   bunker_planning:
     components:
       - route_map
-      - bunker_comparison
       - bunker_table
       - weather_timeline
       - eca_compliance

@@ -126,6 +126,9 @@ async function testComplianceIntegration() {
         degraded_mode: false,
         missing_data: [],
         routing_metadata: undefined,
+        bunker_analysis_speed: undefined,
+        bunker_analysis_load_condition: undefined,
+        bunker_hitl_pending: undefined,
         original_intent: null,
       };
       

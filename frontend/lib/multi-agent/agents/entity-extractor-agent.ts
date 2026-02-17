@@ -187,17 +187,26 @@ export async function entityExtractorAgentNode(
       return {};
     }
 
-    // Get user query from last message
+    // Get user query from last human message (after route/bunker agents run, last message is not the user's)
     const messages = state.messages || [];
-    const lastMessage = messages[messages.length - 1];
+    const humanMessages = messages.filter((m: any) => m instanceof HumanMessage);
+    const lastHuman = humanMessages.length ? humanMessages[humanMessages.length - 1] : null;
+    const lastHumanContent = lastHuman?.content;
     const userQuery =
-      (typeof lastMessage?.content === 'string'
-        ? lastMessage.content
-        : (lastMessage?.content as { text?: string }[])?.map((c) => c.text ?? '').join('')) || '';
+      (typeof lastHumanContent === 'string'
+        ? lastHumanContent
+        : Array.isArray(lastHumanContent)
+          ? (lastHumanContent as { text?: string }[]).map((c) => (c && typeof c === 'object' && 'text' in c ? (c as { text?: string }).text : '')).join('')
+          : '') || '';
 
     if (!userQuery) {
       console.warn('[ENTITY-EXTRACTOR] ⚠️  No user query found in messages');
-      return {};
+      return {
+        agent_status: {
+          ...(state.agent_status || {}),
+          entity_extractor: 'success',
+        },
+      };
     }
 
     // Regex-first: for hull-style queries, skip LLM and use fast extraction
@@ -223,21 +232,21 @@ export async function entityExtractorAgentNode(
     // Extract entities using LLM - invoke and parse JSON response
     // Support mock response for testing (skips actual LLM call)
     // Timeout to avoid hanging on 529 Overloaded or slow Anthropic API
-    let rawContent: string | object;
-    if (mockResponse !== undefined) {
-      rawContent = mockResponse;
-    } else {
-      const llm = LLMFactory.getLLMForTask('entity_extraction');
-      const response = await withTimeout(
-        llm.invoke([
-          new SystemMessage(ENTITY_EXTRACTION_PROMPT),
-          new HumanMessage(userQuery),
-        ]),
-        ENTITY_EXTRACTOR_LLM_TIMEOUT_MS,
-        `Entity extraction LLM timeout (${ENTITY_EXTRACTOR_LLM_TIMEOUT_MS / 1000}s)`
-      );
-      rawContent = response.content;
-    }
+    const rawContent: string | object =
+      mockResponse !== undefined
+        ? mockResponse
+        : await (async () => {
+            const llm = LLMFactory.getLLMForTask('entity_extraction');
+            const response = await withTimeout(
+              llm.invoke([
+                new SystemMessage(ENTITY_EXTRACTION_PROMPT),
+                new HumanMessage(userQuery),
+              ]),
+              ENTITY_EXTRACTOR_LLM_TIMEOUT_MS,
+              `Entity extraction LLM timeout (${ENTITY_EXTRACTOR_LLM_TIMEOUT_MS / 1000}s)`
+            );
+            return response.content;
+          })();
     const content =
       typeof rawContent === 'string'
         ? rawContent

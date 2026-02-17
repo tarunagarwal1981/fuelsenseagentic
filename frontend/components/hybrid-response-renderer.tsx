@@ -35,6 +35,7 @@ interface ComponentManifest {
   props: Record<string, unknown>;
   tier: number;
   priority: number;
+  display_order?: number;
 }
 
 interface HybridResponseRendererProps {
@@ -155,7 +156,8 @@ function adaptEnhancedBunkerTableProps(props: Record<string, unknown>) {
     compliance_data: complianceData,
   } as MultiAgentState;
   const data = formatBunkerTable(partialState);
-  return { data };
+  const density = props.density as 'default' | 'compact' | undefined;
+  return { data, ...(density && { density }) };
 }
 
 /**
@@ -207,16 +209,33 @@ export function HybridResponseRenderer({
 
   // HYBRID RESPONSE: text + components
   const sortedComponents = (response.components ?? []).sort(
-    (a, b) => a.tier - b.tier || a.priority - b.priority
+    (a, b) => {
+      const aOrder = (a as ComponentManifest).display_order;
+      const bOrder = (b as ComponentManifest).display_order;
+      if (aOrder != null && bOrder != null) return aOrder - bOrder;
+      return a.tier - b.tier || a.priority - b.priority;
+    }
   );
+
+  const isBunkerPlanning = response.query_type === 'bunker_planning';
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* LLM-generated context text */}
+      {/* Intro text: card wrapper for bunker_planning (theme colors), else plain prose */}
       {response.text && (
-        <div className="prose prose-sm max-w-none dark:prose-invert">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{response.text}</ReactMarkdown>
-        </div>
+        isBunkerPlanning ? (
+          <div className="rounded-lg border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
+            <div className="p-4 sm:p-5">
+              <div className="prose prose-sm max-w-none dark:prose-invert text-card-foreground [&_strong]:text-foreground [&_p]:text-muted-foreground [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p:last-child]:text-primary [&_p:last-child]:font-medium [&_p:empty]:hidden">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{response.text}</ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{response.text}</ReactMarkdown>
+          </div>
+        )
       )}
 
       {/* Dynamic components by tier */}
