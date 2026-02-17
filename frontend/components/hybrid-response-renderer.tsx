@@ -271,14 +271,6 @@ export function HybridResponseRenderer({
           </div>
         );
       })}
-
-      {/* Debug info in development */}
-      {process.env.NODE_ENV === 'development' && sortedComponents.length > 0 && (
-        <details className="mt-4 p-3 bg-muted/50 rounded text-xs">
-          <summary className="cursor-pointer font-medium">Debug: Component Manifest</summary>
-          <pre className="mt-2 overflow-auto max-h-48">{JSON.stringify(sortedComponents, null, 2)}</pre>
-        </details>
-      )}
     </div>
   );
 }
