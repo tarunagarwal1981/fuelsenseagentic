@@ -60,10 +60,11 @@ function buildSegmentsFromRoute(
 
 /**
  * Calculate ROB for the voyage using the ROB Tracking Engine.
+ * Uses vesselProfile.initial_rob as ROB at start of voyage (single input for voyage calculations).
  *
  * @param route - Route data (distance, duration, origin, destination)
  * @param weather - Optional weather consumption for avg_multiplier
- * @param vesselProfile - Initial ROB, capacity, consumption rates
+ * @param vesselProfile - Initial ROB (at start of voyage), capacity, consumption rates
  * @param bunkerPort - Optional bunker port (uses name for waypoint)
  * @param bunkerQuantity - Optional fuel to add at bunker port
  * @param ecaSegments - Optional ECA-aware route segments (from compliance_data). When set, ECA engine is used.

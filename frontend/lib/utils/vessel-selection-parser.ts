@@ -4,7 +4,9 @@
  * Parses natural language queries about vessel selection/comparison and extracts
  * structured data: vessel names, next voyage details (origin, destination, date, speed).
  *
- * Used by the Supervisor Agent to populate state before routing to vessel_selection_agent.
+ * Used by the Supervisor Agent as a fallback when LLM extraction (intent classifier
+ * extracted_params) does not provide vessel_names or origin/destination. When the LLM
+ * returns vessel_names and origin_port/destination_port, those take precedence.
  *
  * @example
  * ```ts
@@ -65,10 +67,11 @@ const VESSEL_SELECTION_KEYWORDS = [
 /** Vessel name prefixes (MV, M/V, MT, etc.) */
 const VESSEL_PREFIX_PATTERN = /^(?:MV|M\/V|MT|M\.V\.?|SS)\s+/i;
 
-/** Stop words to exclude from vessel name extraction */
+/** Stop words to exclude from vessel name extraction (expanded to avoid garbage when Pattern 3 is case-insensitive) */
 const VESSEL_STOP_WORDS = new Set([
   'compare', 'which', 'best', 'select', 'vessel', 'ship', 'between', 'among',
   'for', 'the', 'and', 'or', 'is', 'are', 'to', 'from',
+  'soon', 'next', 'voyage', 'completing', 'finishing', 'should', 'take', 'would',
 ]);
 
 // ============================================================================
@@ -119,8 +122,38 @@ export class VesselSelectionQueryParser {
       }
     }
 
-    // Pattern 3: "X and Y" where X and Y look like vessel names (title case or ALL CAPS)
-    const andPattern = /\b([A-Z][A-Za-z0-9\s]{1,}?)\s+and\s+([A-Z][A-Za-z0-9\s]{1,}?)(?=\s+for|\s+from|\s+to|\s+on|\s*$)/g;
+    // Pattern 2b: "I have X and Y" / "I've got X and Y" / "we have X and Y"
+    const havePattern = /(?:I have|I've got|I have got|we have)\s+([A-Za-z0-9\s]+?)\s+and\s+([A-Za-z0-9\s]+?)(?=\s+completing|\s+for|\s+from|\s+to|\s+on|\s+which|\s*$)/i;
+    const haveMatch = trimmed.match(havePattern);
+    if (names.length === 0 && haveMatch) {
+      const parts = [haveMatch[1].trim(), haveMatch[2].trim()];
+      for (const p of parts) {
+        const cleaned = p.replace(VESSEL_PREFIX_PATTERN, '').trim();
+        if (cleaned.length >= 2 && !VESSEL_STOP_WORDS.has(cleaned.toLowerCase()) && !seen.has(p)) {
+          seen.add(p);
+          names.push(p);
+        }
+      }
+    }
+
+    // Pattern 2c: "X and Y completing voyage" / "X and Y finishing"
+    const completingPattern = /([A-Za-z0-9\s]+?)\s+and\s+([A-Za-z0-9\s]+?)\s+(?:completing|finishing)(?=\s+voyage|\s+soon|\s*$)/i;
+    if (names.length === 0) {
+      const completingMatch = trimmed.match(completingPattern);
+      if (completingMatch) {
+        const parts = [completingMatch[1].trim(), completingMatch[2].trim()];
+        for (const p of parts) {
+          const cleaned = p.replace(VESSEL_PREFIX_PATTERN, '').trim();
+          if (cleaned.length >= 2 && !VESSEL_STOP_WORDS.has(cleaned.toLowerCase()) && !seen.has(p)) {
+            seen.add(p);
+            names.push(p);
+          }
+        }
+      }
+    }
+
+    // Pattern 3: "X and Y" where X and Y look like vessel names (case-insensitive: ocean pioneer, Pacific Trader)
+    const andPattern = /\b([A-Za-z][A-Za-z0-9\s]{1,}?)\s+and\s+([A-Za-z][A-Za-z0-9\s]{1,}?)(?=\s+for|\s+from|\s+to|\s+on|\s+completing|\s+which|\s*$)/g;
     if (names.length === 0) {
       for (const m of trimmed.matchAll(andPattern)) {
         const left = m[1].trim();

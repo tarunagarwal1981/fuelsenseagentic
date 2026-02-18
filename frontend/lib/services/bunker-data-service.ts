@@ -80,6 +80,29 @@ function toNumber(v: number | string | undefined | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Normalize ROB snapshot: totalROB = sum of all non-null, non-zero per-fuel values.
+ * Excludes null/undefined and zero so totalROB is consistent and correct for all fuel types.
+ */
+export function normalizeROBSnapshot(snapshot: ROBSnapshot): ROBSnapshot {
+  const perFuel = [
+    snapshot.robVLSFO,
+    snapshot.robLSMGO,
+    snapshot.robMGO,
+    snapshot.robHSFO,
+  ].filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0);
+  const totalFromSum = perFuel.length > 0 ? perFuel.reduce((a, b) => a + b, 0) : null;
+  const totalROB = totalFromSum ?? (typeof snapshot.totalROB === 'number' && Number.isFinite(snapshot.totalROB) ? snapshot.totalROB : 0);
+  return {
+    ...snapshot,
+    totalROB,
+    robVLSFO: snapshot.robVLSFO,
+    robLSMGO: snapshot.robLSMGO,
+    robMGO: snapshot.robMGO,
+    robHSFO: snapshot.robHSFO,
+  };
+}
+
 /** Normalize API row (bunker_pricing table schema or already camelCase) to BunkerPricing. */
 function normalizeBunkerPricingRow(row: RawBunkerPricingRow): BunkerPricing {
   const pricePerMT = toNumber(
@@ -224,10 +247,16 @@ export class BunkerDataService {
    * @param vesselId - Vessel IMO or internal ID
    * @returns ROB snapshot with fuel grades and location
    */
+  /**
+   * Fetch current remaining-on-board snapshot for a vessel.
+   * @param vesselId - Vessel IMO or internal ID
+   * @returns ROB snapshot with fuel grades and location (normalized: totalROB = sum of non-null, non-zero per-fuel values)
+   */
   async fetchCurrentROB(vesselId: string): Promise<ROBSnapshot> {
     const key = cacheKey('rob', vesselId);
     const path = `/vessels/${encodeURIComponent(vesselId)}/rob`;
-    return this.get<ROBSnapshot>(path, { cacheKey: key });
+    const raw = await this.get<ROBSnapshot>(path, { cacheKey: key });
+    return normalizeROBSnapshot(raw);
   }
 
   /**

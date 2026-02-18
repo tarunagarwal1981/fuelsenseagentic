@@ -59,6 +59,7 @@ export interface ROBSnapshot {
   robVLSFO?: number;
   robLSMGO?: number;
   robMGO?: number;
+  robHSFO?: number;
   totalROB: number;
   location?: { lat: number; lon: number } | string;
 }

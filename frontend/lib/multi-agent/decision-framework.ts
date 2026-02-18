@@ -14,6 +14,10 @@
 
 import type { MultiAgentState } from './state';
 import type { PatternMatch } from './pattern-matcher';
+import {
+  getNextAgentFromWorkflow,
+  INTENT_WORKFLOWS,
+} from '@/lib/config/intent-workflows';
 
 // ============================================================================
 // Confidence Thresholds
@@ -188,7 +192,12 @@ const INTENT_REQUIREMENTS: Record<string, (state: MultiAgentState) => boolean> =
   vessel_info: (s) =>
     s.agent_status?.vessel_info_agent === 'success' && !!s.vessel_specs?.length,
   route_calculation: (s) => !!s.route_data,
-  bunker_planning: (s) => !!s.route_data && !!s.bunker_analysis,
+  bunker_planning: (s) => {
+    const baseComplete = !!s.route_data && !!s.bunker_analysis;
+    const vesselComparisonNeeded =
+      (s.vessel_names?.length ?? 0) >= 2 && !s.vessel_comparison_analysis;
+    return baseComplete && !vesselComparisonNeeded;
+  },
   weather_analysis: (s) => !!s.route_data && !!s.weather_forecast,
   compliance: (s) => !!s.route_data && !!s.compliance_data,
   hull_analysis: (s) =>
@@ -227,6 +236,13 @@ function isAllWorkComplete(match: PatternMatch, state: MultiAgentState): boolean
 function determineNextAgent(match: PatternMatch, state: MultiAgentState): string | null {
   const intent = state.original_intent || match.type;
 
+  // Prefer config-driven workflow when defined
+  if (INTENT_WORKFLOWS[intent]) {
+    const next = getNextAgentFromWorkflow(intent, state);
+    if (next != null) return next;
+  }
+
+  // Fallback: legacy hardcoded branches (for intents not in config or when workflow returns null)
   // Bunker planning: route -> entity_extractor (when no vessel ids) -> vessel_info (if needed) -> bunker
   if (intent === 'bunker_planning') {
     const hasVesselIds =
@@ -239,6 +255,7 @@ function determineNextAgent(match: PatternMatch, state: MultiAgentState): string
     if (!hasVesselIds && !entityExtractorRan) return 'entity_extractor';
     if (hasVesselIds && !hasVesselSpecs) return 'vessel_info_agent';
     if (!state.bunker_analysis) return 'bunker_agent';
+    if (!state.vessel_comparison_analysis && (state.vessel_names?.length ?? 0) >= 2) return 'vessel_selection_agent';
     return null;
   }
 

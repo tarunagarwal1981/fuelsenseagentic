@@ -4,6 +4,9 @@
  * Deterministic calculation of bunker requirement for a voyage:
  * voyage consumption, required fuel (with safety margin), and quantity to bunker.
  * Used by vessel-specific bunker planning workflow.
+ *
+ * Callers should pass ROB at start of voyage as currentROB when available;
+ * that value is the single input for voyage calculations (requirement, tracking, comparison).
  */
 
 import type { ROBCalculationParams, BunkerRequirement } from '@/lib/types/bunker';

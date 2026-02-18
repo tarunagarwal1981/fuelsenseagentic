@@ -140,14 +140,14 @@ describe('BunkerDataService', () => {
   });
 
   describe('fetchCurrentROB', () => {
-    it('returns correct ROBSnapshot type', async () => {
-      const data: ROBSnapshot = mockROBSnapshot({ vesselId: 'IMO888', totalROB: 1000 });
+    it('returns normalized ROBSnapshot (totalROB = sum of non-null, non-zero per-fuel)', async () => {
+      const data: ROBSnapshot = mockROBSnapshot({ vesselId: 'IMO888', totalROB: 1000, robVLSFO: 950, robMGO: 50 });
       mockedAxios.get.mockResolvedValueOnce({ data, status: 200 });
 
       const result = await service.fetchCurrentROB('IMO888');
 
       expect(result.vesselId).toBe('IMO888');
-      expect(result.totalROB).toBe(1000);
+      expect(result.totalROB).toBe(1000); // 950 + 50 (normalized sum)
       expect(result.timestamp).toBeDefined();
     });
 

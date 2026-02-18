@@ -30,16 +30,23 @@ const mockVesselProfile = (name: string, robVlsfo: number, robLsmgo: number) => 
   fouling_factor: 1.0,
 });
 
-const mockGetVesselData = jest.fn();
 const mockGetVesselProfile = jest.fn();
 const mockGetDefaultVesselProfile = jest.fn();
 const mockGetVesselForVoyagePlanning = jest.fn();
 const mockProjectROBAtCurrentVoyageEnd = jest.fn();
+const mockResolveVesselIdentifier = jest.fn();
 
 jest.mock('@/lib/services/vessel-service', () => ({
-  getVesselData: (...args: unknown[]) => mockGetVesselData(...args),
   getVesselProfile: (...args: unknown[]) => mockGetVesselProfile(...args),
   getDefaultVesselProfile: () => mockGetDefaultVesselProfile(),
+}));
+
+jest.mock('@/lib/services/vessel-identifier-service', () => ({
+  resolveVesselIdentifier: (...args: unknown[]) => mockResolveVesselIdentifier(...args),
+}));
+
+jest.mock('@/lib/config/config-manager', () => ({
+  getConfigManager: () => ({ getDataPolicy: () => ({ vessel_identifier_source: 'vessel_details_api' }) }),
 }));
 
 jest.mock('@/lib/repositories/service-container', () => ({
@@ -91,8 +98,8 @@ const bunkerAnalysis = {
 describe('VesselSelectionEngine.analyzeVessel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetVesselData.mockReturnValue(null);
-    mockGetVesselProfile.mockReturnValue(null);
+    mockResolveVesselIdentifier.mockResolvedValue({ imo: null, name: null });
+    mockGetVesselProfile.mockResolvedValue(null);
     mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Default (no vessel specified)', 850, 100));
     mockGetVesselForVoyagePlanning.mockResolvedValue(null);
     mockProjectROBAtCurrentVoyageEnd.mockResolvedValue(null);
@@ -101,7 +108,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
   it('should analyze vessel with sufficient ROB (can proceed without bunker)', async () => {
     // Voyage needs ~1005 VLSFO, ~101 LSMGO (11250nm at 14kt, 30/3 per day). Use 1200/150.
     const profile = mockVesselProfile('MV Pacific Star', 1200, 150);
-    mockGetVesselProfile.mockReturnValue(profile);
+    mockGetVesselProfile.mockResolvedValue(profile);
 
     const result = await VesselSelectionEngine.analyzeVessel({
       vessel_name: 'MV Pacific Star',
@@ -118,7 +125,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
 
   it('should analyze vessel needing bunker and generate bunker plan', async () => {
     const profile = mockVesselProfile('MV Low ROB', 100, 20);
-    mockGetVesselProfile.mockReturnValue(profile);
+    mockGetVesselProfile.mockResolvedValue(profile);
 
     const result = await VesselSelectionEngine.analyzeVessel({
       vessel_name: 'MV Low ROB',
@@ -136,7 +143,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
   });
 
   it('should handle invalid vessel name with default profile fallback', async () => {
-    mockGetVesselProfile.mockReturnValue(null);
+    mockGetVesselProfile.mockResolvedValue(null);
     mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Default (no vessel specified)', 850, 100));
 
     const result = await VesselSelectionEngine.analyzeVessel({
@@ -152,7 +159,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
   });
 
   it('should handle missing voyage data (empty origin/destination)', async () => {
-    mockGetVesselProfile.mockReturnValue(mockVesselProfile('MV Test', 500, 50));
+    mockGetVesselProfile.mockResolvedValue(mockVesselProfile('MV Test', 500, 50));
 
     const result = await VesselSelectionEngine.analyzeVessel({
       vessel_name: 'MV Test',
@@ -167,7 +174,7 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
 
   it('should calculate feasibility score correctly', async () => {
     const profile = mockVesselProfile('MV Good ROB', 1000, 150);
-    mockGetVesselProfile.mockReturnValue(profile);
+    mockGetVesselProfile.mockResolvedValue(profile);
 
     const result = await VesselSelectionEngine.analyzeVessel({
       vessel_name: 'MV Good ROB',
@@ -190,12 +197,12 @@ describe('VesselSelectionEngine.analyzeVessel', () => {
 describe('VesselSelectionEngine.compareVessels', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetVesselData.mockReturnValue(null);
+    mockResolveVesselIdentifier.mockResolvedValue({ imo: null, name: null });
     mockGetVesselProfile.mockImplementation((name: string) => {
-      if (name.includes('Pacific')) return mockVesselProfile(name, 900, 120);
-      if (name.includes('Atlantic')) return mockVesselProfile(name, 100, 20);
-      if (name.includes('Ocean')) return mockVesselProfile(name, 800, 90);
-      return null;
+      if (name.includes('Pacific')) return Promise.resolve(mockVesselProfile(name, 900, 120));
+      if (name.includes('Atlantic')) return Promise.resolve(mockVesselProfile(name, 100, 20));
+      if (name.includes('Ocean')) return Promise.resolve(mockVesselProfile(name, 800, 90));
+      return Promise.resolve(null);
     });
     mockGetDefaultVesselProfile.mockReturnValue(mockVesselProfile('Unknown', 850, 100));
     mockGetVesselForVoyagePlanning.mockResolvedValue(null);
@@ -248,7 +255,7 @@ describe('VesselSelectionEngine.compareVessels', () => {
   });
 
   it('should apply max_bunker_cost constraint', async () => {
-    mockGetVesselProfile.mockReturnValue(mockVesselProfile('MV Low ROB', 50, 10));
+    mockGetVesselProfile.mockResolvedValue(mockVesselProfile('MV Low ROB', 50, 10));
 
     const result = await VesselSelectionEngine.compareVessels({
       vessel_names: ['MV A', 'MV B'],
@@ -468,6 +475,24 @@ describe('VesselSelectionQueryParser', () => {
     it('should return empty array for query with no vessel names', () => {
       const result = VesselSelectionQueryParser.extractVesselNames('What is the weather today?');
       expect(result).toEqual([]);
+    });
+
+    it('should extract from "I have X and Y" with lowercase vessel names', () => {
+      const result = VesselSelectionQueryParser.extractVesselNames(
+        'I have ocean pioneer and pacific trader completing voyage soon which vessel should I take'
+      );
+      expect(result).toContain('ocean pioneer');
+      expect(result).toContain('pacific trader');
+      expect(result.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('should extract case-insensitive vessel names from "Compare X and Y"', () => {
+      const result = VesselSelectionQueryParser.extractVesselNames(
+        'Compare ocean pioneer and pacific trader for Singapore to Rotterdam'
+      );
+      expect(result).toContain('ocean pioneer');
+      expect(result).toContain('pacific trader');
+      expect(result.length).toBeGreaterThanOrEqual(2);
     });
   });
 

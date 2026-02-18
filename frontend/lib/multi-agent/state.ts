@@ -91,15 +91,18 @@ export interface RoutingMetadata {
   cost_usd?: number;
   /** Query hash for cache lookup */
   query_hash?: string;
+  /** Intent workflow id (e.g. intent name) when config-driven workflow applies; for observability */
+  workflow_id?: string;
 
   /** Parameters extracted by classifier */
   extracted_params?: {
     vessel_name?: string;
+    vessel_names?: string[];
     imo?: string;
     origin_port?: string;
     destination_port?: string;
     date?: string;
-    [key: string]: string | undefined;
+    [key: string]: string | string[] | undefined;
   };
 }
 

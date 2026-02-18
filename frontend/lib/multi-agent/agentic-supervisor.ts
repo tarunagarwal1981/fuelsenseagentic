@@ -29,6 +29,7 @@ import { AgentRegistry } from './registry';
 import type { MultiAgentState, ReasoningStep, RoutingMetadata } from './state';
 import { matchQueryPattern, type PatternMatch } from './pattern-matcher';
 import { makeRoutingDecision, CONFIDENCE_THRESHOLDS, hasPrerequisites, type DecisionResult } from './decision-framework';
+import { INTENT_WORKFLOWS } from '@/lib/config/intent-workflows';
 import { logIntentClassification, hashQueryForIntent } from '@/lib/monitoring/intent-classification-logger';
 import { SupervisorPromptGenerator } from './supervisor-prompt-generator';
 
@@ -78,6 +79,8 @@ function buildRoutingMetadata(
         destination_port: extracted_data.destination,
         date: extracted_data.date,
         ...(extracted_data.port && { port: extracted_data.port }),
+        ...(extracted_data.vessel_name && { vessel_name: extracted_data.vessel_name }),
+        ...(extracted_data.vessel_names?.length && { vessel_names: extracted_data.vessel_names }),
       }
     : undefined;
 
@@ -89,8 +92,11 @@ function buildRoutingMetadata(
         ? 'pattern_match'
         : 'llm_reasoning');
 
+  const intent = patternMatch.type === 'ambiguous' ? 'unknown' : patternMatch.type;
+  const workflow_id = intent !== 'unknown' && INTENT_WORKFLOWS[intent] ? intent : undefined;
+
   return {
-    matched_intent: options?.matched_intent ?? (patternMatch.type === 'ambiguous' ? 'unknown' : patternMatch.type),
+    matched_intent: options?.matched_intent ?? intent,
     target_agent: decision.agent || 'none',
     confidence: decision.confidence,
     classification_method,
@@ -101,6 +107,7 @@ function buildRoutingMetadata(
     cache_hit: patternMatch.cache_hit ?? false,
     cost_usd: patternMatch.cost_usd ?? 0,
     query_hash: patternMatch.query_hash,
+    ...(workflow_id != null && { workflow_id }),
   };
 }
 
@@ -157,6 +164,8 @@ function buildRoutingMetadataForTier3(
         destination_port: extracted_data.destination,
         date: extracted_data.date,
         ...(extracted_data.port && { port: extracted_data.port }),
+        ...(extracted_data.vessel_name && { vessel_name: extracted_data.vessel_name }),
+        ...(extracted_data.vessel_names?.length && { vessel_names: extracted_data.vessel_names }),
       }
     : undefined;
 

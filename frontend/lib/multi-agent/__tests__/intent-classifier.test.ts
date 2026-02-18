@@ -13,7 +13,7 @@
 // Load environment variables FIRST before any other imports
 import './setup-env';
 
-import { IntentClassifier, type IntentClassification } from '../intent-classifier';
+import { IntentClassifier, type IntentClassification, normalizeVesselNamesFromClassifier } from '../intent-classifier';
 import type { RedisCache } from '@/lib/repositories/cache-client';
 import { registerAllTools } from '@/lib/registry/tools';
 import { registerAllAgents } from '@/lib/registry/agents';
@@ -226,6 +226,63 @@ export async function testIntentClassifier(): Promise<void> {
 }
 
 // ============================================================================
+// Extracted Params Shape (vessel_names, origin_port, destination_port)
+// ============================================================================
+
+export function testExtractedParamsShape(): void {
+  console.log('\n🧪 [INTENT-CLASSIFIER-TEST] Extracted params shape (vessel_names, ports)\n');
+
+  const vesselSelection: IntentClassification = {
+    agent_id: 'vessel_selection_agent',
+    intent: 'bunker_planning',
+    confidence: 0.9,
+    reasoning: 'User comparing two vessels for next voyage',
+    classification_method: 'llm_gpt4o_mini',
+    extracted_params: {
+      origin_port: 'Singapore',
+      destination_port: 'Rotterdam',
+      vessel_names: ['ocean pioneer', 'pacific trader'],
+    },
+  };
+
+  const ok =
+    vesselSelection.extracted_params?.origin_port === 'Singapore' &&
+    vesselSelection.extracted_params?.destination_port === 'Rotterdam' &&
+    Array.isArray(vesselSelection.extracted_params?.vessel_names) &&
+    vesselSelection.extracted_params.vessel_names.length === 2 &&
+    vesselSelection.extracted_params.vessel_names[0] === 'ocean pioneer';
+
+  if (!ok) throw new Error('Extracted params shape test failed');
+  console.log('   ✅ extracted_params with vessel_names (array) and origin_port/destination_port is valid\n');
+}
+
+// ============================================================================
+// vessel_names normalization (comma-separated string -> array)
+// ============================================================================
+
+export function testNormalizeVesselNames(): void {
+  console.log('\n🧪 [INTENT-CLASSIFIER-TEST] normalizeVesselNamesFromClassifier (comma-separated)\n');
+
+  const out1 = normalizeVesselNamesFromClassifier(['ocean pioneer, pacific trader']);
+  if (!out1 || out1.length !== 2 || out1[0] !== 'ocean pioneer' || out1[1] !== 'pacific trader') {
+    throw new Error(`Expected ["ocean pioneer", "pacific trader"], got ${JSON.stringify(out1)}`);
+  }
+  console.log('   ✅ ["ocean pioneer, pacific trader"] -> ["ocean pioneer", "pacific trader"]');
+
+  const out2 = normalizeVesselNamesFromClassifier(['ship one', 'ship two']);
+  if (!out2 || out2.length !== 2 || out2[0] !== 'ship one' || out2[1] !== 'ship two') {
+    throw new Error(`Expected ["ship one", "ship two"], got ${JSON.stringify(out2)}`);
+  }
+  console.log('   ✅ Multiple elements unchanged');
+
+  const out3 = normalizeVesselNamesFromClassifier('single vessel');
+  if (!out3 || out3.length !== 1 || out3[0] !== 'single vessel') {
+    throw new Error(`Expected ["single vessel"], got ${JSON.stringify(out3)}`);
+  }
+  console.log('   ✅ Single string -> [string]\n');
+}
+
+// ============================================================================
 // Error Handling Tests
 // ============================================================================
 
@@ -265,6 +322,8 @@ export async function testIntentClassifierErrorHandling(): Promise<void> {
 
 async function runAll(): Promise<void> {
   try {
+    testExtractedParamsShape();
+    testNormalizeVesselNames();
     await testIntentClassifier();
     await testIntentClassifierErrorHandling();
   } catch (error) {

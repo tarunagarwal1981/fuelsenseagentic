@@ -246,6 +246,53 @@ export async function testDecisionFramework(): Promise<void> {
       expectedAgent: 'finalize',
       description: 'Work complete → finalize',
     },
+    // Vessel selection with LLM-extracted vessel_names and origin/destination
+    {
+      patternMatch: {
+        matched: true,
+        type: 'bunker_planning',
+        agent: 'vessel_selection_agent',
+        confidence: 90,
+        extracted_data: {
+          origin: 'Singapore',
+          destination: 'Rotterdam',
+          vessel_names: ['ocean pioneer', 'pacific trader'],
+        },
+        reason: 'Vessel comparison for next voyage',
+      },
+      state: emptyState,
+      expectedDecision: 'immediate_action',
+      expectedAgent: 'vessel_selection_agent',
+      description: 'LLM-extracted vessel_names and ports → vessel_selection_agent',
+    },
+    // Bunker planning: after bunker_agent success, route to vessel_selection_agent when 2+ vessels
+    {
+      patternMatch: {
+        matched: true,
+        type: 'bunker_planning',
+        agent: 'bunker_agent',
+        confidence: 85,
+        extracted_data: { origin: 'Singapore', destination: 'Rotterdam' },
+        reason: 'Bunker with route',
+      },
+      state: {
+        ...emptyState,
+        original_intent: 'bunker_planning',
+        route_data: {},
+        bunker_analysis: {},
+        vessel_names: ['ocean pioneer', 'pacific trader'],
+        vessel_comparison_analysis: undefined,
+        agent_status: {
+          route_agent: 'success',
+          entity_extractor: 'success',
+          vessel_info_agent: 'success',
+          bunker_agent: 'success',
+        },
+      },
+      expectedDecision: 'immediate_action',
+      expectedAgent: 'vessel_selection_agent',
+      description: 'Bunker done, 2+ vessels, no comparison → vessel_selection_agent',
+    },
     // No Pattern Match - LLM Reasoning
     {
       patternMatch: {

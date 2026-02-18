@@ -163,6 +163,24 @@ components:
     props_mapping:
       data: "hull_performance_charts.speedConsumption"
 
+  # ========================================
+  # Vessel Comparison Card (multi-vessel comparison)
+  # ========================================
+  - id: vessel_comparison_card
+    name: "Vessel Comparison"
+    component: "VesselComparisonCard"
+    description: "Compare multiple vessels for voyage with rankings and recommendation"
+    required_state_fields:
+      - vessel_comparison_analysis
+    render_conditions:
+      - "vessel_comparison_analysis && vessel_comparison_analysis.vessels_analyzed && vessel_comparison_analysis.vessels_analyzed.length > 0"
+    produced_by:
+      - vessel_selection_agent
+    priority: 1
+    tier: 1
+    props_mapping:
+      vesselComparisonAnalysis: "vessel_comparison_analysis"
+
 # ============================================================================
 # Query Type → Component Mappings
 # ============================================================================
@@ -187,6 +205,14 @@ query_type_mappings:
   compliance_check:
     components:
       - route_map
+      - eca_compliance
+
+  vessel_selection:
+    components:
+      - route_map
+      - vessel_comparison_card
+      - bunker_table
+      - weather_timeline
       - eca_compliance
 
 # ============================================================================

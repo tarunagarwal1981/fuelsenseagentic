@@ -223,24 +223,46 @@ function applyCircuitBreaker(
 /**
  * Apply safety validators before returning supervisor routing decision.
  * Overrides next_agent if critical maritime safety rules are violated.
+ *
+ * CASCADING: Re-validates after each override so dependency chains are resolved.
+ * Example: vessel_selection → bunker_agent → route_agent (bunker needs route first)
  */
 function applySafetyValidation(
   state: MultiAgentState,
   update: Partial<MultiAgentState>
 ): Partial<MultiAgentState> {
-  const merged = { ...state, ...update };
-  const safetyCheck = SafetyValidators.validateAll(merged);
-  if (!safetyCheck.valid && safetyCheck.required_agent) {
+  let merged = { ...state, ...update };
+  const overrideReasons: string[] = [];
+  const MAX_CASCADE_DEPTH = 5; // Prevent infinite loops from validator bugs
+
+  for (let i = 0; i < MAX_CASCADE_DEPTH; i++) {
+    const safetyCheck = SafetyValidators.validateAll(merged);
+    if (safetyCheck.valid) break;
+    if (!safetyCheck.required_agent) break;
+
+    // Prevent infinite loop: same override (validator returning same agent)
+    if (safetyCheck.required_agent === merged.next_agent) {
+      console.warn(`⚠️ [SUPERVISOR] Safety cascade stalled at ${merged.next_agent}`);
+      break;
+    }
+
+    overrideReasons.push(safetyCheck.reason ?? 'Unknown');
     console.warn(
       `⚠️ [SUPERVISOR] Safety validation failed, redirecting to ${safetyCheck.required_agent}`
     );
     console.warn(`   Reason: ${safetyCheck.reason}`);
+    merged = { ...merged, next_agent: safetyCheck.required_agent };
+  }
+
+  if (merged.next_agent !== update.next_agent) {
     return {
       ...update,
-      next_agent: safetyCheck.required_agent,
+      next_agent: merged.next_agent,
       messages: [
         ...(Array.isArray(update.messages) ? update.messages : []),
-        new HumanMessage(`[SAFETY VALIDATOR] ${safetyCheck.reason}`),
+        new HumanMessage(
+          `[SAFETY VALIDATOR] ${overrideReasons[overrideReasons.length - 1] ?? 'Safety redirect'}`
+        ),
       ],
     };
   }
@@ -713,6 +735,54 @@ export async function supervisorAgentNode(
   logAgentExecution('supervisor', cid, 0, 'started', { input: summarizeInputForLog(state) });
 
   // ========================================================================
+  // SHARED VESSEL EXTRACTION (all modes – Agentic, Plan, Legacy)
+  // ========================================================================
+  const userMsg = state.messages.find((m) => m instanceof HumanMessage);
+  const userQueryForExtraction =
+    userMsg
+      ? typeof userMsg.content === 'string'
+        ? userMsg.content
+        : String(userMsg.content)
+      : state.messages[0]?.content?.toString() || '';
+  let extractionUpdate: Partial<MultiAgentState> = {};
+  if (userQueryForExtraction) {
+    const parsed = VesselSelectionQueryParser.parseVesselSelectionQuery(userQueryForExtraction);
+    if (parsed && parsed.vessel_names.length >= 2) {
+      extractionUpdate = { vessel_names: parsed.vessel_names };
+      const hasValidVoyageInState =
+        !!state.next_voyage_details?.origin && !!state.next_voyage_details?.destination;
+      if (
+        !hasValidVoyageInState &&
+        (parsed.next_voyage.origin || parsed.next_voyage.destination)
+      ) {
+        extractionUpdate.next_voyage_details = parsed.next_voyage;
+      }
+    }
+  }
+  const mergeExtraction = <T extends Partial<MultiAgentState>>(result: T): T => {
+    let base = { ...extractionUpdate, ...result } as T;
+    const params = (result as Partial<MultiAgentState>).routing_metadata?.extracted_params;
+    if (params) {
+      if (typeof params.origin_port === 'string' && typeof params.destination_port === 'string') {
+        const prev = base.next_voyage_details;
+        base = {
+          ...base,
+          next_voyage_details: {
+            ...(prev && typeof prev === 'object' ? prev : {}),
+            origin: params.origin_port,
+            destination: params.destination_port,
+            ...(typeof params.date === 'string' && params.date ? { departure_date: params.date } : {}),
+          },
+        } as T;
+      }
+      if (Array.isArray(params.vessel_names) && params.vessel_names.length >= 1) {
+        base = { ...base, vessel_names: params.vessel_names } as T;
+      }
+    }
+    return base;
+  };
+
+  // ========================================================================
   // PLAN-BASED SUPERVISOR MODE (NEW - Single LLM Call)
   // ========================================================================
   // Enables: 60% cost reduction, 2-3x speed improvement
@@ -724,7 +794,7 @@ export async function supervisorAgentNode(
     
     try {
       const result = await planBasedSupervisor(state);
-      return applySafetyValidation(state, result);
+      return applySafetyValidation(state, mergeExtraction(result));
     } catch (error) {
       logError(extractCorrelationId(state), error, { agent: 'supervisor' });
       console.error('❌ [SUPERVISOR] Plan-based supervisor failed, falling back to legacy:', error);
@@ -744,7 +814,7 @@ export async function supervisorAgentNode(
       // Dynamic import to avoid circular dependencies
       const { reasoningSupervisor } = await import('./agentic-supervisor');
       const result = await reasoningSupervisor(state);
-      return applySafetyValidation(state, result);
+      return applySafetyValidation(state, mergeExtraction(result));
     } catch (error) {
       logError(extractCorrelationId(state), error, { agent: 'supervisor' });
       console.error('❌ [SUPERVISOR] Agentic supervisor failed, falling back to legacy:', error);
@@ -840,18 +910,43 @@ export async function supervisorAgentNode(
 
   // ========================================================================
   // Vessel Selection Query Detection (priority - before other routing)
+  // Prefer LLM-extracted vessel_names and origin/destination when present.
   // ========================================================================
   const isVesselSelection = VesselSelectionQueryParser.isVesselSelectionQuery(userQuery);
   if (isVesselSelection) {
-    const vesselInput = VesselSelectionQueryParser.parseVesselSelectionQuery(userQuery);
+    const params = state.routing_metadata?.extracted_params;
+    const llmVesselNames = Array.isArray(params?.vessel_names) ? params.vessel_names : [];
+    const hasLLMVoyage =
+      typeof params?.origin_port === 'string' && typeof params?.destination_port === 'string';
 
+    if (llmVesselNames.length >= 2 && hasLLMVoyage) {
+      console.log(`🎯 [SUPERVISOR] Detected vessel selection query for ${llmVesselNames.length} vessels (from LLM extraction)`);
+      const voyage = {
+        origin: params!.origin_port!,
+        destination: params!.destination_port!,
+      };
+      const voyageDesc = `${voyage.origin} to ${voyage.destination}`;
+      const vesselSelectionUpdate = {
+        ...state,
+        vessel_names: llmVesselNames,
+        next_voyage_details: voyage,
+        next_agent: 'vessel_selection_agent' as const,
+        messages: [
+          ...state.messages,
+          new HumanMessage(`Comparing ${llmVesselNames.join(', ')} for ${voyageDesc}`),
+        ],
+      };
+      return applySafetyValidation(state, mergeExtraction(vesselSelectionUpdate));
+    }
+
+    const vesselInput = VesselSelectionQueryParser.parseVesselSelectionQuery(userQuery);
     if (
       vesselInput &&
       vesselInput.vessel_names.length > 1 &&
       vesselInput.next_voyage.origin &&
       vesselInput.next_voyage.destination
     ) {
-      console.log(`🎯 [SUPERVISOR] Detected vessel selection query for ${vesselInput.vessel_names.length} vessels`);
+      console.log(`🎯 [SUPERVISOR] Detected vessel selection query for ${vesselInput.vessel_names.length} vessels (from parser)`);
 
       const voyage = vesselInput.next_voyage;
       const voyageDesc = `${voyage.origin} to ${voyage.destination}`;
@@ -866,24 +961,35 @@ export async function supervisorAgentNode(
           new HumanMessage(`Comparing ${vesselInput.vessel_names.join(', ')} for ${voyageDesc}`),
         ],
       };
-      return applySafetyValidation(state, vesselSelectionUpdate);
+      return applySafetyValidation(state, mergeExtraction(vesselSelectionUpdate));
     }
   }
 
   // ========================================================================
   // Vessel Selection Intent & Extraction (for later routing when not early-returned)
+  // Prefer LLM-extracted vessel_names and origin/destination; use parser as fallback.
   // ========================================================================
   const hasVesselSelectionIntent = isVesselSelection;
 
-  let extractedVesselNames: string[] = state.vessel_names ?? [];
+  const routingParams = state.routing_metadata?.extracted_params;
+  let extractedVesselNames: string[] =
+    state.vessel_names ??
+    (Array.isArray(routingParams?.vessel_names) && routingParams.vessel_names.length > 0
+      ? routingParams.vessel_names
+      : []);
   let extractedNextVoyage: { origin: string; destination: string; departure_date?: string; speed?: number } | undefined =
-    state.next_voyage_details;
+    state.next_voyage_details ??
+    (typeof routingParams?.origin_port === 'string' && typeof routingParams?.destination_port === 'string'
+      ? { origin: routingParams.origin_port, destination: routingParams.destination_port }
+      : undefined);
 
-  if (hasVesselSelectionIntent && extractedVesselNames.length === 0) {
+  if (hasVesselSelectionIntent && (extractedVesselNames.length === 0 || !extractedNextVoyage?.origin)) {
     const parsed = VesselSelectionQueryParser.parseVesselSelectionQuery(userQuery);
     if (parsed) {
-      extractedVesselNames = parsed.vessel_names;
-      if (parsed.next_voyage.origin || parsed.next_voyage.destination) {
+      if (extractedVesselNames.length === 0 && parsed.vessel_names.length > 0) {
+        extractedVesselNames = parsed.vessel_names;
+      }
+      if (!extractedNextVoyage?.origin && (parsed.next_voyage.origin || parsed.next_voyage.destination)) {
         extractedNextVoyage = parsed.next_voyage;
       }
       if (extractedVesselNames.length > 0) {
@@ -1334,12 +1440,12 @@ export async function supervisorAgentNode(
         console.warn('⚠️ [SUPERVISOR] Blocking re-route to bunker_agent after failure');
         return buildBunkerErrorFinalizeReturn(state, agentContext);
       }
-      return applyCircuitBreaker("bunker_agent", state, {
+      return applyCircuitBreaker("bunker_agent", state, mergeExtraction({
         ...legacyOriginalIntentUpdate,
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
-      });
+      }));
     } else {
       // Neither weather nor bunker needed - shouldn't happen, but finalize
       console.log("⚠️ [SUPERVISOR] Weather agent stuck but not needed - finalizing");
@@ -1363,12 +1469,12 @@ export async function supervisorAgentNode(
         return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
       }
       console.log('🎯 [SUPERVISOR] Weather partial, bunker needed → bunker_agent');
-      return applyCircuitBreaker("bunker_agent", state, {
+      return applyCircuitBreaker("bunker_agent", state, mergeExtraction({
         ...legacyOriginalIntentUpdate,
         next_agent: "bunker_agent",
         agent_context: agentContext,
         messages: [],
-      });
+      }));
     } else {
       console.log('🎯 [SUPERVISOR] Weather partial, all requested work done → finalize');
       return {
@@ -1605,12 +1711,12 @@ export async function supervisorAgentNode(
     }
     
     console.log('🎯 [SUPERVISOR] Decision: Route needed but missing → route_agent (prerequisites validated)');
-    return applyCircuitBreaker("route_agent", state, {
+    return applyCircuitBreaker("route_agent", state, mergeExtraction({
       ...legacyOriginalIntentUpdate,
       next_agent: "route_agent",
       agent_context: agentContext,
       messages: [],
-    });
+    }));
   }
   
   // 2. If route is complete (for this query type), check what else is needed based on query intent
@@ -1657,12 +1763,12 @@ export async function supervisorAgentNode(
             return buildBunkerErrorFinalizeReturn(state, agentContext);
           }
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, go to bunker');
-          return applyCircuitBreaker("bunker_agent", state, {
+          return applyCircuitBreaker("bunker_agent", state, mergeExtraction({
             ...legacyOriginalIntentUpdate,
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
-          });
+          }));
         } else {
           console.log('🎯 [SUPERVISOR] Decision: Skip failed weather, finalize with partial data');
           return {
@@ -1681,12 +1787,12 @@ export async function supervisorAgentNode(
         // Skip weather agent, try next priority
       } else {
         console.log('🎯 [SUPERVISOR] Decision: Weather needed and not done → weather_agent (prerequisites validated)');
-        return applyCircuitBreaker("weather_agent", state, {
+        return applyCircuitBreaker("weather_agent", state, mergeExtraction({
           ...legacyOriginalIntentUpdate,
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
-        });
+        }));
       }
     }
     
@@ -1713,22 +1819,22 @@ export async function supervisorAgentNode(
             return buildBunkerErrorFinalizeReturn(state, agentContext);
           }
           // Skip weather consumption, go directly to bunker
-          return applySafetyValidation(state, {
+          return applySafetyValidation(state, mergeExtraction({
             ...legacyOriginalIntentUpdate,
             next_agent: 'bunker_agent',
             agent_context: agentContext,
             messages: [],
-          });
+          }));
         }
         
         // Consumption is needed for bunker planning
         console.log('🎯 [SUPERVISOR] Decision: Weather forecast complete, consumption needed for bunker → weather_agent');
-        return applyCircuitBreaker("weather_agent", state, {
+        return applyCircuitBreaker("weather_agent", state, mergeExtraction({
           ...legacyOriginalIntentUpdate,
           next_agent: "weather_agent",
           agent_context: agentContext,
           messages: [],
-        });
+        }));
       }
       
       // Weather and consumption complete, bunker needed
@@ -1755,12 +1861,12 @@ export async function supervisorAgentNode(
             return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
           }
           console.log('🎯 [SUPERVISOR] Decision: Weather complete, bunker needed → bunker_agent (prerequisites validated)');
-          return applyCircuitBreaker("bunker_agent", state, {
+          return applyCircuitBreaker("bunker_agent", state, mergeExtraction({
             ...legacyOriginalIntentUpdate,
             next_agent: "bunker_agent",
             agent_context: agentContext,
             messages: [],
-          });
+          }));
         }
       }
     }
@@ -1795,12 +1901,12 @@ export async function supervisorAgentNode(
             return { ...legacyOriginalIntentUpdate, ...buildBunkerErrorFinalizeReturn(state, agentContext) };
           }
           console.log('🎯 [SUPERVISOR] Decision: Bunker needed and not done → bunker_agent (prerequisites validated)');
-          return applyCircuitBreaker("bunker_agent", state, {
+          return applyCircuitBreaker("bunker_agent", state, mergeExtraction({
             ...legacyOriginalIntentUpdate,
-            next_agent: "bunker_agent",
-            agent_context: agentContext,
-            messages: [],
-          });
+          next_agent: "bunker_agent",
+          agent_context: agentContext,
+          messages: [],
+          }));
         }
       }
     }
@@ -1839,7 +1945,7 @@ export async function supervisorAgentNode(
           degraded_mode: degradedMode,
           missing_data: missingData,
         };
-        return applySafetyValidation(state, vesselSelectionUpdate);
+        return applySafetyValidation(state, mergeExtraction(vesselSelectionUpdate));
       }
 
       if (vesselNames && vesselNames.length <= 1) {
@@ -1849,27 +1955,27 @@ export async function supervisorAgentNode(
         console.log('🎯 [SUPERVISOR] Skipping vessel_selection: comparison already done');
       }
       console.log('🎯 [SUPERVISOR] Decision: All requested work complete → finalize');
-      return {
+      return mergeExtraction({
         ...legacyOriginalIntentUpdate,
         next_agent: "finalize",
         agent_context: agentContext,
         messages: [],
         degraded_mode: degradedMode,
         missing_data: missingData,
-      };
+      });
     }
     
     // If we reach here, route exists but something is still needed
     // This shouldn't happen, but if it does, finalize with what we have
     console.log('🎯 [SUPERVISOR] Decision: Route complete, finalizing with available data');
-    return {
+    return mergeExtraction({
       ...legacyOriginalIntentUpdate,
       next_agent: "finalize",
       agent_context: agentContext,
       messages: [],
       degraded_mode: degradedMode,
       missing_data: missingData,
-    };
+    });
   }
   
   // 4. Ultimate fallback: Get route (but check if route_agent has failed)
@@ -1891,22 +1997,22 @@ export async function supervisorAgentNode(
     console.log(
       `🎯 [SUPERVISOR] Capability resolver suggests: ${suggestedAgent} (intent: ${capabilityIntent})`
     );
-    return applyCircuitBreaker(suggestedAgent, state, {
+    return applyCircuitBreaker(suggestedAgent, state, mergeExtraction({
       ...legacyOriginalIntentUpdate,
       next_agent: suggestedAgent,
       agent_context: agentContext,
       messages: [],
-    });
+    }));
   }
 
   // 4c. Ultimate fallback: route_agent when capability resolver has no suggestion
   console.log('🎯 [SUPERVISOR] Decision: Fallback → route_agent');
-  return applyCircuitBreaker("route_agent", state, {
+  return applyCircuitBreaker("route_agent", state, mergeExtraction({
     ...legacyOriginalIntentUpdate,
     next_agent: "route_agent",
     agent_context: agentContext,
     messages: [],
-  });
+  }));
 }
 
 /**
@@ -2051,10 +2157,10 @@ function extractFuelRequirements(message: string): {
 
 /**
  * Extract vessel name from user message for ROB lookup.
- * Tries known vessel names first, then "MV X" / "MV X Y" pattern.
+ * Tries known vessel names from API when available, then "MV X" / "MV X Y" pattern.
  */
-function extractVesselNameFromQuery(query: string): string | null {
-  const known = listAllVessels();
+async function extractVesselNameFromQuery(query: string): Promise<string | null> {
+  const known = await listAllVessels();
   for (const name of known) {
     if (query.includes(name)) return name;
   }
@@ -2114,10 +2220,12 @@ export async function routeAgentNode(
       // ======================================================================
       // STEP 1: Get port NAMES from any source (may be names like "Singapore")
       // ======================================================================
-      let originName = state.routing_metadata?.extracted_params?.origin_port
+      const originFromAI = state.routing_metadata?.extracted_params?.origin_port;
+      const destFromAI = state.routing_metadata?.extracted_params?.destination_port;
+      let originName = (typeof originFromAI === 'string' ? originFromAI : undefined)
         ?? state.agent_context?.route_agent?.port_overrides?.origin
         ?? state.port_overrides?.origin;
-      let destName = state.routing_metadata?.extracted_params?.destination_port
+      let destName = (typeof destFromAI === 'string' ? destFromAI : undefined)
         ?? state.agent_context?.route_agent?.port_overrides?.destination
         ?? state.port_overrides?.destination;
       
@@ -2571,8 +2679,14 @@ export async function weatherAgentNode(
     // 2. agent_context (from supervisor)
     // 3. Legacy extraction from query (FALLBACK ONLY)
     // ========================================================================
-    const portFromAI = state.routing_metadata?.extracted_params?.port;
-    const dateFromAI = state.routing_metadata?.extracted_params?.date;
+    const portFromAI =
+      typeof state.routing_metadata?.extracted_params?.port === 'string'
+        ? state.routing_metadata.extracted_params.port
+        : undefined;
+    const dateFromAI =
+      typeof state.routing_metadata?.extracted_params?.date === 'string'
+        ? state.routing_metadata.extracted_params.date
+        : undefined;
     const portFromContext = state.agent_context?.weather_agent?.port;
     const dateFromContext = state.agent_context?.weather_agent?.date;
 
@@ -3362,12 +3476,29 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     }
   }
 
+  // ROB at start of voyage is the single input for voyage calculations. When we have a departure
+  // date, project current ROB to that date and use it for bunker requirement and tank checks.
+  let robForCalculation = currentROB.totalROB;
+  const departureDateRaw = state.next_voyage_details?.departure_date;
+  if (departureDateRaw && route?.distance_nm != null && vesselSpecs?.consumptionRate != null) {
+    const departureDate = typeof departureDateRaw === 'string' ? new Date(departureDateRaw) : departureDateRaw;
+    const now = new Date();
+    if (departureDate.getTime() > now.getTime()) {
+      const daysToDeparture = (departureDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      robForCalculation = Math.max(
+        0,
+        currentROB.totalROB - vesselSpecs.consumptionRate * daysToDeparture
+      );
+      console.log(`🔀 [BUNKER-WORKFLOW] Using ROB at start of voyage: ${robForCalculation.toFixed(1)} MT (current ${currentROB.totalROB.toFixed(1)} MT, ${daysToDeparture.toFixed(0)} days to departure)`);
+    }
+  }
+
   const weatherFactor =
     state.weather_consumption?.consumption_increase_percent != null
       ? 1 + state.weather_consumption.consumption_increase_percent / 100
       : 1.1;
   const bunkerRequirement = calculateBunkerRequirement({
-    currentROB: currentROB.totalROB,
+    currentROB: robForCalculation,
     vesselConsumption: vesselSpecs.consumptionRate,
     routeDistance: route.distance_nm,
     routeEstimatedHours: route.estimated_hours,
@@ -3378,10 +3509,10 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
 
   const tankCapacity = vesselSpecs.tankCapacity;
   const robAfterBunkering = Math.min(
-    currentROB.totalROB + bunkerRequirement.bunkerQuantity,
+    robForCalculation + bunkerRequirement.bunkerQuantity,
     tankCapacity
   );
-  const exceedsCapacity = currentROB.totalROB + bunkerRequirement.bunkerQuantity > tankCapacity;
+  const exceedsCapacity = robForCalculation + bunkerRequirement.bunkerQuantity > tankCapacity;
   const tankValidation = exceedsCapacity
     ? 'split_or_multi_port'
     : robAfterBunkering >= tankCapacity * 0.95
@@ -3411,7 +3542,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
   if (portsToUse.length === 0) {
     const analysisSummary = [
       `Vessel: ${vesselSpecs.vesselName}`,
-      `Current ROB: ${currentROB.totalROB.toFixed(1)} MT`,
+      `${robForCalculation !== currentROB.totalROB ? 'ROB at start of voyage' : 'Current ROB'}: ${robForCalculation.toFixed(1)} MT`,
       `Voyage consumption: ${bunkerRequirement.voyageFuelConsumption.toFixed(1)} MT`,
       `Bunker required: ${bunkerRequirement.bunkerQuantity.toFixed(1)} MT`,
       `Tank capacity: ${tankCapacity} MT`,
@@ -3421,7 +3552,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     const vesselContext: VesselContext = {
       vessel_id: imo,
       vessel_name: vesselSpecs.vesselName,
-      current_rob: currentROB.totalROB,
+      current_rob: robForCalculation,
       tank_capacity: tankCapacity,
     };
     const emptyAnalysis = buildVesselSpecificBunkerAnalysis({
@@ -3443,7 +3574,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
             type: 'bunker_workflow_complete',
             subtype: 'VESSEL_SPECIFIC',
             message: 'No bunker ports found along route.',
-            rob_summary: { current_rob: currentROB.totalROB, required: bunkerRequirement.bunkerQuantity },
+            rob_summary: { current_rob: robForCalculation, required: bunkerRequirement.bunkerQuantity },
             fuel_requirement: bunkerRequirement,
             tank_validation: tankValidation,
             ports_found: 0,
@@ -3466,7 +3597,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
   const pricings = await bunkerDataService.fetchBunkerPricing(portCodesOrNames, fuelTypes);
   const port_prices = bunkerPricingToPriceFetcherOutput(pricings);
 
-  const bunkerQuantityMt = Math.min(bunkerRequirement.bunkerQuantity, tankCapacity - currentROB.totalROB);
+  const bunkerQuantityMt = Math.min(bunkerRequirement.bunkerQuantity, tankCapacity - robForCalculation);
   const analyzerInput = {
     bunker_ports: portsToUse,
     port_prices,
@@ -3487,7 +3618,7 @@ async function handleVesselSpecific(state: MultiAgentState): Promise<Partial<Mul
     console.warn('[BUNKER-WORKFLOW] handleVesselSpecific analyzer error:', err?.message);
   }
 
-  const robBefore = currentROB.totalROB;
+  const robBefore = robForCalculation;
   const recommendedPorts = (bunkerAnalysis?.recommendations ?? []).slice(0, 3).map((rec: any, idx: number) => ({
     port_code: rec.port_code,
     port_name: rec.port_name,
@@ -4569,6 +4700,39 @@ function formatBunkerPlanningSummary(state: MultiAgentState): string {
 }
 
 /**
+ * Format vessel comparison summary (recommended vessel, rankings).
+ * Used as intro text for vessel_selection hybrid responses.
+ */
+function formatVesselComparisonSummary(state: MultiAgentState): string {
+  const vc = state.vessel_comparison_analysis;
+  if (!vc?.vessels_analyzed?.length) return '';
+  const lines: string[] = [];
+  const recommended = vc.recommended_vessel;
+  const rankings = vc.rankings ?? [];
+  if (recommended) {
+    lines.push(`**Recommended vessel:** ${recommended}`);
+  }
+  if (rankings.length > 0) {
+    lines.push('');
+    lines.push('**Rankings:**');
+    (rankings as Array<{ rank?: number; vessel_name?: string; recommendation_reason?: string; total_cost_usd?: number }>)
+      .slice(0, 5)
+      .forEach((r, i) => {
+        const rank = r.rank ?? i + 1;
+        const name = r.vessel_name ?? '—';
+        const reason = r.recommendation_reason ?? '';
+        const cost = r.total_cost_usd != null ? ` · $${r.total_cost_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '';
+        lines.push(`${rank}. **${name}**${cost}${reason ? ` — ${reason}` : ''}`);
+      });
+  }
+  if (vc.analysis_summary) {
+    lines.push('');
+    lines.push(vc.analysis_summary);
+  }
+  return lines.join('\n\n');
+}
+
+/**
  * Generate clarification response for agentic supervisor
  * Called when needs_clarification is true
  */
@@ -5532,7 +5696,7 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
 
     // Prefer original user intent so component selection matches what the user asked for,
     // not the last internal message (e.g. safety validator text classified as route_calculation).
-    const REGISTRY_QUERY_TYPES = ['bunker_planning', 'route_calculation', 'weather_analysis', 'compliance_check'] as const;
+    const REGISTRY_QUERY_TYPES = ['bunker_planning', 'route_calculation', 'weather_analysis', 'compliance_check', 'vessel_selection'] as const;
     const intentFromUser = state.original_intent && REGISTRY_QUERY_TYPES.includes(state.original_intent as typeof REGISTRY_QUERY_TYPES[number])
       ? state.original_intent
       : null;
@@ -5543,6 +5707,10 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
       'unknown';
     if (queryType === 'unknown' && state.bunker_analysis?.recommendations?.length) {
       queryType = 'bunker_planning';
+    }
+    // State-data override: vessel comparison output takes precedence over intent (state is ground truth)
+    if (state.vessel_comparison_analysis?.vessels_analyzed?.length) {
+      queryType = 'vessel_selection';
     }
 
     console.log(`[FINALIZE] Query type: ${queryType}`);
@@ -5595,9 +5763,21 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
         weather_timeline: 2,
         eca_compliance: 3,
       };
+      const VESSEL_SELECTION_DISPLAY_ORDER: Record<string, number> = {
+        route_map: 0,
+        vessel_comparison_card: 1,
+        bunker_table: 2,
+        weather_timeline: 3,
+        eca_compliance: 4,
+      };
 
       const componentManifest = renderableComponents.map((comp) => {
-        const display_order = queryType === 'bunker_planning' ? BUNKER_PLANNING_DISPLAY_ORDER[comp.id] : undefined;
+        const display_order =
+          queryType === 'bunker_planning'
+            ? BUNKER_PLANNING_DISPLAY_ORDER[comp.id]
+            : queryType === 'vessel_selection'
+              ? VESSEL_SELECTION_DISPLAY_ORDER[comp.id]
+              : undefined;
         const props =
           queryType === 'bunker_planning' && comp.id === 'bunker_table'
             ? { ...comp.props, density: 'compact' as const }
@@ -5614,6 +5794,8 @@ ${portWeather.forecast.wind_speed_10m !== undefined && portWeather.forecast.wind
 
       if (queryType === 'bunker_planning') {
         finalTextOutput = formatBunkerPlanningSummary(state);
+      } else if (queryType === 'vessel_selection') {
+        finalTextOutput = formatVesselComparisonSummary(state) || await generateContextualText(state, renderableComponents, queryType);
       } else {
         finalTextOutput = await generateContextualText(state, renderableComponents, queryType);
       }

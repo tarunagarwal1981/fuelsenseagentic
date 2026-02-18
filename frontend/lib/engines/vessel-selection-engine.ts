@@ -4,6 +4,10 @@
  * Deterministic engine for comparing vessels, projecting ROB at voyage end,
  * and ranking vessels by cost and feasibility for voyage planning.
  *
+ * ROB at start of voyage is the single input for all voyage calculations:
+ * we use projected ROB at current voyage end (or fallback: current ROB from API
+ * projected to next voyage departure), then run requirements, bunker plan, and ranking.
+ *
  * Follows the pattern of ROBTrackingEngine and MultiPortBunkerPlanner.
  * Uses VesselService for vessel data and ROB projection.
  */
@@ -20,8 +24,12 @@ import type {
 import type { FuelQuantityMT } from '@/lib/multi-agent/state';
 import type { RouteData } from '@/lib/multi-agent/state';
 import type { VesselProfile } from '@/lib/services/vessel-service';
-import { getVesselProfile, getVesselData, getDefaultVesselProfile } from '@/lib/services/vessel-service';
+import { getVesselProfile, getDefaultVesselProfile, VesselService } from '@/lib/services/vessel-service';
+import { getCurrentStateFromDatalogs } from '@/lib/services/rob-from-datalogs-service';
+import { resolveVesselIdentifier } from '@/lib/services/vessel-identifier-service';
+import { getConfigManager } from '@/lib/config/config-manager';
 import { ServiceContainer } from '@/lib/repositories/service-container';
+import { bunkerDataService } from '@/lib/services/bunker-data-service';
 
 // ============================================================================
 // Constants
@@ -40,13 +48,14 @@ function isIMOString(s: string): boolean {
   return /^\d{7}$/.test(cleaned);
 }
 
-/** Extract IMO from vessel identifier (name or IMO string) */
-function resolveIMO(identifier: string): string | null {
+/** Extract IMO from vessel identifier (name or IMO string) via vessel_details API */
+async function resolveIMO(identifier: string): Promise<string | null> {
   if (isIMOString(identifier)) {
     return identifier.replace(/^IMO\s*/i, '').trim();
   }
-  const vesselData = getVesselData(identifier);
-  return vesselData?.imo ?? null;
+  const policy = getConfigManager().getDataPolicy('bunker');
+  const resolved = await resolveVesselIdentifier({ name: identifier.trim() }, policy);
+  return resolved.imo ?? null;
 }
 
 /** Build VesselProfile from planning data and projected ROB (for ROBTrackingEngine) */
@@ -91,10 +100,10 @@ export class VesselSelectionEngine {
     console.log(`${LOG_PREFIX} Analyzing vessel: ${vessel_name}`);
 
     try {
-      // Resolve vessel identifier to IMO
-      const imo = resolveIMO(vessel_name);
       const container = ServiceContainer.getInstance();
       const vesselService = container.getVesselService();
+      // Resolve vessel identifier to IMO via vessel_details API
+      const imo = await resolveIMO(vessel_name);
 
       let vesselProfile: VesselProfile;
       let currentVoyageEndPort: string;
@@ -129,19 +138,69 @@ export class VesselSelectionEngine {
           );
           console.log(`${LOG_PREFIX} Using VesselService data for IMO ${imo}`);
         } else {
-          console.warn(`${LOG_PREFIX} No planning data for IMO ${imo}, falling back to legacy`);
-          const legacy = getVesselProfile(vessel_name) ?? getDefaultVesselProfile();
-          vesselProfile = legacy;
+          // Fallback: compute ROB at start of voyage from bunker API current ROB + projection to departure
+          const departureDate = next_voyage.departure_date
+            ? new Date(next_voyage.departure_date)
+            : new Date();
           currentVoyageEndPort = next_voyage.origin;
-          currentVoyageEndEta = new Date(next_voyage.departure_date || new Date());
-          projectedROB = {
+          currentVoyageEndEta = departureDate;
+
+          let fallbackProjected: FuelQuantityMT | null = null;
+          try {
+            const snapshot = await bunkerDataService.fetchCurrentROB(imo);
+            const currentVlsfo = snapshot.robVLSFO ?? 0;
+            const currentLsmgo = snapshot.robLSMGO ?? 0;
+            const total = snapshot.totalROB ?? 0;
+            const currentRob =
+              currentVlsfo > 0 || currentLsmgo > 0
+                ? { VLSFO: currentVlsfo, LSMGO: currentLsmgo }
+                : { VLSFO: total, LSMGO: 0 };
+            fallbackProjected = VesselService.projectROBAtFutureDate(
+              currentRob,
+              new Date(),
+              departureDate,
+              DEFAULT_VLSFO_MT_PER_DAY,
+              DEFAULT_LSMGO_MT_PER_DAY
+            );
+            console.log(`${LOG_PREFIX} ROB at start of voyage calculated from bunker API for IMO ${imo}`);
+          } catch {
+            console.warn(`${LOG_PREFIX} Bunker API ROB fetch failed for IMO ${imo}, using legacy profile`);
+          }
+
+          if (fallbackProjected == null) {
+            const stateFromDatalogs = await getCurrentStateFromDatalogs(imo);
+            if (stateFromDatalogs?.current_rob) {
+              const currentRob = {
+                VLSFO: stateFromDatalogs.current_rob.VLSFO ?? 0,
+                LSMGO: stateFromDatalogs.current_rob.LSMGO ?? 0,
+              };
+              fallbackProjected = VesselService.projectROBAtFutureDate(
+                currentRob,
+                new Date(),
+                departureDate,
+                DEFAULT_VLSFO_MT_PER_DAY,
+                DEFAULT_LSMGO_MT_PER_DAY
+              );
+              console.log(`${LOG_PREFIX} ROB at start of voyage from data_logs for IMO ${imo}`);
+            }
+          }
+
+          const legacyProfile = await getVesselProfile(vessel_name, undefined, vesselService);
+          vesselProfile = legacyProfile ?? getDefaultVesselProfile();
+          projectedROB = fallbackProjected ?? {
             VLSFO: vesselProfile.initial_rob.VLSFO,
             LSMGO: vesselProfile.initial_rob.LSMGO,
           };
+          if (fallbackProjected) {
+            vesselProfile = {
+              ...vesselProfile,
+              initial_rob: { VLSFO: projectedROB.VLSFO, LSMGO: projectedROB.LSMGO },
+            };
+          }
         }
       } else {
-        const legacy = getVesselProfile(vessel_name) ?? getDefaultVesselProfile();
-        vesselProfile = legacy;
+        const legacyProfile = await getVesselProfile(vessel_name, undefined, vesselService);
+        vesselProfile = legacyProfile ?? getDefaultVesselProfile();
         currentVoyageEndPort = next_voyage.origin;
         currentVoyageEndEta = new Date(next_voyage.departure_date || new Date());
         projectedROB = {

@@ -20,7 +20,6 @@ import {
   VesselMasterData,
   VesselConsumptionProfile,
 } from './types';
-import * as fs from 'fs/promises';
 import * as path from 'path';
 
 /**
@@ -184,22 +183,6 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
       console.error(`[VesselRepository] Database read error for ${name}:`, error);
     }
 
-    // Step 3: Try JSON fallback
-    try {
-      const allVessels = await this.loadAllVesselsFromFallback();
-      const vessel = allVessels.find(
-        (v) => v.name.toLowerCase() === name.toLowerCase()
-      );
-
-      if (vessel) {
-        await this.cache.set(cacheKey, vessel, this.getCacheTTL());
-        console.log(`[FALLBACK HIT] vessels:name:${name}`);
-        return vessel;
-      }
-    } catch (error) {
-      console.error(`[VesselRepository] Fallback read error for ${name}:`, error);
-    }
-
     console.log(`[NOT FOUND] vessels:name:${name}`);
     return null;
   }
@@ -244,20 +227,6 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
       }
     } catch (error) {
       console.error(`[VesselRepository] Database read error for IMO ${imo}:`, error);
-    }
-
-    // Step 3: Try JSON fallback
-    try {
-      const allVessels = await this.loadAllVesselsFromFallback();
-      const vessel = allVessels.find((v) => v.imo === imo);
-
-      if (vessel) {
-        await this.cache.set(cacheKey, vessel, this.getCacheTTL());
-        console.log(`[FALLBACK HIT] vessels:imo:${imo}`);
-        return vessel;
-      }
-    } catch (error) {
-      console.error(`[VesselRepository] Fallback read error for IMO ${imo}:`, error);
     }
 
     console.log(`[NOT FOUND] vessels:imo:${imo}`);
@@ -392,31 +361,10 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
   }
 
   /**
-   * Load all vessels from JSON fallback file
+   * No longer loads from JSON; vessel data comes from vessel_details and noon_reports only.
    */
   private async loadAllVesselsFromFallback(): Promise<VesselProfile[]> {
-    if (!this.fallbackPath) {
-      return [];
-    }
-
-    try {
-      const filePath = path.join(this.fallbackPath, `${this.tableName}.json`);
-      const fileContent = await fs.readFile(filePath, 'utf-8');
-      const jsonVessels: Record<string, JsonVessel> = JSON.parse(fileContent);
-
-      if (!jsonVessels || typeof jsonVessels !== 'object') {
-        return [];
-      }
-
-      return Object.entries(jsonVessels).map(([name, vessel]) =>
-        mapJsonToVessel(name, vessel)
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error(`[VesselRepository] Error loading fallback:`, error);
-      }
-      return [];
-    }
+    return [];
   }
 
   /**
@@ -456,20 +404,6 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
       }
     } catch (error) {
       console.error(`[VesselRepository] Database read error for ${id}:`, error);
-    }
-
-    // Step 3: Try JSON fallback
-    try {
-      const allVessels = await this.loadAllVesselsFromFallback();
-      const vessel = allVessels.find((v) => v.id === id);
-
-      if (vessel) {
-        await this.cache.set(cacheKey, vessel, this.getCacheTTL());
-        console.log(`[FALLBACK HIT] vessels:${id}`);
-        return vessel;
-      }
-    } catch (error) {
-      console.error(`[VesselRepository] Fallback read error for ${id}:`, error);
     }
 
     console.log(`[NOT FOUND] vessels:${id}`);
@@ -546,15 +480,17 @@ export class VesselRepository extends BaseRepository<VesselProfile> {
       }
 
       // HARDCODED MAPPING (Not LLM decision!)
+      // Optional ROB fields (MDO, HSFO) only when non-null and non-zero (exclude nulls and zeros)
+      const current_rob: VesselCurrentState['current_rob'] = {
+        VLSFO: data.ROB_VLSFO ?? 0,
+        LSMGO: data.ROB_LSMGO ?? 0,
+        ...(data.ROB_MDO != null && Number(data.ROB_MDO) > 0 ? { MDO: Number(data.ROB_MDO) } : {}),
+        ...(data.ROB_HSFO != null && Number(data.ROB_HSFO) > 0 ? { HSFO: Number(data.ROB_HSFO) } : {}),
+      };
       const currentState: VesselCurrentState = {
         vessel_imo: data.VESSEL_IMO ?? '',
         vessel_name: data.VESSEL_NAME ?? '',
-        current_rob: {
-          VLSFO: data.ROB_VLSFO || 0,
-          LSMGO: data.ROB_LSMGO || 0,
-          MDO: data.ROB_MDO,
-          HSFO: data.ROB_HSFO,
-        },
+        current_rob,
         current_voyage: {
           voyage_number: data.VOYAGE_NUMBER ?? '',
           from_port: data.FROM_PORT ?? '',

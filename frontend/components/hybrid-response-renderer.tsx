@@ -11,6 +11,7 @@ import { VoyageTimeline } from './voyage-timeline';
 import { WeatherCard } from './weather-card';
 import { EnhancedBunkerTable } from './enhanced-bunker-table';
 import { SpeedConsumptionChart } from './charts/speed-consumption-chart';
+import { VesselComparisonCard } from './cards/vessel-comparison-card';
 import type { ComplianceCardData, TimelineData } from '@/lib/formatters/component-adapter-types';
 import { formatBunkerTable } from '@/lib/formatters/format-bunker-table';
 import type { MultiAgentState } from '@/lib/multi-agent/state';
@@ -27,6 +28,7 @@ const COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
   WeatherCard,
   EnhancedBunkerTable,
   SpeedConsumptionChart,
+  VesselComparisonCard,
 };
 
 interface ComponentManifest {
@@ -161,6 +163,31 @@ function adaptEnhancedBunkerTableProps(props: Record<string, unknown>) {
 }
 
 /**
+ * Adapt registry props to VesselComparisonCard component props
+ */
+function adaptVesselComparisonCardProps(props: Record<string, unknown>) {
+  const analysis = props.vesselComparisonAnalysis as
+    | {
+        vessels_analyzed?: unknown[];
+        rankings?: unknown[];
+        recommended_vessel?: string;
+        analysis_summary?: string;
+        comparison_matrix?: Record<string, unknown>;
+      }
+    | undefined;
+  if (!analysis?.vessels_analyzed?.length) return { data: { vessels_analyzed: [], rankings: [] } };
+  return {
+    data: {
+      vessels_analyzed: analysis.vessels_analyzed,
+      rankings: analysis.rankings ?? [],
+      recommended_vessel: analysis.recommended_vessel,
+      analysis_summary: analysis.analysis_summary,
+      comparison_matrix: analysis.comparison_matrix,
+    },
+  };
+}
+
+/**
  * Get adapted props for a component based on its type
  */
 function getAdaptedProps(
@@ -182,6 +209,8 @@ function getAdaptedProps(
       return adaptWeatherTimelineProps(props);
     case 'EnhancedBunkerTable':
       return adaptEnhancedBunkerTableProps(props);
+    case 'VesselComparisonCard':
+      return adaptVesselComparisonCardProps(props);
     default:
       return props;
   }
@@ -218,12 +247,13 @@ export function HybridResponseRenderer({
   );
 
   const isBunkerPlanning = response.query_type === 'bunker_planning';
+  const isVesselSelection = response.query_type === 'vessel_selection';
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Intro text: card wrapper for bunker_planning (theme colors), else plain prose */}
+      {/* Intro text: card wrapper for bunker_planning / vessel_selection (theme colors), else plain prose */}
       {response.text && (
-        isBunkerPlanning ? (
+        (isBunkerPlanning || isVesselSelection) ? (
           <div className="rounded-lg border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
             <div className="p-4 sm:p-5">
               <div className="prose prose-sm max-w-none dark:prose-invert text-card-foreground [&_strong]:text-foreground [&_p]:text-muted-foreground [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_p:last-child]:text-primary [&_p:last-child]:font-medium [&_p:empty]:hidden">

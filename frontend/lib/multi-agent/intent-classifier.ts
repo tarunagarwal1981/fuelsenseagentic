@@ -38,10 +38,11 @@ export interface IntentClassification {
   /** Extracted parameters from the query (e.g., ports, vessel names) */
   extracted_params?: {
     vessel_name?: string;
+    vessel_names?: string[];
     origin_port?: string;
     destination_port?: string;
     date?: string;
-    [key: string]: string | undefined;
+    [key: string]: string | string[] | undefined;
   };
   /** Latency of classification in ms (populated by classifier) */
   latency_ms?: number;
@@ -59,6 +60,25 @@ export interface IntentClassification {
 
 const INTENT_CACHE_PREFIX = 'fuelsense:intent:';
 const INTENT_CACHE_TTL = 604800; // 7 days in seconds
+
+/**
+ * Normalize vessel_names from LLM/extracted_params (for tests and reuse).
+ * Splits a single comma-separated string into an array, e.g. ["ocean pioneer, pacific trader"] -> ["ocean pioneer", "pacific trader"].
+ */
+export function normalizeVesselNamesFromClassifier(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw) && raw.every((x) => typeof x === 'string')) {
+    const arr = raw as string[];
+    if (arr.length === 1 && arr[0].includes(',')) {
+      return arr[0]
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return arr;
+  }
+  if (typeof raw === 'string' && raw.trim()) return [raw.trim()];
+  return undefined;
+}
 
 // ============================================================================
 // Cache Key
@@ -128,16 +148,34 @@ ${agentList}
 
 **Rule of thumb:** Use **entity_extractor** only when the user mentions a *specific* vessel (name or IMO) and we need to extract it from the query. Use **vessel_info_agent** when the user wants a list/count/catalog or data that vessel_info_agent fetches (list, specs, noon report, consumption). Use **hull_performance_agent** for any hull/performance/fouling request.
 
+## ENTITY EXTRACTION (extracted_params)
+
+Extract the following from the query when present:
+- **origin_port**: From port (e.g. "Singapore", "Dubai"). For "from X to Y" or "X to Y" or "next voyage X to Y", X is origin.
+- **destination_port**: To port (e.g. "Rotterdam", "Tokyo"). Y is destination.
+- **vessel_name**: Single vessel name when one vessel is mentioned.
+- **vessel_names**: Array of vessel names when the user compares or lists 2+ vessels (e.g. "ocean pioneer and pacific trader" → ["ocean pioneer", "pacific trader"]; "I have X and Y" or "compare X, Y" → list both). Always populate for "which vessel", "compare vessels", "I have X and Y completing voyage" style queries.
+- **date**: Departure or reference date if mentioned.
+
+For vessel comparison / "which vessel" / "I have X and Y" queries: always set **vessel_names** (array) and **origin_port** / **destination_port** for the voyage (e.g. "next voyage Singapore to Rotterdam" → origin_port "Singapore", destination_port "Rotterdam"). Use null or omit keys when not present.
+
 You are a routing classifier. Set **intent** to the user's end goal (from the list above) and **agent_id** to the first agent to run. Respond ONLY with JSON (no markdown code blocks):
 {
   "agent_id": "<agent_id>",
   "intent": "<bunker_planning|route_calculation|weather_analysis|port_weather|compliance|vessel_info|hull_analysis>",
   "confidence": <0-1 number>,
   "reasoning": "<brief explanation>",
-  "extracted_params": { "vessel_name": "...", "origin_port": "...", "destination_port": "...", "date": "..." }
+  "extracted_params": {
+    "origin_port": "<from port or null>",
+    "destination_port": "<to port or null>",
+    "vessel_name": "<single vessel or null>",
+    "vessel_names": ["<vessel1>", "<vessel2>"],
+    "date": "<date or null>"
+  }
 }
 
-Example for "bunker options for vessel X between Singapore and Rotterdam": { "agent_id": "route_agent", "intent": "bunker_planning", "confidence": 0.95, "reasoning": "User wants bunker options; route must be computed first." }
+Example for "bunker options for vessel X between Singapore and Rotterdam": { "agent_id": "route_agent", "intent": "bunker_planning", "confidence": 0.95, "reasoning": "User wants bunker options; route must be computed first.", "extracted_params": { "origin_port": "Singapore", "destination_port": "Rotterdam", "vessel_name": "X", "vessel_names": null, "date": null } }
+Example for "I have ocean pioneer and pacific trader completing voyage soon which vessel should I take for next voyage Singapore to Rotterdam": { "agent_id": "vessel_selection_agent", "intent": "bunker_planning", "confidence": 0.9, "reasoning": "User comparing two vessels for next voyage.", "extracted_params": { "origin_port": "Singapore", "destination_port": "Rotterdam", "vessel_name": null, "vessel_names": ["ocean pioneer", "pacific trader"], "date": null } }
 
 Valid agent IDs must be from the AGENTS list. intent must be one of the seven values above. If ambiguous, use confidence < 0.6.`;
 
@@ -182,13 +220,29 @@ Valid agent IDs must be from the AGENTS list. intent must be one of the seven va
       return null;
     }
 
-    // Normalize extracted_params
+    // Normalize extracted_params (strings + vessel_names array)
     let extractedParams: IntentClassification['extracted_params'] = undefined;
     if (parsed.extracted_params && typeof parsed.extracted_params === 'object') {
       const raw = parsed.extracted_params as Record<string, unknown>;
       extractedParams = {};
       for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'string') extractedParams[k] = v;
+        if (k === 'vessel_names') {
+          const normalized = normalizeVesselNamesFromClassifier(v);
+          if (normalized != null) extractedParams.vessel_names = normalized;
+          else if (typeof v === 'string' && v.trim()) extractedParams.vessel_names = [v.trim()];
+          // omit if missing or invalid (backward compat: cached entries may not have it)
+        } else if (typeof v === 'string') {
+          extractedParams[k] = v;
+        }
+      }
+      // If vessel_names missing but vessel_name present, set vessel_names for downstream
+      if (
+        extractedParams &&
+        (!extractedParams.vessel_names || extractedParams.vessel_names.length === 0) &&
+        typeof extractedParams.vessel_name === 'string' &&
+        extractedParams.vessel_name.trim()
+      ) {
+        extractedParams.vessel_names = [extractedParams.vessel_name.trim()];
       }
     }
 

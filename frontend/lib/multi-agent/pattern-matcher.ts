@@ -10,7 +10,7 @@
  * - Tier 3: LLM Reasoning - Complex queries
  */
 
-import { IntentClassifier } from './intent-classifier';
+import { IntentClassifier, normalizeVesselNamesFromClassifier } from './intent-classifier';
 import { logIntentClassification, hashQueryForIntent } from '@/lib/monitoring/intent-classification-logger';
 import { getCorrelationId } from '@/lib/monitoring/correlation-context';
 
@@ -64,6 +64,8 @@ export interface PatternMatch {
     origin?: string;
     destination?: string;
     date?: string;
+    vessel_name?: string;
+    vessel_names?: string[];
   };
   /** Human-readable reason for the match */
   reason?: string;
@@ -252,17 +254,28 @@ function isBunkerLikeReasoning(reasoning: string | undefined): boolean {
 }
 
 /**
- * Build extracted_data from IntentClassifier extracted_params
+ * Build extracted_data from IntentClassifier extracted_params.
+ * Normalizes vessel_names so a single comma-separated string (e.g. from cache) becomes multiple names.
  */
 function buildExtractedData(
   params: Record<string, unknown>
 ): PatternMatch['extracted_data'] {
   if (!params || typeof params !== 'object') return {};
+  const vesselNames = normalizeVesselNamesFromClassifier(params.vessel_names);
+  const vesselName = typeof params.vessel_name === 'string' ? params.vessel_name : undefined;
+  // Fallback: when only vessel_name exists (e.g. from cache), normalize comma-separated string to array
+  const fallbackNames =
+    vesselName?.trim() &&
+    (vesselName.includes(',')
+      ? vesselName.split(',').map((s) => s.trim()).filter(Boolean)
+      : [vesselName.trim()]);
   return {
     port: typeof params.port === 'string' ? params.port : undefined,
     origin: typeof params.origin_port === 'string' ? params.origin_port : undefined,
     destination: typeof params.destination_port === 'string' ? params.destination_port : undefined,
     date: typeof params.date === 'string' ? params.date : undefined,
+    vessel_name: vesselName,
+    vessel_names: vesselNames?.length ? vesselNames : (fallbackNames?.length ? fallbackNames : undefined),
   };
 }
 

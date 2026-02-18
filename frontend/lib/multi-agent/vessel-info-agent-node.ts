@@ -283,9 +283,11 @@ export async function vesselInfoAgentNode(
     const intent = String(rawIntent).toLowerCase().replace(/\s+/g, '_');
     const extracted = state.routing_metadata?.extracted_params || {};
 
-    const vesselFromAI = extracted.vessel_name;
-    const imoFromAI = extracted.imo;
-    const finalNames = vesselFromAI ? [vesselFromAI] : (state.vessel_identifiers?.names ?? []);
+    const vesselFromAI = typeof extracted.vessel_name === 'string' ? extracted.vessel_name : undefined;
+    const imoFromAI = typeof extracted.imo === 'string' ? extracted.imo : undefined;
+    const namesFromAI =
+      vesselFromAI ? [vesselFromAI] : Array.isArray(extracted.vessel_names) ? extracted.vessel_names : [];
+    const finalNames = namesFromAI.length > 0 ? namesFromAI : (state.vessel_identifiers?.names ?? []);
     const finalImos = imoFromAI ? [imoFromAI] : (state.vessel_identifiers?.imos ?? []);
 
     console.log(`📋 [VESSEL-INFO-AGENT] Intent: ${intent}, Params:`, extracted);
