@@ -147,7 +147,10 @@ export async function getCurrentStateFromDatalogs(
       timestamp: reportDate,
     },
     vessel_activity: '',
-    load_type: '',
+    load_type:
+      typeof row.LOAD_TYPE === 'string' && row.LOAD_TYPE.trim()
+        ? row.LOAD_TYPE.trim()
+        : '',
     last_report_date: reportDate,
   };
 }

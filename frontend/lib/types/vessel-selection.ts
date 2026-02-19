@@ -77,6 +77,22 @@ export interface VesselSelectionInput {
   constraints?: VesselSelectionConstraints;
 }
 
+/** Resume payload after vessel selection HITL (missing speed, load, or current voyage end dates). */
+export interface VesselSelectionHITLResume {
+  speed?: number;
+  load_condition?: 'ballast' | 'laden';
+  /** Key = vessel name or IMO, value = ISO date string (current voyage end date) */
+  current_voyage_end_dates?: Record<string, string>;
+}
+
+/** Interrupt payload when vessel selection needs user input (speed, load, current voyage end dates). */
+export interface VesselSelectionInputInterruptPayload {
+  type: 'vessel_selection_input';
+  missing: ('speed' | 'load_condition' | 'current_voyage_end_dates')[];
+  vessel_names: string[];
+  question: string;
+}
+
 // ============================================================================
 // Cost & Analysis Types
 // ============================================================================
@@ -148,10 +164,14 @@ export interface VesselAnalysisResult {
   current_voyage_end_port: string;
   /** Estimated arrival at current voyage end */
   current_voyage_end_eta: Date;
+  /** Current ROB at query time (when available from data_logs or bunker API); used for display vs projected */
+  current_rob?: FuelQuantityMT;
   /** Projected ROB at start of next voyage (arrival at origin) */
   projected_rob_at_start: FuelQuantityMT;
   /** Fuel required for next voyage (VLSFO + LSMGO) */
   next_voyage_requirements: FuelQuantityMT;
+  /** Tentative arrival date at next voyage destination port (computed from current voyage end + voyage duration) */
+  next_voyage_destination_eta?: Date | string;
   /** Whether vessel can complete next voyage without bunkering */
   can_proceed_without_bunker: boolean;
   /** Bunker plan if bunkering is required */

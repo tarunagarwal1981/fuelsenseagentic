@@ -1,0 +1,22 @@
+# Vessel selection and ROB calculation parameters
+# Used by: VesselSelectionEngine, ROB/bunker helpers
+# Edit this file to change defaults without code changes
+
+id: vessel_selection_calculation
+description: "Default speeds, consumption fallbacks, and safety margins for vessel comparison and ROB projection"
+
+parameters:
+  # Current voyage (to compute ROB at start of next voyage)
+  current_voyage_default_speed_knots: 12
+  default_vlsfo_mt_per_day: 30
+  default_lsmgo_mt_per_day: 3
+
+  # Next voyage defaults when not provided
+  default_speed_knots: 14
+
+  # Safety / buffer (used by multi-port planner, ROB tracking)
+  safety_margin_days: 3
+
+  # Optional: rob-calculator style (if used by vessel selection path)
+  default_weather_factor: 1.1
+  default_safety_margin_percent: 15

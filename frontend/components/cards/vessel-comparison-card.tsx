@@ -31,7 +31,10 @@ import { cn } from '@/lib/utils';
 /** Vessel analysis from state (vessels_analyzed item) */
 interface VesselAnalyzedItem {
   vessel_name: string;
+  /** Current ROB at query time (when available); distinct from projected at voyage start */
+  current_rob?: { VLSFO: number; LSMGO: number };
   projected_rob?: { VLSFO: number; LSMGO: number };
+  next_voyage_destination_eta?: Date | string;
   bunker_plan?: {
     port_name: string;
     total_cost_usd?: number;
@@ -42,9 +45,11 @@ interface VesselAnalyzedItem {
   feasibility?: 'feasible' | 'marginal' | 'infeasible';
   planning_data?: {
     vessel_name: string;
+    current_rob?: { VLSFO: number; LSMGO: number };
     projected_rob_at_start?: { VLSFO: number; LSMGO: number };
     vessel_profile?: { initial_rob?: { VLSFO: number; LSMGO: number } };
     next_voyage_requirements?: { VLSFO: number; LSMGO: number };
+    next_voyage_destination_eta?: Date | string;
     can_proceed_without_bunker?: boolean;
     bunker_plan?: VesselAnalyzedItem['bunker_plan'];
     total_voyage_cost: number;
@@ -108,6 +113,21 @@ function formatCost(usd: number | undefined): string {
   if (usd == null || !Number.isFinite(usd)) return '—';
   if (usd >= 1_000_000) return `$${(usd / 1_000_000).toFixed(1)}M`;
   return `$${usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function formatBunkerQuantity(qty: { VLSFO?: number; LSMGO?: number } | undefined): string {
+  if (!qty) return '';
+  const v = qty.VLSFO ?? 0;
+  const l = qty.LSMGO ?? 0;
+  if (v === 0 && l === 0) return '';
+  return `${v.toFixed(0)} / ${l.toFixed(0)} MT (VLSFO / LSMGO)`;
+}
+
+function formatDestinationETA(eta: Date | string | undefined): string {
+  if (eta == null) return '—';
+  const d = typeof eta === 'string' ? new Date(eta) : eta;
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
 function getFeasibilityConfig(
@@ -314,12 +334,23 @@ export function VesselComparisonCard({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* Current ROB */}
+                {/* Current ROB (at query time; distinct from projected at voyage start) */}
                 <TableRow>
                   <TableCell className="font-medium">Current ROB (VLSFO / LSMGO)</TableCell>
                   {vesselNames.map((name) => {
                     const v = vessels.find((x) => x.vessel_name === name);
-                    const rob = v?.planning_data?.vessel_profile?.initial_rob;
+                    const m = matrix[name] as Record<string, unknown> | undefined;
+                    const rob =
+                      v?.planning_data?.current_rob ??
+                      v?.current_rob ??
+                      (m &&
+                      typeof m.current_rob_vlsfo === 'number' &&
+                      typeof m.current_rob_lsmgo === 'number'
+                        ? {
+                            VLSFO: m.current_rob_vlsfo as number,
+                            LSMGO: m.current_rob_lsmgo as number,
+                          }
+                        : undefined);
                     return (
                       <TableCell key={name} className="text-center">
                         {formatROB(rob)}
@@ -337,7 +368,9 @@ export function VesselComparisonCard({
                     const rob =
                       v?.planning_data?.projected_rob_at_start ??
                       v?.projected_rob ??
-                      (m && 'projected_rob_vlsfo' in m
+                      (m &&
+                      typeof m.projected_rob_vlsfo === 'number' &&
+                      typeof m.projected_rob_lsmgo === 'number'
                         ? {
                             VLSFO: m.projected_rob_vlsfo as number,
                             LSMGO: m.projected_rob_lsmgo as number,
@@ -363,6 +396,15 @@ export function VesselComparisonCard({
                     const bunkerPort =
                       v?.bunker_plan?.port_name ??
                       (m?.bunker_port as string | undefined);
+                    const bunkerQty =
+                      v?.bunker_plan?.bunker_quantity ??
+                      (m?.bunker_quantity_vlsfo != null || m?.bunker_quantity_lsmgo != null
+                        ? {
+                            VLSFO: (m?.bunker_quantity_vlsfo as number) ?? 0,
+                            LSMGO: (m?.bunker_quantity_lsmgo as number) ?? 0,
+                          }
+                        : undefined);
+                    const qtyText = formatBunkerQuantity(bunkerQty);
                     const score = m?.feasibility_score as number | undefined;
                     const feasibilityFromScore =
                       score != null
@@ -379,19 +421,66 @@ export function VesselComparisonCard({
                     const Icon = config.icon;
                     return (
                       <TableCell key={name} className="text-center">
-                        <span className="flex items-center justify-center gap-1.5">
-                          <Icon
-                            className={cn('h-4 w-4', config.className)}
-                            aria-hidden
-                          />
-                          {canProceed ? (
-                            <span className="text-green-600">—</span>
-                          ) : bunkerPort ? (
-                            <span>{bunkerPort}</span>
-                          ) : (
-                            <span className="text-amber-600">Required</span>
+                        <span className="flex flex-col items-center justify-center gap-0.5">
+                          <span className="flex items-center gap-1.5">
+                            <Icon
+                              className={cn('h-4 w-4 shrink-0', config.className)}
+                              aria-hidden
+                            />
+                            {canProceed ? (
+                              <span className="text-green-600">—</span>
+                            ) : bunkerPort ? (
+                              <span>{bunkerPort}</span>
+                            ) : (
+                              <span className="text-amber-600">Required</span>
+                            )}
+                          </span>
+                          {!canProceed && qtyText && (
+                            <span className="text-xs text-muted-foreground">{qtyText}</span>
                           )}
                         </span>
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+
+                {/* Total fuel required for next voyage */}
+                <TableRow>
+                  <TableCell className="font-medium">Total fuel required for next voyage</TableCell>
+                  {vesselNames.map((name) => {
+                    const v = vessels.find((x) => x.vessel_name === name);
+                    const m = matrix[name] as Record<string, unknown> | undefined;
+                    const req = v?.planning_data?.next_voyage_requirements;
+                    const totalMt =
+                      req != null
+                        ? req.VLSFO + req.LSMGO
+                        : (m?.next_voyage_total_fuel_mt as number | undefined) ??
+                          (typeof m?.next_voyage_vlsfo_req === 'number' && typeof m?.next_voyage_lsmgo_req === 'number'
+                            ? (m.next_voyage_vlsfo_req as number) + (m.next_voyage_lsmgo_req as number)
+                            : undefined);
+                    return (
+                      <TableCell key={name} className="text-center">
+                        {totalMt != null && Number.isFinite(totalMt)
+                          ? `${totalMt.toFixed(0)} MT`
+                          : '—'}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+
+                {/* Tentative destination arrival */}
+                <TableRow>
+                  <TableCell className="font-medium">Tentative destination arrival</TableCell>
+                  {vesselNames.map((name) => {
+                    const v = vessels.find((x) => x.vessel_name === name);
+                    const m = matrix[name] as Record<string, unknown> | undefined;
+                    const eta =
+                      v?.planning_data?.next_voyage_destination_eta ??
+                      v?.next_voyage_destination_eta ??
+                      (m?.next_voyage_destination_eta as string | undefined);
+                    return (
+                      <TableCell key={name} className="text-center">
+                        {formatDestinationETA(eta)}
                       </TableCell>
                     );
                   })}

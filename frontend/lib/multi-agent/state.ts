@@ -1161,6 +1161,15 @@ export const MultiAgentStateAnnotation = Annotation.Root({
   }),
 
   /**
+   * Per-vessel current voyage end date (ISO date string).
+   * Key = vessel name or IMO, value = when current voyage ends. Populated from query or HITL resume.
+   */
+  vessel_current_voyage_end_dates: Annotation<Record<string, string> | undefined>({
+    reducer: (x, y) => (y != null ? y : x),
+    default: () => undefined,
+  }),
+
+  /**
    * Aggregate vessel comparison analysis result.
    * Contains vessels_analyzed, rankings, recommended_vessel, analysis_summary, comparison_matrix.
    * Populated by Vessel Selection Agent when analysis completes.

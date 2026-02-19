@@ -28,6 +28,8 @@ export interface DatalogRow {
   DISTANCETOGO?: number;
   FROM_PORT?: string;
   TO_PORT?: string;
+  /** Load condition from latest report (e.g. Ballast, Laden) - used for current voyage consumption */
+  LOAD_TYPE?: string;
   [key: string]: unknown;
 }
 

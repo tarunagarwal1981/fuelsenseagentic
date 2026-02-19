@@ -57,6 +57,7 @@ import type { ExcessPowerChartData } from '@/lib/services/charts/excess-power-ch
 import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
 import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
 import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
+import type { VesselSelectionHITLResume, VesselSelectionInputInterruptPayload } from '@/lib/types/vessel-selection';
 
 type HullChartsState = {
   excessPower?: ExcessPowerChartData | null;
@@ -211,6 +212,15 @@ export function ChatInterfaceMultiAgent() {
   } | null>(null);
   const [hitlFormSpeed, setHitlFormSpeed] = useState(12);
   const [hitlFormLoad, setHitlFormLoad] = useState<'ballast' | 'laden'>('laden');
+  /** When set, show HITL form for vessel selection (speed, load, per-vessel current voyage end date); on submit send resume */
+  const [pendingVesselSelectionHitl, setPendingVesselSelectionHitl] = useState<{
+    thread_id: string;
+    data: VesselSelectionInputInterruptPayload;
+  } | null>(null);
+  const [vesselSelectionHitlSpeed, setVesselSelectionHitlSpeed] = useState(12);
+  const [vesselSelectionHitlLoad, setVesselSelectionHitlLoad] = useState<'ballast' | 'laden'>('ballast');
+  /** Vessel name -> ISO date string for current voyage end date */
+  const [vesselSelectionHitlEndDates, setVesselSelectionHitlEndDates] = useState<Record<string, string>>({});
   const [cachedRoutes] = useState((cachedRoutesData.routes || []) as Array<{
     id: string;
     origin_port_code: string;
@@ -328,7 +338,7 @@ export function ChatInterfaceMultiAgent() {
 
   const submitMessage = async (
     messageText: string,
-    options?: { resume: BunkerHITLResume; thread_id: string }
+    options?: { resume: BunkerHITLResume | VesselSelectionHITLResume; thread_id: string }
   ) => {
     const trimmed = messageText.trim();
     const isResume = Boolean(options?.resume && options?.thread_id);
@@ -353,7 +363,7 @@ export function ChatInterfaceMultiAgent() {
     }
     setIsLoading(true);
     setCurrentAgent("supervisor");
-    setThinkingState(isResume ? "Resuming bunker analysis..." : "🎯 Planning analysis...");
+    setThinkingState(isResume ? "Resuming..." : "🎯 Planning analysis...");
     if (!isResume) {
       setAgentActivities([]);
       setPerformanceMetrics(null);
@@ -361,7 +371,7 @@ export function ChatInterfaceMultiAgent() {
       setHullPerformanceCharts(null);
       addAgentLog("supervisor", "Starting analysis...", "start");
     } else {
-      addAgentLog("supervisor", "Resuming with speed/load...", "start");
+      addAgentLog("supervisor", "Resuming with input...", "start");
     }
 
     const startTime = Date.now();
@@ -456,13 +466,27 @@ export function ChatInterfaceMultiAgent() {
                     // thread_id and correlation_id for continuity; interrupt event carries thread_id for resume
                     break;
 
-                  case "interrupt":
-                    setPendingBunkerHitl({
-                      thread_id: data.thread_id ?? "",
-                      data: (data.data as { type?: string; question?: string; missing?: string[] }) ?? {},
-                    });
+                  case "interrupt": {
+                    const payload = data.data as { type?: string; question?: string; missing?: string[]; vessel_names?: string[] } | undefined;
+                    if (payload?.type === 'vessel_selection_input' && Array.isArray(payload.vessel_names)) {
+                      setPendingVesselSelectionHitl({
+                        thread_id: data.thread_id ?? "",
+                        data: payload as VesselSelectionInputInterruptPayload,
+                      });
+                      setPendingBunkerHitl(null);
+                      const initialDates: Record<string, string> = {};
+                      (payload.vessel_names as string[]).forEach((v) => { initialDates[v] = ''; });
+                      setVesselSelectionHitlEndDates(initialDates);
+                    } else {
+                      setPendingVesselSelectionHitl(null);
+                      setPendingBunkerHitl({
+                        thread_id: data.thread_id ?? "",
+                        data: payload ?? {},
+                      });
+                    }
                     streamEndedByInterrupt = true;
                     break;
+                  }
 
                   case "agent_start":
                     setCurrentAgent(data.agent);
@@ -712,6 +736,8 @@ export function ChatInterfaceMultiAgent() {
         return;
       }
     }
+    setPendingBunkerHitl(null);
+    setPendingVesselSelectionHitl(null);
     submitMessage(trimmed);
     setInput("");
   };
@@ -721,6 +747,20 @@ export function ChatInterfaceMultiAgent() {
     const thread_id = pendingBunkerHitl.thread_id;
     setPendingBunkerHitl(null);
     submitMessage('', { resume: { speed, load_condition }, thread_id });
+  };
+
+  const handleResumeVesselSelectionHitl = (
+    speed: number,
+    load_condition: 'ballast' | 'laden',
+    current_voyage_end_dates: Record<string, string>
+  ) => {
+    if (!pendingVesselSelectionHitl?.thread_id || isLoading) return;
+    const thread_id = pendingVesselSelectionHitl.thread_id;
+    setPendingVesselSelectionHitl(null);
+    submitMessage('', {
+      resume: { speed, load_condition, current_voyage_end_dates },
+      thread_id,
+    });
   };
 
   const handleRequestHullAnalysis = (vesselName: string) => {
@@ -1021,6 +1061,103 @@ export function ChatInterfaceMultiAgent() {
                       size="sm"
                       onClick={() => handleResumeBunkerHitl(hitlFormSpeed, hitlFormLoad)}
                       disabled={isLoading}
+                      className="bg-teal-600 hover:bg-teal-700 text-white mt-1"
+                    >
+                      Continue
+                    </Button>
+                  </div>
+                </Card>
+              )}
+              {pendingVesselSelectionHitl && pendingVesselSelectionHitl.data.type === 'vessel_selection_input' && (
+                <Card className="mt-4 p-4 rounded-xl border-2 border-teal-200 dark:border-teal-700 bg-gradient-to-r from-teal-50/80 to-green-50/80 dark:from-teal-950/40 dark:to-green-950/40 shadow-sm max-w-2xl">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
+                    {pendingVesselSelectionHitl.data.question}
+                  </p>
+                  <div className="space-y-3">
+                    {pendingVesselSelectionHitl.data.missing?.includes('speed') && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Speed (knots)</p>
+                        <div className="flex flex-wrap gap-2" role="group" aria-label="Select speed">
+                          {[10, 12, 14, 15, 16, 18].map((knots) => (
+                            <button
+                              key={knots}
+                              type="button"
+                              aria-pressed={vesselSelectionHitlSpeed === knots}
+                              onClick={() => setVesselSelectionHitlSpeed(knots)}
+                              className={`min-w-[2.5rem] px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                                vesselSelectionHitlSpeed === knots
+                                  ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-teal-400 dark:hover:border-teal-500'
+                              }`}
+                            >
+                              {knots}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {pendingVesselSelectionHitl.data.missing?.includes('load_condition') && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Load condition</p>
+                        <div className="flex flex-wrap gap-2" role="group" aria-label="Select load condition">
+                          {(['ballast', 'laden'] as const).map((load) => (
+                            <button
+                              key={load}
+                              type="button"
+                              aria-pressed={vesselSelectionHitlLoad === load}
+                              onClick={() => setVesselSelectionHitlLoad(load)}
+                              className={`min-w-[5rem] px-4 py-2 rounded-lg border text-sm font-medium transition-colors capitalize ${
+                                vesselSelectionHitlLoad === load
+                                  ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-teal-400 dark:hover:border-teal-500'
+                              }`}
+                            >
+                              {load}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {pendingVesselSelectionHitl.data.missing?.includes('current_voyage_end_dates') && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Current voyage end date (per vessel)</p>
+                        <div className="space-y-2">
+                          {pendingVesselSelectionHitl.data.vessel_names.map((vesselName) => (
+                            <div key={vesselName} className="flex items-center gap-2 flex-wrap">
+                              <label className="text-xs text-gray-700 dark:text-gray-300 min-w-[8rem]">{vesselName}</label>
+                              <input
+                                type="date"
+                                value={vesselSelectionHitlEndDates[vesselName] ?? ''}
+                                onChange={(e) =>
+                                  setVesselSelectionHitlEndDates((prev) => ({
+                                    ...prev,
+                                    [vesselName]: e.target.value || '',
+                                  }))
+                                }
+                                className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() =>
+                        handleResumeVesselSelectionHitl(
+                          vesselSelectionHitlSpeed,
+                          vesselSelectionHitlLoad,
+                          vesselSelectionHitlEndDates
+                        )
+                      }
+                      disabled={
+                        isLoading ||
+                        (pendingVesselSelectionHitl.data.missing?.includes('current_voyage_end_dates') &&
+                          pendingVesselSelectionHitl.data.vessel_names.some(
+                            (v) => !(vesselSelectionHitlEndDates[v] ?? '').trim()
+                          ))
+                      }
                       className="bg-teal-600 hover:bg-teal-700 text-white mt-1"
                     >
                       Continue

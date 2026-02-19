@@ -74,6 +74,7 @@ export class ConfigManager {
         this.loadBusinessRules(),
         this.loadFeatureFlags(),
         this.loadDataPolicies(),
+        this.loadEngineParams(),
       ]);
 
       this.loaded = true;
@@ -204,6 +205,23 @@ export class ConfigManager {
       console.log(`   📂 Data policies: ${policyFiles.size} loaded`);
     } catch (error) {
       console.log(`   📂 Data policies: 0 loaded (directory may not exist)`);
+    }
+  }
+
+  /**
+   * Load engine calculation parameters (vessel selection, ROB, etc.)
+   * Used by engines to read defaults from YAML instead of hardcoded constants.
+   */
+  async loadEngineParams(): Promise<void> {
+    try {
+      const paramFiles = loadAllYAMLFromDirectory<{ id?: string; description?: string; parameters?: Record<string, number> }>('engine-params');
+      paramFiles.forEach((content, id) => {
+        const paramId = content?.id ?? id;
+        this.configs.set(`engine-params:${paramId}`, content);
+      });
+      console.log(`   ⚙️ Engine params: ${paramFiles.size} loaded`);
+    } catch (error) {
+      console.log(`   ⚙️ Engine params: 0 loaded (directory may not exist)`);
     }
   }
 
@@ -390,6 +408,13 @@ export class ConfigManager {
       }
     });
     return workflows;
+  }
+
+  /**
+   * Get engine calculation parameters by ID (e.g. vessel_selection_calculation)
+   */
+  getEngineParams(paramId: string): { id?: string; description?: string; parameters?: Record<string, number> } | undefined {
+    return this.get(`engine-params:${paramId}`);
   }
 
   /**

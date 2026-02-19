@@ -114,6 +114,7 @@ import {
 } from '@/lib/services/vessel-specs-from-performance';
 import { getConfigManager } from '@/lib/config/config-manager';
 import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
+import type { VesselSelectionHITLResume } from '@/lib/types/vessel-selection';
 import type { PriceFetcherOutput, PriceData } from '@/lib/tools/price-fetcher';
 import { calculateBunkerRequirement } from '@/lib/engines/rob-calculator';
 import { compareVesselsForVoyage } from '@/lib/engines/fleet-optimizer';
@@ -5010,26 +5011,65 @@ export async function vesselSelectionAgentNode(
     console.log('✅ [VESSEL-SELECTION-AGENT] Prerequisites met: vessel_names and next_voyage_details');
 
     // ========================================================================
-    // Step 2: Parallel vessel analysis
+    // HITL: Collect speed, load condition, and per-vessel current voyage end date if missing
     // ========================================================================
+    let speed: number | undefined = state.next_voyage_details.speed;
+    let loadCondition: 'ballast' | 'laden' | undefined =
+      state.next_voyage_details.cargo_type === 'ballast' || state.next_voyage_details.cargo_type === 'laden'
+        ? state.next_voyage_details.cargo_type
+        : undefined;
+    let vesselCurrentVoyageEndDates: Record<string, string> | undefined = state.vessel_current_voyage_end_dates;
+
+    const vesselNames = state.vessel_names;
+    const allHaveEndDates =
+      vesselNames?.length &&
+      vesselNames.every(
+        (v) => vesselCurrentVoyageEndDates?.[v] && String(vesselCurrentVoyageEndDates[v]).trim().length > 0
+      );
+
+    const missing: ('speed' | 'load_condition' | 'current_voyage_end_dates')[] = [];
+    if (speed == null) missing.push('speed');
+    if (loadCondition == null) missing.push('load_condition');
+    if (!allHaveEndDates) missing.push('current_voyage_end_dates');
+
+    if (missing.length > 0) {
+      const interruptPayload = {
+        type: 'vessel_selection_input' as const,
+        missing,
+        vessel_names: vesselNames ?? [],
+        question:
+          'Please provide next voyage speed (knots), load condition (ballast or laden), and current voyage end date for each vessel.',
+      };
+      const resumeValue = interrupt(interruptPayload) as VesselSelectionHITLResume;
+      speed = resumeValue.speed ?? speed;
+      loadCondition = resumeValue.load_condition ?? loadCondition;
+      vesselCurrentVoyageEndDates = resumeValue.current_voyage_end_dates ?? vesselCurrentVoyageEndDates ?? {};
+    }
 
     const nextVoyage = {
       origin: state.next_voyage_details.origin,
       destination: state.next_voyage_details.destination,
       departure_date: state.next_voyage_details.departure_date,
-      speed: state.next_voyage_details.speed,
+      speed,
+      cargo_type: loadCondition,
     };
+
+    // ========================================================================
+    // Step 2: Parallel vessel analysis
+    // ========================================================================
 
     const analysisStart = Date.now();
     const analysisResults = await Promise.allSettled(
       state.vessel_names.map((vesselName) =>
         (async () => {
           const start = Date.now();
+          const currentVoyageEndDate = vesselCurrentVoyageEndDates?.[vesselName];
           const result = await VesselSelectionEngine.analyzeVessel({
             vessel_name: vesselName,
             next_voyage: nextVoyage,
             route_data: state.route_data ?? undefined,
             bunker_analysis: state.bunker_analysis ?? undefined,
+            current_voyage_end_date: currentVoyageEndDate,
           });
           return { result, duration_ms: Date.now() - start };
         })()
@@ -5208,6 +5248,8 @@ export async function vesselSelectionAgentNode(
     };
 
     return {
+      next_voyage_details: nextVoyage,
+      vessel_current_voyage_end_dates: vesselCurrentVoyageEndDates,
       vessel_comparison_analysis: vesselComparisonAnalysisAggregate,
       vessel_rankings: vesselRankingsForState,
       recommended_vessel: recommendedVessel,
@@ -5226,6 +5268,9 @@ export async function vesselSelectionAgentNode(
       ],
     };
   } catch (error: unknown) {
+    if (isGraphInterrupt(error)) {
+      throw error;
+    }
     const duration = Date.now() - startTime;
     const err = error instanceof Error ? error : new Error(String(error));
     logError(extractCorrelationId(state), err, { agent: 'vessel_selection_agent' });

@@ -294,22 +294,30 @@ function calculate2StopPlan(
   }
   
   // === STOP 2: Mid-Voyage - Calculate required bunker quantity ===
-  // Need enough fuel to reach destination with safety margin
+  // Need enough fuel to reach destination with safety margin. Also ensure after bunkering we have at least the buffer (safety_margin_days) before the next leg.
   const fuelNeededToDestination: FuelQuantityMT = {
     VLSFO: consumptionToDestination.VLSFO + safetyBufferVlsfo,
     LSMGO: consumptionToDestination.LSMGO + safetyBufferLsmgo,
   };
-  
-  // How much to bunker at mid-voyage
+  const minBunkerToMeetBufferVlsfo = Math.max(0, safetyBufferVlsfo - arrivalAtMidVoyage.VLSFO);
+  const minBunkerToMeetBufferLsmgo = Math.max(0, safetyBufferLsmgo - arrivalAtMidVoyage.LSMGO);
+
+  // How much to bunker at mid-voyage: at least (required to destination) and at least (buffer - arrival) so ROB after bunker >= buffer
   const midVoyageBunkerVlsfo = Math.max(0, Math.min(
-    fuelNeededToDestination.VLSFO - arrivalAtMidVoyage.VLSFO,
+    Math.max(
+      fuelNeededToDestination.VLSFO - arrivalAtMidVoyage.VLSFO,
+      minBunkerToMeetBufferVlsfo
+    ),
     capacity.VLSFO - arrivalAtMidVoyage.VLSFO  // Don't exceed capacity
   ));
   const midVoyageBunkerLsmgo = Math.max(0, Math.min(
-    fuelNeededToDestination.LSMGO - arrivalAtMidVoyage.LSMGO,
+    Math.max(
+      fuelNeededToDestination.LSMGO - arrivalAtMidVoyage.LSMGO,
+      minBunkerToMeetBufferLsmgo
+    ),
     capacity.LSMGO - arrivalAtMidVoyage.LSMGO  // Don't exceed capacity
   ));
-  
+
   const midVoyageAfterBunker: FuelQuantityMT = {
     VLSFO: arrivalAtMidVoyage.VLSFO + midVoyageBunkerVlsfo,
     LSMGO: arrivalAtMidVoyage.LSMGO + midVoyageBunkerLsmgo,

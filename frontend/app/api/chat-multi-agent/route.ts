@@ -18,6 +18,7 @@ import { validateMultiAgentStateShape } from '@/lib/multi-agent/state';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { randomUUID } from 'crypto';
 import type { BunkerHITLResume } from '@/lib/types/bunker-agent';
+import type { VesselSelectionHITLResume } from '@/lib/types/vessel-selection';
 import { generateCorrelationId, formatLogWithCorrelation } from '@/lib/utils/correlation';
 import { runWithCorrelation } from '@/lib/monitoring/correlation-context';
 import {
@@ -146,8 +147,8 @@ interface MultiAgentRequest {
   thread_id?: string;
   /** For tracing; send on continuation to keep the same ID. */
   correlation_id?: string;
-  /** Resume from HITL interrupt (bunker speed/load). Requires thread_id. */
-  resume?: BunkerHITLResume;
+  /** Resume from HITL interrupt (bunker speed/load or vessel selection speed/load/dates). Requires thread_id. */
+  resume?: BunkerHITLResume | VesselSelectionHITLResume;
 }
 
 export async function POST(req: Request) {
@@ -185,7 +186,15 @@ export async function POST(req: Request) {
     const { message, selectedRouteId, messages, thread_id: bodyThreadId, correlation_id: bodyCorrelationId, resume } = body;
 
     correlation_id = bodyCorrelationId?.trim() || correlation_id;
-    const isResume = !!resume && typeof resume === 'object' && typeof resume.speed === 'number' && (resume.load_condition === 'ballast' || resume.load_condition === 'laden');
+    const hasResumePayload = !!resume && typeof resume === 'object';
+    const isBunkerResume = hasResumePayload && typeof (resume as BunkerHITLResume).speed === 'number' && ((resume as BunkerHITLResume).load_condition === 'ballast' || (resume as BunkerHITLResume).load_condition === 'laden');
+    const isVesselSelectionResume = hasResumePayload && (
+      typeof (resume as VesselSelectionHITLResume).current_voyage_end_dates === 'object' ||
+      typeof (resume as VesselSelectionHITLResume).speed === 'number' ||
+      (resume as VesselSelectionHITLResume).load_condition === 'ballast' ||
+      (resume as VesselSelectionHITLResume).load_condition === 'laden'
+    );
+    const isResume = isBunkerResume || isVesselSelectionResume;
     const thread_id = bodyThreadId?.trim() || (isResume ? '' : randomUUID());
     if (isResume && !thread_id) {
       return NextResponse.json(
@@ -459,6 +468,7 @@ export async function POST(req: Request) {
             if (event.bunker_ports) accumulatedState.bunker_ports = event.bunker_ports;
             if (event.port_prices) accumulatedState.port_prices = event.port_prices;
             if (event.bunker_analysis) accumulatedState.bunker_analysis = event.bunker_analysis;
+            if (event.vessel_comparison_analysis) accumulatedState.vessel_comparison_analysis = event.vessel_comparison_analysis;
             if (event.multi_bunker_plan) accumulatedState.multi_bunker_plan = event.multi_bunker_plan;
             if (event.hull_performance != null) accumulatedState.hull_performance = event.hull_performance;
             if (event.hull_performance_charts != null) accumulatedState.hull_performance_charts = event.hull_performance_charts;
