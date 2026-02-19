@@ -124,10 +124,10 @@ export class VesselSelectionEngine {
       // Resolve vessel identifier to IMO via vessel_details API
       const imo = await resolveIMO(vessel_name);
 
-      let vesselProfile: VesselProfile;
-      let currentVoyageEndPort: string;
-      let currentVoyageEndEta: Date;
-      let projectedROB: FuelQuantityMT;
+      let vesselProfile: VesselProfile | undefined;
+      let currentVoyageEndPort: string = next_voyage.origin;
+      let currentVoyageEndEta: Date = new Date(next_voyage.departure_date || Date.now());
+      let projectedROB: FuelQuantityMT = { VLSFO: 0, LSMGO: 0 };
       /** Current ROB at query time when available (for card display vs projected) */
       let currentRobForResult: FuelQuantityMT | undefined;
 
@@ -167,7 +167,7 @@ export class VesselSelectionEngine {
               ep.default_vlsfo_mt_per_day + ep.default_lsmgo_mt_per_day;
             const nextRatioVlsfo = ep.default_vlsfo_mt_per_day / (ep.default_vlsfo_mt_per_day + ep.default_lsmgo_mt_per_day);
             vesselProfile = buildVesselProfileFromPlanningData(
-              stateFromDatalogs.vessel_name || vessel_name,
+              stateFromDatalogs?.vessel_name || vessel_name,
               projectedFromCurrentVoyage,
               nextDailyTotal * nextRatioVlsfo,
               nextDailyTotal * (1 - nextRatioVlsfo),
@@ -284,6 +284,10 @@ export class VesselSelectionEngine {
           LSMGO: vesselProfile.initial_rob.LSMGO,
         };
         console.log(`${LOG_PREFIX} Using legacy vessel profile for ${vessel_name}`);
+      }
+
+      if (!vesselProfile) {
+        throw new Error(`${LOG_PREFIX} Vessel profile not resolved for ${vessel_name}`);
       }
 
       // Calculate next voyage fuel requirements

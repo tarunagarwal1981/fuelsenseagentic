@@ -264,18 +264,21 @@ function buildExtractedData(
   const vesselNames = normalizeVesselNamesFromClassifier(params.vessel_names);
   const vesselName = typeof params.vessel_name === 'string' ? params.vessel_name : undefined;
   // Fallback: when only vessel_name exists (e.g. from cache), normalize comma-separated string to array
-  const fallbackNames =
-    vesselName?.trim() &&
-    (vesselName.includes(',')
+  const fallbackNames: string[] | undefined = vesselName?.trim()
+    ? vesselName.includes(',')
       ? vesselName.split(',').map((s) => s.trim()).filter(Boolean)
-      : [vesselName.trim()]);
+      : [vesselName.trim()]
+    : undefined;
+  const vesselNamesArr: string[] | undefined =
+    (Array.isArray(vesselNames) && vesselNames.length > 0 ? vesselNames : undefined) ??
+    (fallbackNames && fallbackNames.length > 0 ? fallbackNames : undefined);
   return {
     port: typeof params.port === 'string' ? params.port : undefined,
     origin: typeof params.origin_port === 'string' ? params.origin_port : undefined,
     destination: typeof params.destination_port === 'string' ? params.destination_port : undefined,
     date: typeof params.date === 'string' ? params.date : undefined,
     vessel_name: vesselName,
-    vessel_names: vesselNames?.length ? vesselNames : (fallbackNames?.length ? fallbackNames : undefined),
+    vessel_names: vesselNamesArr,
   };
 }
 

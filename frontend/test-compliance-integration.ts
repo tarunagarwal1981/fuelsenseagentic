@@ -77,6 +77,7 @@ async function testComplianceIntegration() {
         vessel_comparison_analysis: undefined,
         vessel_rankings: undefined,
         recommended_vessel: undefined,
+        vessel_current_voyage_end_dates: undefined,
         per_vessel_bunker_plans: undefined,
         vessel_selection_constraints: undefined,
         vessel_feasibility_matrix: undefined,
