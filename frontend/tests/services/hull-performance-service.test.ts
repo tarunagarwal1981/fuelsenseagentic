@@ -161,6 +161,44 @@ describe('HullPerformanceService', () => {
       expect(result!.trend_data![0].speed).toBe(r1.speed);
     });
 
+    it('uses last 6 months from last report date for chart when no user period specified', async () => {
+      const base = new Date('2025-06-15T00:00:00Z');
+      const records: ReturnType<typeof buildMockHullPerformanceResponse>[] = [];
+      for (let i = 0; i < 8; i++) {
+        const d = new Date(base);
+        d.setMonth(d.getMonth() - i);
+        records.push(
+          buildMockHullPerformanceResponse({
+            id: i + 1,
+            vessel_imo: 9123456,
+            report_date: d.toISOString().slice(0, 10) + 'T00:00:00Z',
+            hull_roughness_power_loss: 10 + i,
+          })
+        );
+      }
+      mockRepo.getVesselPerformanceData.mockResolvedValue({
+        success: true,
+        data: records,
+        metadata: {
+          total_records: records.length,
+          date_range: { start: '2024-10-15', end: '2025-06-15' },
+          cache_hit: false,
+          source: 'api',
+        },
+      });
+
+      const result = await service.analyzeVesselPerformance({ imo: '9123456' });
+
+      expect(result).not.toBeNull();
+      expect(result!.trend_data!.length).toBeLessThanOrEqual(7);
+      const startDate = result!.analysis_period.start_date;
+      const endDate = result!.analysis_period.end_date;
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const monthsSpan = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      expect(monthsSpan).toBeLessThanOrEqual(6);
+    });
+
     it('sets latest_metrics from most recent record', async () => {
       const record = buildMockHullPerformanceResponse({
         vessel_imo: 9123456,
@@ -230,9 +268,16 @@ describe('HullPerformanceService', () => {
     });
 
     it('includes baseline_curves when includeBaseline is true and IMO is valid', async () => {
-      const record = buildMockHullPerformanceResponse({ vessel_imo: 9123456 });
-      const ladenCurves = buildMockBaselineCurves(9123456).filter((c) => c.load_type === 'Laden');
-      const ballastCurves = buildMockBaselineCurves(9123456).filter((c) => c.load_type === 'Ballast');
+      const fiveDaysAgo = new Date();
+      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+      const reportDateStr = fiveDaysAgo.toISOString().slice(0, 10) + 'T00:00:00Z';
+      const record = buildMockHullPerformanceResponse({
+        vessel_imo: 9123456,
+        report_date: reportDateStr,
+      });
+      const allCurves = buildMockBaselineCurves(9123456).map((c) =>
+        c.load_type === 'Laden' ? { ...c, load_type: 'Design' as const } : c
+      );
       mockRepo.getVesselPerformanceData.mockResolvedValue({
         success: true,
         data: [record],
@@ -243,9 +288,7 @@ describe('HullPerformanceService', () => {
           source: 'api',
         },
       });
-      mockRepo.getVesselBaselineCurves
-        .mockResolvedValueOnce(ladenCurves)
-        .mockResolvedValueOnce(ballastCurves);
+      mockRepo.getVesselBaselineCurves.mockResolvedValueOnce(allCurves);
 
       const result = await service.analyzeVesselPerformance(
         { imo: '9123456' },
@@ -257,12 +300,17 @@ describe('HullPerformanceService', () => {
       expect(result!.baseline_curves!.laden[0]).toMatchObject({ speed: expect.any(Number), consumption: expect.any(Number), power: expect.any(Number) });
       expect(result!.baseline_curves!.ballast.length).toBeGreaterThan(0);
       expect(result!.baseline_curves!.ballast[0]).toMatchObject({ speed: expect.any(Number), consumption: expect.any(Number), power: expect.any(Number) });
-      expect(mockRepo.getVesselBaselineCurves).toHaveBeenCalledWith(9123456, 'Laden');
-      expect(mockRepo.getVesselBaselineCurves).toHaveBeenCalledWith(9123456, 'Ballast');
+      expect(mockRepo.getVesselBaselineCurves).toHaveBeenCalledWith(9123456);
     });
 
     it('sets analysis_period and metadata from repository response', async () => {
-      const record = buildMockHullPerformanceResponse({ vessel_imo: 9123456 });
+      const fiveDaysAgo = new Date();
+      fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+      const reportDateStr = fiveDaysAgo.toISOString().slice(0, 10) + 'T00:00:00Z';
+      const record = buildMockHullPerformanceResponse({
+        vessel_imo: 9123456,
+        report_date: reportDateStr,
+      });
       mockRepo.getVesselPerformanceData.mockResolvedValue({
         success: true,
         data: [record],
@@ -276,10 +324,9 @@ describe('HullPerformanceService', () => {
 
       const result = await service.analyzeVesselPerformance({ imo: '9123456' }, { days: 14 });
 
-      expect(result!.analysis_period.days).toBe(14);
-      expect(result!.analysis_period.start_date).toBe('2025-01-01');
-      expect(result!.analysis_period.end_date).toBe('2025-01-15');
       expect(result!.analysis_period.total_records).toBe(1);
+      expect(result!.analysis_period.start_date).toBe(fiveDaysAgo.toISOString().slice(0, 10));
+      expect(result!.analysis_period.end_date).toBe(fiveDaysAgo.toISOString().slice(0, 10));
       expect(result!.metadata.cache_hit).toBe(true);
       expect(result!.metadata.data_source).toBe('cache');
     });

@@ -10,6 +10,7 @@ AI-powered maritime bunker optimization and voyage planning. Multi-agent system 
 - **Bunker Planning**: Route calculation, bunker port finding, fuel pricing, cost-benefit analysis
 - **Weather Integration**: Marine weather forecasts, weather-adjusted consumption
 - **ECA Compliance**: Emission Control Area detection and MGO requirements
+- **Hull Performance**: Hull condition, fouling, excess power % and speed loss % (from 6-month linear best-fit), trends and charts
 - **Response Synthesis**: Structured insights, recommendations, and template-based formatting
 - **Template-First with LLM Fallback**: Finalize uses templates when available; falls back to LLM-generated responses when templates fail or don't exist (user always gets a response)
 - **LLM-First Synthesis (optional)**: When `LLM_FIRST_SYNTHESIS=true`, Finalize uses LLM to generate intent-aware responses from compact context; templates remain fallback. Scalable for 25+ agents.
@@ -105,6 +106,7 @@ npm run test:e2e:essential  # E2E essential queries
 | weather_agent | fetch_marine_weather, calculate_weather_consumption, check_bunker_port_weather | Weather & consumption |
 | bunker_agent | (deterministic) | Port finding, pricing, analysis |
 | compliance_agent | validate_eca_zones | ECA zones |
+| hull_performance_agent | fetch_hull_performance | Hull condition, excess power %, speed loss %, trends |
 | vessel_selection_agent | (deterministic) | Multi-vessel comparison |
 | entity_extractor | - | Extract vessel/port entities |
 | finalize | - | Synthesize response (template-first, LLM fallback) |
@@ -128,10 +130,11 @@ Key modules: `lib/config/component-registry.yaml`, `lib/config/component-loader.
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md).
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/architecture-high-level.md](./docs/architecture-high-level.md) for a layered view (config, agents, tools, services, repositories).
 
 - **Query routing**: AI-FIRST 3-tier framework (LLM → regex fallback → Tier 3 reasoning)
 - **Intent-aware workflow**: `original_intent` tracks user goal across multi-step flows (e.g. bunker_planning → route_agent → bunker_agent → finalize)
+- **Hull performance metrics**: Default chart period is last 6 months from the vessel's last report date. Excess power % and speed loss % are always computed from last 6 months from the vessel's last report date in `hull-performance-metrics` (linear best-fit last y), regardless of user-selected period; used by hull-performance-service, alerts, and agent responses.
 
 ## License
 

@@ -30,7 +30,7 @@ frontend/
 │   ├── registry/                # Agent/tool registries
 │   ├── tools/                   # Agent tools
 │   ├── utils/                   # Utilities
-│   ├── services/                # Route, bunker, weather, component-matcher
+│   ├── services/                # Route, bunker, weather, hull-performance, hull-performance-metrics, component-matcher
 │   └── validators/              # Input validation
 ├── config/                      # YAML configurations
 │   ├── agents/                  # Agent configs
@@ -195,4 +195,4 @@ Deploy to Netlify: base directory `frontend`, build `npm run build`, publish `fr
 
 ## Architecture
 
-See [ARCHITECTURE.md](../ARCHITECTURE.md) in project root.
+See [ARCHITECTURE.md](../ARCHITECTURE.md) and [docs/architecture-high-level.md](../docs/architecture-high-level.md) in project root. Hull performance (excess power %, speed loss %) is computed in `lib/services/hull-performance-metrics.ts` (6-month linear best-fit) and used by hull-performance-service.

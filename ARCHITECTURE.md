@@ -30,6 +30,7 @@ block-beta
         Weather["Weather"]
         Bunker["Bunker"]
         Compliance["Compliance"]
+        HullPerformance["Hull Performance"]
         VesselSelection["Vessel Selection"]
         EntityExtractor["Entity Extractor"]
         Finalize["Finalize"]
@@ -41,17 +42,21 @@ block-beta
         BunkerAnalyzer["Bunker Analyzer"]
         WeatherTools["Weather Timeline / Marine / Consumption / Port"]
         VesselTools["Noon Report / Specs / Consumption Profile"]
+        HullPerformanceTools["fetch-hull-performance"]
     end
     block:services["SERVICES"]
         RouteService["RouteService"]
         BunkerService["BunkerService"]
         WeatherService["WeatherService"]
+        HullPerformanceService["HullPerformanceService"]
+        HullPerformanceMetrics["hull-performance-metrics"]
         PortResolution["PortResolutionService"]
     end
     block:repos["REPOSITORIES"]
         PortRepo["PortRepository"]
         PriceRepo["PriceRepository"]
         VesselRepo["VesselRepository"]
+        HullPerfRepo["HullPerformanceRepository"]
     end
     block:registries["REGISTRIES"]
         AgentRegistry["Agent Registry"]
@@ -69,6 +74,7 @@ User Query → API → Supervisor (LLM) → Entity Extractor
                  → Weather Agent
                  → Bunker Agent
                  → Compliance Agent
+                 → Hull Performance Agent (hull condition, excess power %, speed loss %, trends)
                  → Vessel Selection Agent
                  → Finalize → ComponentMatcher → HybridResponse (text + components) or LLM synthesis → Response
 ```
@@ -116,6 +122,7 @@ Tier 3:  LLM Reasoning (complex queries)
 | weather_agent | Deterministic | fetch_marine_weather, calculate_weather_consumption, check_bunker_port_weather | weather_forecast, weather_consumption |
 | bunker_agent | Deterministic | (calls services directly) | bunker_analysis |
 | compliance_agent | Deterministic | validate_eca_zones | compliance_data |
+| hull_performance_agent | Deterministic | fetch_hull_performance | hull_performance, hull_performance_charts |
 | vessel_selection_agent | Deterministic | (calls services directly) | vessel_comparison_analysis |
 | finalize | LLM / Template | - | final_recommendation, synthesized_response |
 
@@ -192,6 +199,8 @@ Phase 3: Build response
 | Component Registry Config | `frontend/lib/config/component-registry.yaml` |
 | Component Loader | `frontend/lib/config/component-loader.ts` |
 | Component Matcher Service | `frontend/lib/services/component-matcher.service.ts` |
+| Hull Performance Service | `frontend/lib/services/hull-performance-service.ts` |
+| Hull Performance Metrics | `frontend/lib/services/hull-performance-metrics.ts` (excess power % and speed loss % from 6-month linear best-fit) |
 | HybridResponseRenderer | `frontend/components/hybrid-response-renderer.tsx` |
 
 ## Data Flow
@@ -201,9 +210,11 @@ Tool/Agent → Service → Repository → Cache (Redis) → DB (Supabase) / JSON
          → External API (SeaRoute, OpenMeteo, FuelSense)
 ```
 
+Hull performance: `fetch_hull_performance` → HullPerformanceService (uses hull-performance-metrics for excess power % and speed loss % from last 6 months linear best-fit) → HullPerformanceRepository → hull-performance API/DB.
+
 ## Infrastructure
 
 - **Redis (Upstash)**: Cache for ports, prices, routes, weather; LangGraph checkpointer
 - **Supabase**: Database (optional)
 - **Axiom**: Structured logging, agent/tool traces
-- **FuelSense API**: Vessel master, datalogs (noon reports), consumption profiles
+- **FuelSense API**: Vessel master, datalogs (noon reports), consumption profiles, hull performance (or hull-performance DB when `HULL_PERFORMANCE_SOURCE=db`)

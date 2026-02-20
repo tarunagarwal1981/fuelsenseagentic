@@ -12,6 +12,7 @@ import { logCustomEvent, logError } from '@/lib/monitoring/axiom-logger';
 import { ExcessPowerChartService, toExcessPowerChartData } from './charts/excess-power-chart-service';
 import { SpeedLossChartService, toSpeedLossChartData } from './charts/speed-loss-chart-service';
 import { SpeedConsumptionChartService } from './charts/speed-consumption-chart-service';
+import { getExcessPowerAndSpeedLossFromBestFit } from './hull-performance-metrics';
 import type { ExcessPowerChartData } from './charts/excess-power-chart-service';
 import type { SpeedLossChartData } from './charts/speed-loss-chart-service';
 import type { SpeedConsumptionChartData } from './charts/speed-consumption-chart-service';
@@ -118,9 +119,9 @@ const HULL_CONDITION_THRESHOLDS = {
   },
 };
 
-/** Default analysis period (days) when user does not specify a time range: from vessel's last report date. */
-const DEFAULT_ANALYSIS_DAYS = 180;
-/** Wide fetch window (days) used to discover vessel's last report date when applying default period. */
+/** Default analysis period: last 6 months from vessel's last report date (when user does not specify a period). */
+const DEFAULT_ANALYSIS_MONTHS = 6;
+/** Wide fetch window (days) used to discover vessel's last report date and to include recent data for metrics. */
 const WIDE_FETCH_DAYS = 730;
 
 // ---------------------------------------------------------------------------
@@ -169,17 +170,41 @@ export class HullPerformanceService {
     try {
       const userSpecifiedPeriod =
         options?.days != null || !!(options?.startDate && options?.endDate);
-      const dateRange = userSpecifiedPeriod
-        ? options?.days != null
-          ? { days: options.days }
-          : options?.startDate && options?.endDate
-            ? { startDate: options.startDate, endDate: options.endDate }
-            : undefined
-        : undefined;
+
+      let dateRange: { days?: number; startDate?: string; endDate?: string } | undefined;
+      if (userSpecifiedPeriod) {
+        const today = new Date();
+        const todayStr = today.toISOString().slice(0, 10);
+        const todayMinus730 = new Date(today);
+        todayMinus730.setDate(todayMinus730.getDate() - WIDE_FETCH_DAYS);
+        const todayMinus730Str = todayMinus730.toISOString().slice(0, 10);
+        let userStartStr: string | undefined;
+        let userEndStr: string | undefined;
+        if (options?.startDate != null && options?.endDate != null) {
+          userStartStr = options.startDate;
+          userEndStr = options.endDate;
+        } else if (options?.days != null) {
+          const userEnd = new Date(today);
+          const userStart = new Date(today);
+          userStart.setDate(userStart.getDate() - options.days);
+          userStartStr = userStart.toISOString().slice(0, 10);
+          userEndStr = userEnd.toISOString().slice(0, 10);
+        }
+        if (userStartStr != null && userEndStr != null) {
+          dateRange = {
+            startDate: userStartStr < todayMinus730Str ? userStartStr : todayMinus730Str,
+            endDate: userEndStr > todayStr ? userEndStr : todayStr,
+          };
+        } else {
+          dateRange = { days: WIDE_FETCH_DAYS };
+        }
+      } else {
+        dateRange = { days: WIDE_FETCH_DAYS };
+      }
 
       const result = await this.repository.getVesselPerformanceData(
         vesselIdentifier,
-        dateRange ?? { days: WIDE_FETCH_DAYS }
+        dateRange
       );
 
       if (!result.success) {
@@ -202,7 +227,7 @@ export class HullPerformanceService {
       // Filter to only records that match the requested vessel (avoid showing another vessel's data)
       let recordsForVessel = this.filterRecordsByVessel(records, vesselIdentifier);
 
-      // When user did not specify a period: use last N days (default 180) from this vessel's last report date
+      // When user did not specify a period: use last 6 months from this vessel's last report date
       if (!userSpecifiedPeriod && recordsForVessel.length > 0) {
         const lastReportDate = recordsForVessel.reduce(
           (latest, r) =>
@@ -211,10 +236,9 @@ export class HullPerformanceService {
               : latest),
           recordsForVessel[0].report_date
         );
-        const requestedDays = options?.days ?? DEFAULT_ANALYSIS_DAYS;
         const endDate = new Date(lastReportDate);
         const cutoff = new Date(endDate);
-        cutoff.setDate(cutoff.getDate() - requestedDays);
+        cutoff.setMonth(cutoff.getMonth() - DEFAULT_ANALYSIS_MONTHS);
         const cutoffStr = cutoff.toISOString().slice(0, 10);
         recordsForVessel = recordsForVessel.filter(
           (r) => r.report_date >= cutoffStr
@@ -251,9 +275,56 @@ export class HullPerformanceService {
         }
       }
 
-      const totalRecords = recordsForVessel.length;
+      const lastReportDate =
+        recordsForVessel.length > 0
+          ? recordsForVessel.reduce(
+              (latest, r) =>
+                new Date(r.report_date).getTime() > new Date(latest).getTime()
+                  ? r.report_date
+                  : latest,
+              recordsForVessel[0].report_date
+            )
+          : '';
+      const sixMonthCutoff =
+        lastReportDate !== ''
+          ? (() => {
+              const d = new Date(lastReportDate);
+              d.setMonth(d.getMonth() - DEFAULT_ANALYSIS_MONTHS);
+              return d.toISOString().slice(0, 10);
+            })()
+          : '';
+      const recordsForMetrics =
+        sixMonthCutoff !== ''
+          ? recordsForVessel.filter((r) => r.report_date >= sixMonthCutoff)
+          : recordsForVessel;
+      let recordsForChart: HullPerformanceRecord[];
+      if (userSpecifiedPeriod && lastReportDate !== '') {
+        let userChartStart: string;
+        let userChartEnd: string;
+        if (options?.startDate != null && options?.endDate != null) {
+          userChartStart = options.startDate;
+          userChartEnd = options.endDate;
+        } else if (options?.days != null) {
+          const end = new Date();
+          const start = new Date();
+          start.setDate(start.getDate() - options.days);
+          userChartStart = start.toISOString().slice(0, 10);
+          userChartEnd = end.toISOString().slice(0, 10);
+        } else {
+          userChartStart = sixMonthCutoff;
+          userChartEnd = lastReportDate.slice(0, 10);
+        }
+        recordsForChart = recordsForVessel.filter((r) => {
+          const d = r.report_date.slice(0, 10);
+          return d >= userChartStart && d <= userChartEnd;
+        });
+      } else {
+        recordsForChart = recordsForVessel;
+      }
 
-      if (recordsForVessel.length === 0) {
+      const totalRecords = recordsForChart.length;
+
+      if (recordsForChart.length === 0) {
         const durationMs = Date.now() - startMs;
         logCustomEvent(
           'hull_performance_analysis_complete',
@@ -285,7 +356,7 @@ export class HullPerformanceService {
         );
       }
 
-      const sorted = [...recordsForVessel].sort(
+      const sorted = [...recordsForChart].sort(
         (a, b) => new Date(b.report_date).getTime() - new Date(a.report_date).getTime()
       );
       // Use latest record that has at least one non-zero/non-null key metric (avoid all-zero stubs)
@@ -311,8 +382,11 @@ export class HullPerformanceService {
       const imoStr = String(vesselIdentifier.imo ?? latestRecord.vessel_imo ?? '');
       const nameStr = vesselIdentifier.name || latestRecord.vessel_name || '';
 
+      const bestFit = getExcessPowerAndSpeedLossFromBestFit(recordsForMetrics, {
+        months: 6,
+      });
       const { condition, indicator, message } = this.determineHullCondition(
-        latestRecord.hull_roughness_power_loss
+        bestFit.excessPowerPct
       );
 
       logCustomEvent(
@@ -322,12 +396,12 @@ export class HullPerformanceService {
           vessel_imo: imoStr,
           vessel_name: nameStr,
           hull_condition: condition,
-          excess_power_pct: latestRecord.hull_roughness_power_loss,
+          excess_power_pct: bestFit.excessPowerPct,
         },
         'info'
       );
 
-      const trendData = this.transformToTrendData(recordsForVessel);
+      const trendData = this.transformToTrendData(recordsForChart);
       logCustomEvent(
         'trend_data_transformed',
         this.correlationId,
@@ -347,12 +421,17 @@ export class HullPerformanceService {
         }
       }
 
+      const baseLatestMetrics = this.buildLatestMetricsFromNonZero(sorted);
       const analysis: HullPerformanceAnalysis = {
         vessel: { imo: imoStr, name: nameStr },
         hull_condition: condition,
         condition_indicator: indicator,
         condition_message: message,
-        latest_metrics: this.buildLatestMetricsFromNonZero(sorted),
+        latest_metrics: {
+          ...baseLatestMetrics,
+          excess_power_pct: bestFit.excessPowerPct,
+          speed_loss_pct: bestFit.speedLossPct,
+        },
         component_breakdown: {
           hull_power_loss: latestRecord.hull_roughness_power_loss,
           engine_power_loss: latestRecord.engine_power_loss,
@@ -369,18 +448,29 @@ export class HullPerformanceService {
         },
         trend_data: trendData,
         baseline_curves,
-        analysis_period: {
-          days:
-            options?.days ??
-            Math.ceil(
-              (new Date(metadata.date_range.end).getTime() -
-                new Date(metadata.date_range.start).getTime()) /
-                (24 * 60 * 60 * 1000)
-            ),
-          start_date: metadata.date_range.start,
-          end_date: metadata.date_range.end,
-          total_records: totalRecords,
-        },
+        analysis_period: (() => {
+          if (recordsForChart.length === 0) {
+            return {
+              days: 0,
+              start_date: metadata.date_range.start,
+              end_date: metadata.date_range.end,
+              total_records: 0,
+            };
+          }
+          const chartDates = recordsForChart.map((r) => r.report_date.slice(0, 10));
+          const start_date = chartDates.reduce((a, b) => (a < b ? a : b));
+          const end_date = chartDates.reduce((a, b) => (a > b ? a : b));
+          const days = Math.ceil(
+            (new Date(end_date).getTime() - new Date(start_date).getTime()) /
+              (24 * 60 * 60 * 1000)
+          );
+          return {
+            days,
+            start_date,
+            end_date,
+            total_records: totalRecords,
+          };
+        })(),
         metadata: {
           fetched_at: new Date().toISOString(),
           data_source: metadata.source,
