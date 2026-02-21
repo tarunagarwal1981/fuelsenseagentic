@@ -14,7 +14,7 @@ export function NavSidebarFigma() {
     <div
       className="w-16 flex-shrink-0 flex flex-col items-center py-4 rounded-l-lg shadow-md"
       style={{
-        backgroundColor: "var(--figma-Primary-Dark-Blue)",
+        backgroundColor: "var(--brand-navy)",
       }}
     >
       {/* Logo: anchor + teal arch + sparkle (from public/sidebar-logo.png) */}
@@ -35,12 +35,12 @@ export function NavSidebarFigma() {
         <button
           type="button"
           className="relative flex items-center justify-center w-10 h-10 rounded-lg shrink-0"
-          style={{ backgroundColor: "var(--figma-Buttons-button-container-2)" }}
+          style={{ backgroundColor: "rgba(33, 148, 149, 0.2)" }}
         >
-          <Bell className="h-5 w-5" style={{ color: "var(--figma-Grey-01)" }} />
+          <Bell className="h-5 w-5" style={{ color: "var(--card)" }} />
           <span
             className="absolute top-0.5 right-0.5 flex items-center justify-center min-w-[14px] h-[14px] rounded-full text-[10px] font-bold text-white"
-            style={{ backgroundColor: "var(--figma-Status-Error)" }}
+            style={{ backgroundColor: "var(--status-error)" }}
           >
             3
           </span>
@@ -48,14 +48,14 @@ export function NavSidebarFigma() {
         <button
           type="button"
           className="flex items-center justify-center w-10 h-10 rounded-lg shrink-0 opacity-80 hover:opacity-100"
-          style={{ color: "var(--figma-Grey-01)" }}
+          style={{ color: "var(--card)" }}
         >
           <FileText className="h-5 w-5" strokeWidth={1.5} />
         </button>
         <button
           type="button"
           className="flex items-center justify-center w-10 h-10 rounded-lg shrink-0 opacity-80 hover:opacity-100"
-          style={{ color: "var(--figma-Grey-01)" }}
+          style={{ color: "var(--card)" }}
         >
           <Clock className="h-5 w-5" strokeWidth={1.5} />
         </button>
@@ -66,16 +66,16 @@ export function NavSidebarFigma() {
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 overflow-hidden border-2"
           style={{
-            borderColor: "var(--figma-Grey-04)",
-            backgroundColor: "var(--figma-Grey-04)",
+            borderColor: "var(--grey-04)",
+            backgroundColor: "var(--grey-04)",
           }}
         >
-          <User className="h-5 w-5" style={{ color: "var(--figma-Text-Secondary)" }} />
+          <User className="h-5 w-5" style={{ color: "var(--muted-foreground)" }} />
         </div>
         <button
           type="button"
           className="p-2 rounded-lg opacity-80 hover:opacity-100"
-          style={{ color: "var(--figma-Grey-01)" }}
+          style={{ color: "var(--card)" }}
           title="Log out"
         >
           <LogOut className="h-5 w-5" strokeWidth={1.5} />

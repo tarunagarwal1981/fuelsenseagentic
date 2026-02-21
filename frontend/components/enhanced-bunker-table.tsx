@@ -21,6 +21,7 @@ import {
   DollarSign,
   ChevronDown,
   ChevronUp,
+  ChevronsUpDown,
 } from 'lucide-react';
 import type { BunkerTableData } from '@/lib/formatters/response-formatter';
 
@@ -111,28 +112,30 @@ export function EnhancedBunkerTable({
 
   const SortableHeader = ({ field, children, align = 'left' }: { field: SortField; children: React.ReactNode; align?: 'left' | 'right' | 'center' }) => (
     <TableHead 
-      className={`cursor-pointer hover:bg-muted/50 select-none ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''} ${isCompact ? 'py-2 text-xs' : ''}`}
+      className={`cursor-pointer hover:bg-grey-01 select-none ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : ''} ${isCompact ? 'py-2 text-xs' : ''} ${sortField === field ? 'text-teal-500' : 'text-muted-foreground'}`}
       onClick={() => handleSort(field)}
     >
       <div className={`flex items-center gap-2 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
         {children}
-        {sortField === field && (
-          sortDirection === 'asc' ? <ChevronUp className={isCompact ? 'h-3 w-3' : 'h-4 w-4'} /> : <ChevronDown className={isCompact ? 'h-3 w-3' : 'h-4 w-4'} />
+        {sortField === field ? (
+          sortDirection === 'asc' ? <ChevronUp className={`text-teal-500 ${isCompact ? 'h-3 w-3' : 'h-4 w-4'}`} /> : <ChevronDown className={`text-teal-500 ${isCompact ? 'h-3 w-3' : 'h-4 w-4'}`} />
+        ) : (
+          <ChevronsUpDown className={`text-muted-foreground ${isCompact ? 'h-3 w-3' : 'h-4 w-4'}`} />
         )}
       </div>
     </TableHead>
   );
 
   return (
-    <div className="rounded-lg border border-border bg-card">
-      <div className={isCompact ? 'p-3 border-b border-border' : 'p-4 border-b'}>
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className={isCompact ? 'p-3 border-b border-border bg-grey-01' : 'p-4 border-b border-border'}>
         <h3 className={isCompact ? 'text-base font-semibold' : 'text-lg font-semibold'}>Bunker Port Options</h3>
         <p className={isCompact ? 'text-xs text-muted-foreground' : 'text-sm text-muted-foreground'}>
           {allPorts.length} port{allPorts.length !== 1 ? 's' : ''} analyzed
         </p>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto bg-card">
         <Table>
           <TableHeader>
             <TableRow className={isCompact ? 'border-border' : ''}>
@@ -154,13 +157,13 @@ export function EnhancedBunkerTable({
               return (
                 <React.Fragment key={port.portCode}>
                   <TableRow 
-                    className={`${port.isRecommended ? 'bg-primary/5 border-primary/20' : ''} ${isCompact ? 'border-border' : ''}`}
+                    className={`${port.isRecommended ? 'border-l-4 border-orange-500' : ''} ${isCompact ? 'border-border' : ''}`}
                   >
                     {/* Port Name */}
                     <TableCell className={isCompact ? 'py-2 text-sm' : ''}>
                       <div className="flex items-center gap-2">
                         {port.isRecommended && (
-                          <Star className={isCompact ? 'h-3.5 w-3.5 text-primary fill-primary' : 'h-4 w-4 text-yellow-500 fill-yellow-500'} />
+                          <Star className={isCompact ? 'h-3.5 w-3.5 text-orange-500 fill-orange-500' : 'h-4 w-4 text-orange-500 fill-orange-500'} />
                         )}
                         <div>
                           <div className="font-medium">{port.portName}</div>
@@ -204,7 +207,7 @@ export function EnhancedBunkerTable({
                     {/* Weather Safety */}
                     <TableCell className={`text-center ${isCompact ? 'py-2' : ''}`}>
                       <Badge 
-                        variant={port.weatherSafe ? "default" : "destructive"}
+                        variant={port.weatherSafe ? "compliant" : "non-compliant"}
                         className={isCompact ? 'text-[10px]' : 'text-xs'}
                       >
                         {port.weatherStatus}
@@ -229,7 +232,7 @@ export function EnhancedBunkerTable({
                     {/* Savings */}
                     <TableCell className={`text-center ${isCompact ? 'py-2' : ''}`}>
                       {port.savingsVsNextBest !== undefined && port.savingsVsNextBest > 0 && (
-                        <Badge variant="secondary" className={isCompact ? 'text-[10px] bg-primary/10 text-primary' : 'bg-green-100 text-green-700'}>
+                        <Badge variant="recommended" className={isCompact ? 'text-[10px]' : ''}>
                           <TrendingDown className={isCompact ? 'h-2.5 w-2.5 mr-0.5' : 'h-3 w-3 mr-1'} />
                           ${port.savingsVsNextBest.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </Badge>
@@ -257,8 +260,8 @@ export function EnhancedBunkerTable({
 
                   {/* Expanded Row - Fuel Breakdown Details */}
                   {isExpanded && hasFuelBreakdown && (
-                    <TableRow>
-                      <TableCell colSpan={8} className="bg-muted/50">
+                    <TableRow className="bg-teal-50 border-l-2 border-teal-300">
+                      <TableCell colSpan={8} className="bg-teal-50">
                         <div className="p-4 space-y-2">
                           <h4 className="text-sm font-semibold">Detailed Fuel Breakdown:</h4>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -14,6 +14,7 @@ import {
   ReferenceArea,
 } from 'recharts';
 import type { ExcessPowerChartData } from '@/lib/services/charts/excess-power-chart-service';
+import { CHART } from '@/lib/chart-theme';
 
 /** Recharts may pass Cartesian or Polar viewBox; we only use Cartesian. */
 type CartesianViewBox = { x: number; y: number; width: number; height: number };
@@ -70,13 +71,12 @@ function CustomTooltip({ active, payload }: any) {
   if (!data) return null;
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-2 border-blue-200 dark:border-blue-700 rounded-xl shadow-2xl p-4 min-w-[200px]">
-      {/* Date Header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 pb-2 mb-3">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+    <div className="bg-card border border-border rounded-lg shadow-md px-3 py-2 min-w-[160px]">
+      <div className="border-b border-border pb-2 mb-3">
+        <p className="text-xs font-poppins font-semibold text-foreground uppercase tracking-wide">
           Date
         </p>
-        <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-0.5">
+        <p className="text-sm font-sans text-foreground mt-0.5">
           {new Date(data.timestamp).toLocaleDateString('en-US', {
             month: 'long',
             day: 'numeric',
@@ -85,16 +85,15 @@ function CustomTooltip({ active, payload }: any) {
         </p>
       </div>
 
-      {/* Excess Power Value */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+            <div className="w-3 h-3 rounded-full bg-teal-500"></div>
+            <span className="text-xs font-sans text-muted-foreground">
               Excess Power
             </span>
           </div>
-          <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+          <span className="text-sm font-sans font-semibold text-foreground">
             {data.excessPowerPct?.toFixed(2)}%
           </span>
         </div>
@@ -127,14 +126,13 @@ function CustomTooltip({ active, payload }: any) {
 function CustomDot(props: any) {
   const { cx, cy, payload } = props;
 
-  // Color based on value
-  let fill = '#3b82f6'; // blue-500
+  let fill: string = CHART.primary;
   if (payload.excessPowerPct >= 25) {
-    fill = '#ef4444'; // red-500
+    fill = CHART.zoneError;
   } else if (payload.excessPowerPct >= 15) {
-    fill = '#f59e0b'; // amber-500
+    fill = CHART.zoneWarning;
   } else {
-    fill = '#10b981'; // green-500
+    fill = CHART.zoneSuccess;
   }
 
   return (
@@ -239,27 +237,27 @@ export function ExcessPowerChart({
                   <ReferenceArea
                     y1={0}
                     y2={data.thresholds.good}
-                    fill="#10b981"
+                    fill={CHART.zoneSuccess}
                     fillOpacity={0.03}
                   />
                   <ReferenceArea
                     y1={data.thresholds.good}
                     y2={data.thresholds.poor}
-                    fill="#f59e0b"
+                    fill={CHART.zoneWarning}
                     fillOpacity={0.03}
                   />
                   <ReferenceArea
                     y1={data.thresholds.poor}
                     y2={100}
-                    fill="#ef4444"
+                    fill={CHART.zoneError}
                     fillOpacity={0.03}
                   />
                 </>
               )}
 
               <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#e5e7eb"
+                strokeDasharray="4 4"
+                stroke={CHART.grid}
                 strokeOpacity={0.3}
                 vertical={false}
               />
@@ -278,25 +276,25 @@ export function ExcessPowerChart({
                   value: 'Date',
                   position: 'insideBottom',
                   offset: -14,
-                  style: { fontSize: 11, fontWeight: 600, fill: '#4b5563' },
+                  style: { fontSize: 12, fontWeight: 600, fill: CHART.axisLabel },
                 }}
-                tick={{ fontSize: 11, fill: '#6b7280', fontWeight: 500 }}
-                stroke="#9ca3af"
+                tick={{ fontSize: 12, fill: CHART.axisLabel }}
+                stroke={CHART.axisLabel}
                 strokeWidth={1.5}
               />
 
               <YAxis
-                label={{ value: 'Excess Power (%)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill="#4b5563" />) as unknown as React.ReactElement }}
+                label={{ value: 'Excess Power (%)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill={CHART.axisLabel} />) as unknown as React.ReactElement }}
                 domain={[0, 'auto']}
-                tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
-                stroke="#9ca3af"
+                tick={{ fontSize: 12, fill: CHART.axisLabel }}
+                stroke={CHART.axisLabel}
                 strokeWidth={1.5}
                 width={32}
               />
 
               <Tooltip
                 content={<CustomTooltip />}
-                cursor={{ strokeDasharray: '5 5', stroke: '#9ca3af' }}
+                cursor={{ strokeDasharray: '5 5', stroke: CHART.axisLabel }}
               />
 
               <Legend
@@ -330,11 +328,11 @@ export function ExcessPowerChart({
                   name="Trend Line"
                   data={trendLineData}
                   dataKey="predicted"
-                  stroke="#dc2626"
+                  stroke={CHART.referenceError}
                   strokeWidth={3}
                   dot={false}
                   type="monotone"
-                  strokeDasharray="5 5"
+                  strokeDasharray="6 3"
                   isAnimationActive={true}
                   animationDuration={1000}
                 />

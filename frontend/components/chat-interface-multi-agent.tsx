@@ -802,18 +802,16 @@ export function ChatInterfaceMultiAgent() {
                   }`}
                 >
                   {message.role === "assistant" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-teal-500 flex items-center justify-center shadow-sm">
                       <Bot className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
-                  <div className={`flex-1 min-w-0 max-w-[85%] ${
-                    message.role === "user" ? "flex justify-end" : ""
-                  }`}>
+                  <div className={`flex-1 min-w-0 ${message.role === "user" ? "max-w-[80%] flex justify-end ml-auto" : "max-w-[90%]"}`}>
                   <div
-                      className={`rounded-xl px-3 py-2 ${
+                      className={`px-4 py-3 ${
                       message.role === "user"
-                        ? "bg-gradient-to-r from-gray-100 via-teal-100 to-green-100 dark:from-gray-800/70 dark:via-teal-900/25 dark:to-green-900/25 text-gray-800 dark:text-gray-100 border border-teal-300/70 dark:border-teal-600/50 rounded-xl shadow-sm [&_*]:text-inherit"
-                          : "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-t-2 border-r-2 border-b-2 border-l-2 border-t-teal-400 border-r-green-500 border-b-teal-300 border-l-teal-300 dark:border-t-teal-600 dark:border-r-green-600 dark:border-b-teal-700 dark:border-l-teal-700 rounded-xl shadow-sm [&_*]:text-inherit"
+                        ? "bg-navy-800 text-white rounded-2xl rounded-br-sm [&_*]:text-inherit"
+                        : "bg-card border border-border rounded-2xl rounded-bl-sm shadow-sm [&_*]:text-inherit"
                     }`}
                   >
                       <div className="prose prose-sm dark:prose-invert max-w-none font-sans text-xs prose-table:!block prose-table:!my-4 [&_table]:!block [&_table]:!my-4 [&_table]:!w-full">
@@ -893,18 +891,18 @@ export function ChatInterfaceMultiAgent() {
                         )}
                       </div>
                       {message.role === 'assistant' && isLastAssistant && hullPerformanceCharts && (hullPerformanceCharts.excessPower || hullPerformanceCharts.speedLoss || hullPerformanceCharts.speedConsumption) && (
-                        <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--figma-Surface-Card-stroke)" }}>
-                          <div className="flex flex-wrap gap-1 border-b pb-0" style={{ borderColor: "var(--figma-Surface-Card-stroke)" }}>
+                        <div className="mt-4 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+                          <div className="flex flex-wrap gap-1 border-b pb-0" style={{ borderColor: "var(--border)" }}>
                             {hullPerformanceCharts.excessPower && (
                               <button
                                 type="button"
                                 role="tab"
                                 aria-selected={hullChartTab === 'excessPower'}
                                 onClick={() => setHullChartTab('excessPower')}
-                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--muted)]"
                                 style={{
-                                  backgroundColor: hullChartTab === 'excessPower' ? "var(--figma-Primary-Teal)" : "transparent",
-                                  color: hullChartTab === 'excessPower' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  backgroundColor: hullChartTab === 'excessPower' ? "var(--brand-teal)" : "transparent",
+                                  color: hullChartTab === 'excessPower' ? "var(--card)" : "var(--foreground)",
                                   fontWeight: hullChartTab === 'excessPower' ? 600 : 500,
                                 }}
                               >
@@ -917,10 +915,10 @@ export function ChatInterfaceMultiAgent() {
                                 role="tab"
                                 aria-selected={hullChartTab === 'speedLoss'}
                                 onClick={() => setHullChartTab('speedLoss')}
-                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--muted)]"
                                 style={{
-                                  backgroundColor: hullChartTab === 'speedLoss' ? "var(--figma-Primary-Teal)" : "transparent",
-                                  color: hullChartTab === 'speedLoss' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  backgroundColor: hullChartTab === 'speedLoss' ? "var(--brand-teal)" : "transparent",
+                                  color: hullChartTab === 'speedLoss' ? "var(--card)" : "var(--foreground)",
                                   fontWeight: hullChartTab === 'speedLoss' ? 600 : 500,
                                 }}
                               >
@@ -933,10 +931,10 @@ export function ChatInterfaceMultiAgent() {
                                 role="tab"
                                 aria-selected={hullChartTab === 'speedConsumption'}
                                 onClick={() => setHullChartTab('speedConsumption')}
-                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--figma-Grey-03)]"
+                                className="px-4 py-2.5 text-sm font-medium transition-colors rounded-md border-none cursor-pointer hover:bg-[var(--muted)]"
                                 style={{
-                                  backgroundColor: hullChartTab === 'speedConsumption' ? "var(--figma-Primary-Teal)" : "transparent",
-                                  color: hullChartTab === 'speedConsumption' ? "var(--figma-Grey-01)" : "var(--figma-Text-Title)",
+                                  backgroundColor: hullChartTab === 'speedConsumption' ? "var(--brand-teal)" : "transparent",
+                                  color: hullChartTab === 'speedConsumption' ? "var(--card)" : "var(--foreground)",
                                   fontWeight: hullChartTab === 'speedConsumption' ? 600 : 500,
                                 }}
                               >
@@ -970,7 +968,7 @@ export function ChatInterfaceMultiAgent() {
                     </div>
                   </div>
                   {message.role === "user" && (
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-teal-500 to-green-500 flex items-center justify-center shadow-sm">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center shadow-sm">
                       <User className="h-3.5 w-3.5 text-white" />
                     </div>
                   )}
@@ -1189,7 +1187,7 @@ export function ChatInterfaceMultiAgent() {
       <div className="flex-1 min-w-0 flex flex-col border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-lg overflow-hidden ml-2">
         {/* Right panel header – Figma 9140-64986: Playground, Save, New, fullscreen */}
         <div className="h-14 flex items-center justify-between px-4 flex-shrink-0 rounded-t-lg border-b bg-white dark:bg-gray-800 border-fs-border">
-          <h1 className="text-left font-semibold tracking-[2px] text-[length:var(--figma-font-size-header-4)] text-foreground">
+          <h1 className="text-left font-semibold tracking-[2px] text-xl text-foreground">
             Playground
           </h1>
           <div className="flex items-center gap-3 flex-1 justify-end">
@@ -1226,16 +1224,9 @@ export function ChatInterfaceMultiAgent() {
 
         {renderChatBody()}
 
-        {/* Query area – Figma 58045-833: colors, 3D shadow, Grey/03 buttons (size unchanged) */}
-        <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-white dark:bg-gray-800 border-t border-[var(--figma-Grey-03)]">
-          <div
-            className="rounded-xl border p-2"
-            style={{
-              backgroundColor: "var(--figma-Surface-Card)",
-              borderColor: "var(--figma-Surface-Card-stroke)",
-              boxShadow: "2px 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
-            }}
-          >
+        {/* Query area – design system: orange focus, orange send button */}
+        <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-card border-t border-border">
+          <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm focus-within:ring-2 focus-within:ring-orange-300 focus-within:border-orange-400">
             <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
               <div className="relative rounded-lg overflow-visible">
                 <textarea
@@ -1243,12 +1234,7 @@ export function ChatInterfaceMultiAgent() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="What can I help you with?"
-                  className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-9 rounded-lg border resize-none focus:outline-none focus:ring-2 focus:ring-[var(--figma-Primary-Teal)]/30 focus:border-[var(--figma-Primary-Teal)] text-[13px] placeholder-[var(--figma-Text-Secondary)]"
-                  style={{
-                    backgroundColor: "var(--figma-Grey-01)",
-                    borderColor: "var(--figma-Surface-Card-stroke)",
-                    color: "var(--figma-Text-Primary)",
-                  }}
+                  className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-12 rounded-lg border-0 bg-transparent resize-none focus:outline-none focus:ring-0 text-sm font-sans text-foreground placeholder:text-muted-foreground"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -1260,10 +1246,8 @@ export function ChatInterfaceMultiAgent() {
                 />
                 <Button
                   type="submit"
-                  variant="ghost"
                   size="sm"
-                  className="absolute right-1 bottom-1 h-6 w-6 p-0 hover:opacity-90 min-w-0"
-                  style={{ color: "var(--figma-Primary-Teal)" }}
+                  className="absolute right-1 bottom-1 h-8 w-8 p-0 min-w-0 bg-orange-500 hover:bg-orange-400 active:bg-orange-600 text-white rounded-xl"
                   disabled={!input.trim() || isLoading}
                 >
                   <Send className="h-3 w-3" />
@@ -1282,26 +1266,21 @@ export function ChatInterfaceMultiAgent() {
                         setInput((prev) => (prev ? `${prev} ` : '') + label);
                       }
                     }}
-                    className="px-2 py-1 rounded-md border text-[13px] font-normal hover:opacity-90"
-                    style={{
-                      backgroundColor: "var(--figma-Grey-03)",
-                      borderColor: "var(--figma-Surface-Card-stroke)",
-                      color: "var(--figma-Text-Title)",
-                    }}
+                    className="bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 hover:border-teal-300 rounded-lg px-3 py-2 text-sm font-sans"
                   >
                     {label}
                   </button>
                 ))}
-                <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--figma-Text-Icon)" }} title="Attach file">
+                <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--muted-foreground)" }} title="Attach file">
                   <Paperclip className="h-3 w-3" />
                 </button>
-                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Good response">
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="Good response">
                   <ThumbsUp className="h-3 w-3" />
                 </button>
-                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Bad response">
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="Bad response">
                   <ThumbsDown className="h-3 w-3" />
                 </button>
-                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="More options">
+                <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="More options">
                   <MoreVertical className="h-3 w-3" />
                 </button>
               </div>
@@ -1329,28 +1308,16 @@ export function ChatInterfaceMultiAgent() {
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {renderChatBody()}
             </div>
-            {/* Query field at bottom of expanded window – Figma 58045-833, same theme + 3D shadow */}
-            <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-white dark:bg-gray-800 border-t border-[var(--figma-Grey-03)]">
-              <div
-                className="rounded-xl border p-2"
-                style={{
-                  backgroundColor: "var(--figma-Surface-Card)",
-                  borderColor: "var(--figma-Surface-Card-stroke)",
-                  boxShadow: "2px 4px 12px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.05)",
-                }}
-              >
+            {/* Query field at bottom of expanded window – same design system */}
+            <div className="flex-shrink-0 pt-1 px-3 pb-1 bg-card border-t border-border">
+              <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm focus-within:ring-2 focus-within:ring-orange-300 focus-within:border-orange-400">
                 <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
                   <div className="relative rounded-lg overflow-visible">
                     <textarea
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       placeholder="What can I help you with?"
-                      className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-9 rounded-lg border resize-none focus:outline-none focus:ring-2 focus:ring-[var(--figma-Primary-Teal)]/30 focus:border-[var(--figma-Primary-Teal)] text-[13px] placeholder-[var(--figma-Text-Secondary)]"
-                      style={{
-                        backgroundColor: "var(--figma-Grey-01)",
-                        borderColor: "var(--figma-Surface-Card-stroke)",
-                        color: "var(--figma-Text-Primary)",
-                      }}
+                      className="w-full min-h-[32px] max-h-[100px] px-2.5 py-1.5 pr-12 rounded-lg border-0 bg-transparent resize-none focus:outline-none focus:ring-0 text-sm font-sans text-foreground placeholder:text-muted-foreground"
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
@@ -1362,10 +1329,8 @@ export function ChatInterfaceMultiAgent() {
                     />
                     <Button
                       type="submit"
-                      variant="ghost"
                       size="sm"
-                      className="absolute right-1 bottom-1 h-6 w-6 p-0 hover:opacity-90 min-w-0"
-                      style={{ color: "var(--figma-Primary-Teal)" }}
+                      className="absolute right-1 bottom-1 h-8 w-8 p-0 min-w-0 bg-orange-500 hover:bg-orange-400 active:bg-orange-600 text-white rounded-xl"
                       disabled={!input.trim() || isLoading}
                     >
                       <Send className="h-3 w-3" />
@@ -1384,26 +1349,21 @@ export function ChatInterfaceMultiAgent() {
                             setInput((prev) => (prev ? `${prev} ` : '') + label);
                           }
                         }}
-                        className="px-2 py-1 rounded-md border text-[13px] font-normal hover:opacity-90"
-                        style={{
-                          backgroundColor: "var(--figma-Grey-03)",
-                          borderColor: "var(--figma-Surface-Card-stroke)",
-                          color: "var(--figma-Text-Title)",
-                        }}
+                        className="bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-100 hover:border-teal-300 rounded-lg px-3 py-2 text-sm font-sans"
                       >
                         {label}
                       </button>
                     ))}
-                    <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--figma-Text-Icon)" }} title="Attach file">
+                    <button type="button" className="p-1 rounded-md hover:opacity-80 ml-auto" style={{ color: "var(--muted-foreground)" }} title="Attach file">
                       <Paperclip className="h-3 w-3" />
                     </button>
-                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Good response">
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="Good response">
                       <ThumbsUp className="h-3 w-3" />
                     </button>
-                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="Bad response">
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="Bad response">
                       <ThumbsDown className="h-3 w-3" />
                     </button>
-                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--figma-Text-Icon)" }} title="More options">
+                    <button type="button" className="p-1 rounded-md hover:opacity-80" style={{ color: "var(--muted-foreground)" }} title="More options">
                       <MoreVertical className="h-3 w-3" />
                     </button>
                   </div>

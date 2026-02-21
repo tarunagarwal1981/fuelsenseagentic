@@ -60,58 +60,57 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       keyboard: true,
     });
 
-    // Add OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+    // CartoDB tiles: Positron (light) or Dark Matter when .dark
+    const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+    const tileUrl = isDark
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    L.tileLayer(tileUrl, {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
       maxZoom: 19,
     }).addTo(map);
 
     // Collect all coordinates for bounds
     const allCoords: [number, number][] = [];
 
-    // Add origin marker (green)
+    // Origin marker (navy circle)
     if (originPort.coordinates) {
       const originCoords: [number, number] = [originPort.coordinates.lat, originPort.coordinates.lon];
       allCoords.push(originCoords);
-      
-      const originMarker = L.marker(originCoords, {
-        icon: L.icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41],
-        }),
+      const originMarker = L.circleMarker(originCoords, {
+        radius: 8,
+        fillColor: '#072638',
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 1,
       }).addTo(map);
-
       originMarker.bindPopup(`
-        <div style="font-weight: bold; margin-bottom: 4px;">🚢 Origin: ${originPort.name}</div>
-        <div style="font-size: 12px; color: #666;">${originPort.port_code}</div>
-        <div style="font-size: 12px; color: #666;">${originPort.country || ''}</div>
+        <div class="min-w-[160px] p-3 rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-md">
+          <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">🚢 Origin: ${originPort.name}</div>
+          <div style="font-size: 12px; color: var(--muted-foreground);">${originPort.port_code}</div>
+          <div style="font-size: 12px; color: var(--muted-foreground);">${originPort.country || ''}</div>
+        </div>
       `);
     }
 
-    // Add destination marker (red)
+    // Destination marker (navy circle)
     if (destinationPort.coordinates) {
       const destCoords: [number, number] = [destinationPort.coordinates.lat, destinationPort.coordinates.lon];
       allCoords.push(destCoords);
-      
-      const destMarker = L.marker(destCoords, {
-        icon: L.icon({
-          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41],
-        }),
+      const destMarker = L.circleMarker(destCoords, {
+        radius: 8,
+        fillColor: '#072638',
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 1,
       }).addTo(map);
-
       destMarker.bindPopup(`
-        <div style="font-weight: bold; margin-bottom: 4px;">🎯 Destination: ${destinationPort.name}</div>
-        <div style="font-size: 12px; color: #666;">${destinationPort.port_code}</div>
-        <div style="font-size: 12px; color: #666;">${destinationPort.country || ''}</div>
+        <div class="min-w-[160px] p-3 rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-md">
+          <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">🎯 Destination: ${destinationPort.name}</div>
+          <div style="font-size: 12px; color: var(--muted-foreground);">${destinationPort.port_code}</div>
+          <div style="font-size: 12px; color: var(--muted-foreground);">${destinationPort.country || ''}</div>
+        </div>
       `);
     }
 
@@ -136,7 +135,7 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
             allCoords.push(...segmentCoords);
             
             const polyline = L.polyline(segmentCoords, {
-              color: segment.style.color || (segment.fuelType === 'MGO' ? '#ef4444' : '#3b82f6'),
+              color: segment.style.color || (segment.fuelType === 'MGO' ? '#CD1030' : '#219495'),
               weight: segment.style.weight || 3,
               opacity: 0.7,
               dashArray: segment.style.dashArray,
@@ -174,9 +173,9 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
           // Add waypoints to bounds
           allCoords.push(...waypointCoords);
 
-          // Draw route polyline
+          // Draw route polyline (teal-500)
           const polyline = L.polyline(waypointCoords, {
-            color: '#3b82f6',
+            color: '#219495',
             weight: 3,
             opacity: 0.7,
           }).addTo(map);
@@ -214,10 +213,10 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
           zoneCoords.forEach(coord => allCoords.push(coord));
 
           const polygon = L.polygon(zoneCoords, {
-            fillColor: zone.style.fillColor || '#ef4444',
-            color: zone.style.strokeColor || '#dc2626',
-            weight: zone.style.strokeWidth || 2,
-            fillOpacity: 0.2,
+            fillColor: zone.style.fillColor || 'rgba(205, 16, 48, 0.07)',
+            color: zone.style.strokeColor || '#CD1030',
+            weight: zone.style.strokeWidth || 1,
+            fillOpacity: 1,
           }).addTo(map);
 
           polygon.bindPopup(`
@@ -270,7 +269,7 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       });
     }
 
-    // Add bunker port markers: gold = best option (rank 1), blue = other recommended, grey = all other ports
+    // Bunker port markers: circleMarker — recommended orange, alternative teal, other grey
     bunkerPorts.forEach((port: any) => {
       const coords = port.coordinates;
       if (!coords) return;
@@ -283,21 +282,16 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
 
       const isBest = port.rank === 1;
       const hasRank = port.rank != null;
-      const iconUrl = isBest
-        ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png'
-        : hasRank
-          ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png'
-          : 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-grey.png';
+      const fillColor = isBest ? '#F9A82B' : hasRank ? '#219495' : '#9EA2AE';
+      const radius = isBest ? 10 : hasRank ? 8 : 4;
 
-      const portMarker = L.marker(portCoords, {
-        icon: L.icon({
-          iconUrl,
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-          iconSize: [25, 41],
-          iconAnchor: [12, 41],
-          popupAnchor: [1, -34],
-          shadowSize: [41, 41],
-        }),
+      const portMarker = L.circleMarker(portCoords, {
+        radius,
+        fillColor,
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 1,
       }).addTo(map);
 
       const totalCost = (port.total_cost ?? port.total_cost_usd) != null ? `$${Number(port.total_cost ?? port.total_cost_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : null;
@@ -306,14 +300,16 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       const deviation = deviationNm != null ? `${Number(deviationNm).toFixed(1)} nm` : null;
 
       portMarker.bindPopup(`
-        <div style="font-weight: bold; margin-bottom: 4px;">
-          ${isBest ? '🏆 ' : '⚓ '}${port.name || port.port_name || port.port_code || 'Bunker port'}
+        <div class="min-w-[160px] p-3 rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-md" style="font-family: var(--font-inter), Inter, sans-serif;">
+          <div style="font-weight: 600; font-family: var(--font-poppins), Poppins, sans-serif; font-size: 14px; margin-bottom: 4px; color: var(--foreground);">
+            ${isBest ? '🏆 ' : '⚓ '}${port.name || port.port_name || port.port_code || 'Bunker port'}
+          </div>
+          <div style="font-size: 12px; color: var(--muted-foreground);">${port.port_code || ''}</div>
+          ${port.rank != null ? `<div style="font-size: 12px; margin-top: 4px; color: var(--foreground);"><strong>Rank:</strong> #${port.rank}</div>` : ''}
+          ${totalCost != null ? `<div style="font-size: 12px; color: var(--foreground);"><strong>Total Cost:</strong> ${totalCost}</div>` : ''}
+          ${savings != null ? `<div style="font-size: 12px; color: ${isBest ? '#00A27D' : '#CD1030'};"><strong>${isBest ? 'Savings:' : 'Extra Cost:'}</strong> ${savings}</div>` : ''}
+          ${deviation != null ? `<div style="font-size: 12px; color: var(--muted-foreground);"><strong>Deviation:</strong> ${deviation}</div>` : ''}
         </div>
-        <div style="font-size: 12px; color: #666;">${port.port_code || ''}</div>
-        ${port.rank != null ? `<div style="font-size: 12px; margin-top: 4px;"><strong>Rank:</strong> #${port.rank}</div>` : ''}
-        ${totalCost != null ? `<div style="font-size: 12px;"><strong>Total Cost:</strong> ${totalCost}</div>` : ''}
-        ${savings != null ? `<div style="font-size: 12px; color: ${isBest ? '#10b981' : '#ef4444'};"><strong>${isBest ? 'Savings:' : 'Extra Cost:'}</strong> ${savings}</div>` : ''}
-        ${deviation != null ? `<div style="font-size: 12px;"><strong>Deviation:</strong> ${deviation}</div>` : ''}
       `);
     });
 
@@ -323,14 +319,14 @@ export function MapViewer({ route, originPort, destinationPort, bunkerPorts = []
       map.fitBounds(bounds, { padding: [50, 50] });
     }
 
-    // Add route statistics control
+    // Route statistics control (design system card style)
     const statsHtml = `
-      <div style="background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 12px; min-width: 200px;">
-        <div style="font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Route Statistics</div>
+      <div class="min-w-[160px] p-3 rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-md text-sm">
+        <div style="font-weight: 600; margin-bottom: 5px; border-bottom: 1px solid var(--border); padding-bottom: 5px;">Route Statistics</div>
         <div style="margin-bottom: 3px;"><strong>Distance:</strong> ${route.distance_nm ? `${route.distance_nm.toFixed(1)} nm` : 'N/A'}</div>
         <div style="margin-bottom: 3px;"><strong>Time:</strong> ${route.estimated_hours ? `${route.estimated_hours.toFixed(1)} hours` : 'N/A'}</div>
         <div style="margin-bottom: 3px;"><strong>Waypoints:</strong> ${route.waypoints?.length || 0}</div>
-        <div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid #ddd;"><strong>Bunker Ports:</strong> ${bunkerPorts.length}</div>
+        <div style="margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border);"><strong>Bunker Ports:</strong> ${bunkerPorts.length}</div>
         ${mapOverlays?.ecaZones ? `<div style="margin-top: 3px;"><strong>ECA Zones:</strong> ${mapOverlays.ecaZones.length}</div>` : ''}
         ${mapOverlays?.switchingPoints ? `<div style="margin-top: 3px;"><strong>Switching Points:</strong> ${mapOverlays.switchingPoints.length}</div>` : ''}
       </div>

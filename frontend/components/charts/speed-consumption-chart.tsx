@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import type { SpeedConsumptionChartData } from '@/lib/services/charts/speed-consumption-chart-service';
 import { generateExponentialCurve } from '@/lib/utils/exponential-regression';
+import { CHART } from '@/lib/chart-theme';
 
 /** Recharts may pass Cartesian or Polar viewBox; we only use Cartesian. */
 type CartesianViewBox = { x: number; y: number; width: number; height: number };
@@ -38,9 +39,9 @@ function YAxisLabel({
   );
 }
 
-const TEAL = '#14b8a6';
-const BALLAST_BASELINE = '#3b82f6';
-const LADEN_BASELINE = '#22c55e';
+const TEAL = CHART.primary;
+const BALLAST_BASELINE = CHART.tertiary;
+const LADEN_BASELINE = CHART.secondary;
 
 interface SpeedConsumptionChartProps {
   data: SpeedConsumptionChartData;
@@ -59,8 +60,8 @@ function CustomTooltip({
   const p = payload[0]?.payload;
   if (!p) return null;
   return (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-3 py-2 min-w-[160px]">
-      <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+    <div className="bg-card border border-border rounded-lg shadow-md px-3 py-2 min-w-[160px]">
+      <div className="text-xs text-muted-foreground space-y-1 font-sans">
         {p.date != null && p.date !== '' && (
           <p><span className="font-medium text-gray-700 dark:text-gray-300">Date:</span>{' '}
             {new Date(p.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
@@ -294,7 +295,7 @@ export function SpeedConsumptionChart({
         <div style={{ height }}>
           <ResponsiveContainer width="100%" height={height}>
             <ScatterChart margin={{ top: 10, right: 12, bottom: 32, left: 54 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" className="dark:stroke-gray-700" strokeOpacity={0.5} />
+              <CartesianGrid strokeDasharray="4 4" stroke={CHART.grid} strokeOpacity={0.5} />
               <XAxis
                 type="number"
                 dataKey="speed"
@@ -318,12 +319,11 @@ export function SpeedConsumptionChart({
                 domain={consumptionDomain}
                 allowDataOverflow
                 tickFormatter={(v) => Number(v).toFixed(2)}
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                label={{ value: 'Consumption (MT/day)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill="currentColor" />) as unknown as React.ReactElement }}
-                className="text-gray-600 dark:text-gray-400"
+                tick={{ fontSize: 10, fill: CHART.axisLabel }}
+                label={{ value: 'Consumption (MT/day)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill={CHART.axisLabel} />) as unknown as React.ReactElement }}
                 width={42}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '5 5', stroke: '#9ca3af' }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '5 5', stroke: CHART.axisLabel }} />
               <Legend
                 verticalAlign="top"
                 height={36}

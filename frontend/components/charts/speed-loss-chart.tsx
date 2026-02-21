@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { SpeedLossChartData } from '@/lib/services/charts/speed-loss-chart-service';
+import { CHART } from '@/lib/chart-theme';
 
 /** Recharts may pass Cartesian or Polar viewBox; we only use Cartesian. */
 type CartesianViewBox = { x: number; y: number; width: number; height: number };
@@ -50,12 +51,12 @@ function CustomTooltip({ active, payload }: any) {
   if (!data) return null;
 
   return (
-    <div className="bg-white dark:bg-gray-900 border-2 border-purple-200 dark:border-purple-700 rounded-xl shadow-2xl p-4 min-w-[200px]">
-      <div className="border-b border-gray-200 dark:border-gray-700 pb-2 mb-3">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+    <div className="bg-card border border-border rounded-lg shadow-md px-3 py-2 min-w-[160px]">
+      <div className="border-b border-border pb-2 mb-3">
+        <p className="text-xs font-poppins font-semibold text-foreground uppercase tracking-wide">
           Date
         </p>
-        <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-0.5">
+        <p className="text-sm font-sans text-foreground mt-0.5">
           {new Date(data.timestamp).toLocaleDateString('en-US', {
             month: 'long',
             day: 'numeric',
@@ -67,22 +68,22 @@ function CustomTooltip({ active, payload }: any) {
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+            <div className="w-3 h-3 rounded-full bg-teal-500"></div>
+            <span className="text-xs font-sans text-muted-foreground">
               Speed Loss
             </span>
           </div>
-          <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+          <span className="text-sm font-sans font-semibold text-foreground">
             {data.speedLossPct?.toFixed(2)}%
           </span>
         </div>
 
         {data.actualSpeed != null && (
-          <div className="flex items-center justify-between gap-6 pt-2 border-t border-gray-100 dark:border-gray-800">
-            <span className="text-xs text-gray-600 dark:text-gray-400">
+          <div className="flex items-center justify-between gap-6 pt-2 border-t border-border">
+            <span className="text-xs text-muted-foreground">
               Actual Speed
             </span>
-            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <span className="text-sm font-semibold text-foreground">
               {data.actualSpeed.toFixed(1)} knots
             </span>
           </div>
@@ -95,11 +96,11 @@ function CustomTooltip({ active, payload }: any) {
 function CustomDot(props: any) {
   const { cx, cy, payload } = props;
 
-  let fill = '#8b5cf6'; // purple-500
+  let fill: string = CHART.primary;
   if (payload.speedLossPct >= 15) {
-    fill = '#ef4444'; // red-500
+    fill = CHART.zoneError;
   } else if (payload.speedLossPct >= 8) {
-    fill = '#f59e0b'; // amber-500
+    fill = CHART.zoneWarning;
   } else {
     fill = '#10b981'; // green-500
   }
@@ -195,8 +196,8 @@ export function SpeedLossChart({
           <ResponsiveContainer width="100%" height={height}>
             <ScatterChart margin={{ top: 10, right: 12, bottom: 32, left: 44 }}>
               <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#e5e7eb"
+                strokeDasharray="4 4"
+                stroke={CHART.grid}
                 strokeOpacity={0.3}
                 vertical={false}
               />
@@ -215,25 +216,25 @@ export function SpeedLossChart({
                   value: 'Date',
                   position: 'insideBottom',
                   offset: -14,
-                  style: { fontSize: 11, fontWeight: 600, fill: '#4b5563' },
+                  style: { fontSize: 12, fontWeight: 600, fill: CHART.axisLabel },
                 }}
-                tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
-                stroke="#9ca3af"
+                tick={{ fontSize: 12, fill: CHART.axisLabel }}
+                stroke={CHART.axisLabel}
                 strokeWidth={1.5}
               />
 
               <YAxis
-                label={{ value: 'Speed Loss (%)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill="#4b5563" />) as unknown as React.ReactElement }}
+                label={{ value: 'Speed Loss (%)', content: ((props: unknown) => <YAxisLabel {...(props as React.ComponentProps<typeof YAxisLabel>)} fill={CHART.axisLabel} />) as unknown as React.ReactElement }}
                 domain={[0, 'auto']}
-                tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }}
-                stroke="#9ca3af"
+                tick={{ fontSize: 12, fill: CHART.axisLabel }}
+                stroke={CHART.axisLabel}
                 strokeWidth={1.5}
                 width={32}
               />
 
               <Tooltip
                 content={<CustomTooltip />}
-                cursor={{ strokeDasharray: '5 5', stroke: '#9ca3af' }}
+                cursor={{ strokeDasharray: '5 5', stroke: CHART.axisLabel }}
               />
 
               <Legend
@@ -263,11 +264,11 @@ export function SpeedLossChart({
                   name="Trend Line"
                   data={trendLineData}
                   dataKey="predicted"
-                  stroke="#dc2626"
+                  stroke={CHART.referenceError}
                   strokeWidth={3}
                   dot={false}
                   type="monotone"
-                  strokeDasharray="5 5"
+                  strokeDasharray="6 3"
                   isAnimationActive={true}
                   animationDuration={1000}
                 />

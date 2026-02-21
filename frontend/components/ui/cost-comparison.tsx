@@ -37,9 +37,9 @@ export function CostComparison({ data, className }: CostComparisonProps) {
   if (items.length === 0 && !best) return null;
 
   return (
-    <div className={cn('my-4 rounded-lg border bg-card p-4', className)}>
+    <div className={cn('my-4 rounded-xl border border-border bg-card overflow-hidden p-4', className)}>
       {best && (
-        <div className="mb-4 p-3 bg-primary/5 rounded-lg">
+        <div className="mb-4 p-3 bg-orange-50 border-l-4 border-orange-500 rounded-lg">
           <div className="text-sm font-medium text-muted-foreground">Recommended Port</div>
           <div className="text-xl font-bold">
             {best.port_name ?? best.port_code}
@@ -69,13 +69,13 @@ export function CostComparison({ data, className }: CostComparisonProps) {
                 <TableCell className="font-medium">
                   {item.port_name ?? item.port_code}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   ${fmt(item.fuel_cost_usd ?? 0)}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right tabular-nums">
                   ${fmt(item.deviation_cost_usd ?? 0)}
                 </TableCell>
-                <TableCell className="text-right font-semibold">
+                <TableCell className="text-right font-semibold tabular-nums">
                   ${fmt(item.total_cost_usd ?? 0)}
                 </TableCell>
               </TableRow>

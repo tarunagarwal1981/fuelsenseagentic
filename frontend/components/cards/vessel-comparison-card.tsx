@@ -195,7 +195,7 @@ export function VesselComparisonCard({
 
   if (isLoading) {
     return (
-      <Card className={className}>
+      <Card variant="elevated" className={className}>
         <CardHeader>
           <Skeleton className="h-6 w-48" />
           <Skeleton className="h-4 w-64 mt-2" />
@@ -232,7 +232,7 @@ export function VesselComparisonCard({
       : Object.keys(matrix);
 
   return (
-    <Card className={cn('overflow-hidden', className)}>
+    <Card variant="elevated" className={cn('overflow-hidden', className)}>
       <CardHeader>
         <div className="flex items-center gap-2">
           <Ship className="h-5 w-5 text-muted-foreground" aria-hidden />

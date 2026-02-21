@@ -56,20 +56,20 @@ export function ComplianceCard({ data }: { data: ComplianceCardData | null }) {
 
   const isWarning = data.severity === 'warning';
   const cardClassName = isWarning 
-    ? 'border-red-200 bg-red-50/50' 
-    : 'border-orange-200 bg-orange-50/50';
-  const iconClassName = isWarning ? 'h-5 w-5 text-red-600' : 'h-5 w-5 text-orange-600';
-  const badgeClassName = isWarning ? 'bg-red-100' : 'bg-orange-100';
+    ? 'border-status-error bg-status-error-bg/50' 
+    : 'border-status-warning bg-status-warning-bg/50';
+  const iconClassName = isWarning ? 'h-5 w-5 text-status-error' : 'h-5 w-5 text-status-warning-dark';
+  const badgeVariant = isWarning ? 'non-compliant' : 'warning';
   
   return (
-    <Card className={cardClassName}>
+    <Card variant={isWarning ? 'danger' : 'warning'} className={cardClassName}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className={iconClassName} />
             <CardTitle className="text-lg">ECA Compliance Required</CardTitle>
           </div>
-          <Badge variant="secondary" className={badgeClassName}>
+          <Badge variant={badgeVariant}>
             {ecaDetails.zonesCount} Zone{ecaDetails.zonesCount > 1 ? 's' : ''}
           </Badge>
         </div>

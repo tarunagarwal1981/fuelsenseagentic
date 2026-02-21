@@ -7,6 +7,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter), 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-poppins: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -37,18 +38,29 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  /* FuelSense theme (Figma / Builder.io design) */
-  --color-fs-brand: var(--fs-brand);
-  --color-fs-brand-light: var(--fs-brand-light);
-  --color-fs-brand-dark: var(--fs-brand-dark);
-  --color-fs-green: var(--fs-green);
-  --color-fs-topbar: var(--fs-topbar);
-  --color-fs-sidebar: var(--fs-sidebar);
-  --color-fs-alert: var(--fs-alert);
-  --color-fs-surface: var(--fs-surface);
-  --color-fs-surface-elevated: var(--fs-surface-elevated);
-  --color-fs-border: var(--fs-border);
-  --color-fs-input: var(--fs-input);
+  --color-brand-teal: var(--brand-teal);
+  --color-brand-navy: var(--brand-navy);
+  --color-grey-00: var(--grey-00);
+  --color-grey-01: var(--grey-01);
+  --color-grey-02: var(--grey-02);
+  --color-grey-03: var(--grey-03);
+  --color-grey-04: var(--grey-04);
+  --color-grey-05: var(--grey-05);
+  --color-grey-06: var(--grey-06);
+  --color-grey-07: var(--grey-07);
+  --color-grey-08: var(--grey-08);
+  --color-teal-50: var(--teal-50);
+  --color-teal-500: var(--teal-500);
+  --color-orange-500: var(--orange-500);
+  --color-status-error: var(--status-error);
+  --color-status-warning: var(--status-warning);
+  --color-status-success: var(--status-success);
+  --color-status-error-bg: var(--status-error-bg);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-dark: var(--status-success-dark);
+  --color-status-warning-dark: var(--status-warning-dark);
+  --color-status-error-dark: var(--status-error-dark);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -59,121 +71,159 @@
 }
 
 :root {
-  /* Figma design: FUEL-SENSE-VXD
-     File: https://www.figma.com/design/f0UAeYid01dSJu8LVnaT6O/FUEL-SENSE-VXD
-     Frames: 9140-67960 (main), 9140-67964 (Alerts), 9140-65000 (Playground welcome), 58045-833 (chat input), 9140-68088 (response tabs). Left panel: 9140-64961 (FUEL-SENSE-VXD-2). Tokens from Figma MCP get_variable_defs. */
-  --figma-Surface-Faded-bg: #F9FAFB;
-  --figma-Primary-Dark-Blue: #072638;
-  --figma-Buttons-button-container-2: rgba(33, 148, 149, 0.2);
-  --figma-Status-Error: #CD1030;
-  --figma-Grey-01: #FFF;
-  --figma-Surface-Card-stroke: #D2D5DB;
-  --figma-Surface-Card: #FFF;
-  --figma-Text-Title: #132740;
-  --figma-Text-Subtitles: #4B556B;
-  --figma-Border-Main-Divider: #E5E7EA;
-  --figma-Gray-500: #667085;
-  --figma-Status-Error-dark: #9D142B;
-  --figma-Grey-02: #F9FAFB;
-  --figma-Surface-Teal-BG-1: #E5F9F9;
-  --figma-Grey-11: #040406;
-  --figma-Grey-04: #E5E7EA;
-  --figma-Grey-05: #D2D5DB;
-  --figma-Grey-08: #4D5461;
-  --figma-secondary-elements-background: #F9FAFB;
-  --figma-secondary-elements-foreground: #9EA2AE;
-  --figma-Text-Primary: #132740;
-  --figma-Text-Icon: #9EA2AE;
-  --figma-Text-Secondary: #4B556B;
-  --figma-Surface-Grey-BG-1-Stroke: #E5E7EA;
-  --figma-Grey-10: #212936;
-  --figma-Primary-Teal: #219495;
-  --figma-Grey-03: #F3F4F6;
-  --figma-Tab-Unselected: #999;
-  /* Left panel (Alerts) – selected/hover card highlight */
-  --figma-Alert-selected-border: #A78BFA;
-  --figma-Alert-selected-bg: #F5F3FF;
-  --figma-font-face: Poppins;
-  --figma-font-size-body-1: 18px;
-  --figma-line-height-body-1: 26px;
-  --figma-font-size-body-2: 16px;
-  --figma-line-height-body-2: 24px;
-  --figma-font-size-body-3: 14px;
-  --figma-line-height-body-3: 22px;
-  --figma-font-size-header-4: 20px;
-
   --radius: 0.625rem;
-  --background: var(--figma-Grey-01);
-  --foreground: var(--figma-Text-Primary);
-  --card: var(--figma-Surface-Card);
-  --card-foreground: var(--figma-Text-Title);
-  --popover: var(--figma-Surface-Card);
-  --popover-foreground: var(--figma-Text-Primary);
-  --primary: var(--figma-Primary-Teal);
-  --primary-foreground: var(--figma-Grey-01);
-  --secondary: var(--figma-secondary-elements-background);
-  --secondary-foreground: var(--figma-secondary-elements-foreground);
-  --muted: var(--figma-Grey-03);
-  --muted-foreground: var(--figma-Text-Secondary);
-  --accent: var(--figma-Surface-Teal-BG-1);
-  --accent-foreground: var(--figma-Primary-Dark-Blue);
-  --destructive: var(--figma-Status-Error);
-  --border: var(--figma-Border-Main-Divider);
-  --input: var(--figma-Grey-03);
-  --ring: var(--figma-Primary-Teal);
-  --chart-1: var(--figma-Primary-Teal);
-  --chart-2: var(--figma-Primary-Dark-Blue);
-  --chart-3: var(--figma-Text-Secondary);
-  --chart-4: var(--figma-Surface-Teal-BG-1);
-  --chart-5: var(--figma-Gray-500);
-  --sidebar: var(--figma-Grey-10);
-  --sidebar-foreground: var(--figma-Grey-01);
-  --sidebar-primary: var(--figma-Primary-Teal);
-  --sidebar-primary-foreground: var(--figma-Grey-01);
-  --sidebar-accent: var(--figma-Grey-10);
-  --sidebar-accent-foreground: var(--figma-Grey-01);
-  --sidebar-border: var(--figma-Surface-Grey-BG-1-Stroke);
-  --sidebar-ring: var(--figma-Primary-Teal);
-  /* FuelSense theme – light (aligned to Figma) */
-  --fs-brand: var(--figma-Primary-Teal);
-  --fs-brand-light: var(--figma-Surface-Teal-BG-1);
-  --fs-brand-dark: var(--figma-Primary-Dark-Blue);
-  --fs-green: var(--figma-Primary-Teal);
-  --fs-topbar: var(--figma-Surface-Faded-bg);
-  --fs-sidebar: var(--figma-Grey-10);
-  --fs-alert: var(--figma-Status-Error);
-  --fs-surface: var(--figma-Surface-Card);
-  --fs-surface-elevated: var(--figma-Surface-Faded-bg);
-  --fs-border: var(--figma-Border-Main-Divider);
-  --fs-input: var(--figma-Grey-03);
+
+  /* Type scale (size / line-height) */
+  --text-xs: 0.75rem;
+  --text-xs--line: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line: 1.875rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line: 2.25rem;
+
+  /* Teal scale */
+  --teal-50: #E5F9F9;
+  --teal-100: #D1EFEF;
+  --teal-200: #BBE3E5;
+  --teal-300: #AAD8D0;
+  --teal-400: #46A8A9;
+  --teal-500: #219495;
+  --teal-600: #1A7677;
+  --teal-700: #145959;
+  --teal-800: #0D3B3C;
+  --teal-900: #0A2C2D;
+
+  /* Navy scale */
+  --navy-100: #71C3E1;
+  --navy-200: #4EB3DC;
+  --navy-300: #62A4CA;
+  --navy-400: #356B81;
+  --navy-500: #1E455C;
+  --navy-600: #061E2D;
+  --navy-700: #041722;
+  --navy-800: #072638;
+  --navy-900: #020B11;
+
+  /* Orange scale */
+  --orange-50: #FEF5E7;
+  --orange-100: #FDE8BF;
+  --orange-200: #FBCF80;
+  --orange-300: #FAB84D;
+  --orange-400: #FEA82E;
+  --orange-500: #F9A82B;
+  --orange-600: #E7A535;
+  --orange-700: #C4831A;
+  --orange-800: #9C6313;
+
+  /* Grey scale */
+  --grey-00: #FFFFFF;
+  --grey-01: #F9FAFB;
+  --grey-02: #F3F4F6;
+  --grey-03: #E5E7EA;
+  --grey-04: #D2D5DB;
+  --grey-05: #9EA2AE;
+  --grey-06: #4D5461;
+  --grey-07: #212936;
+  --grey-08: #040406;
+
+  /* Secondary (blue-grey) */
+  --secondary-100: #CDCDD2;
+  --secondary-300: #556E82;
+  --secondary-400: #4C92A3;
+  --secondary-500: #307580;
+
+  /* Accent */
+  --accent-orange: #FEA82E;
+  --accent-teal: #329EAC;
+  --accent-cyan: #9BCAD6;
+  --accent-red: #F52646;
+
+  /* Status */
+  --status-error: #CD1030;
+  --status-error-dark: #9D142B;
+  --status-error-bg: #FBDCE0;
+  --status-warning: #D0B010;
+  --status-warning-dark: #6E5B1A;
+  --status-warning-bg: #F0F4D9;
+  --status-success: #00A27D;
+  --status-success-dark: #145541;
+  --status-success-bg: #C4E7D9;
+
+  /* Semantic tokens */
+  --primary: #F9A82B;
+  --primary-foreground: #FFFFFF;
+  --brand-teal: #219495;
+  --brand-navy: #072638;
+  --background: #FFFFFF;
+  --foreground: #132740;
+  --card: #FFFFFF;
+  --card-foreground: #132740;
+  --popover: #FFFFFF;
+  --popover-foreground: #132740;
+  --muted: #F3F4F6;
+  --muted-foreground: #4B556B;
+  --border: #E5E7EA;
+  --input: #F3F4F6;
+  --ring: #F9A82B;
+  --destructive: #CD1030;
+  --destructive-foreground: #FFFFFF;
+  --secondary: #F9FAFB;
+  --secondary-foreground: #9EA2AE;
+  --accent: #E5F9F9;
+  --accent-foreground: #072638;
+
+  /* Chart */
+  --chart-1: #219495;
+  --chart-2: #F9A82B;
+  --chart-3: #072638;
+  --chart-4: #D0B010;
+  --chart-5: #BBE3E5;
+
+  /* Sidebar */
+  --sidebar: #212936;
+  --sidebar-foreground: #FFFFFF;
+  --sidebar-primary: #219495;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #212936;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: #E5E7EA;
+  --sidebar-ring: #219495;
 }
 
-/* Left panel (Alerts) – Figma design tokens */
+/* Left panel (Alerts) – design system tokens */
 .panel-alerts {
-  --panel-bg: var(--figma-Surface-Card);
-  --panel-border: var(--figma-Surface-Card-stroke);
-  --panel-header-icon-bg: var(--figma-Surface-Teal-BG-1);
-  --panel-header-icon-color: var(--figma-Primary-Teal);
-  --panel-tab-active-underline: var(--figma-Status-Error);
-  --panel-search-bg: var(--figma-Grey-03);
-  --panel-card-bg: var(--figma-Surface-Card);
-  --panel-card-border: var(--figma-Surface-Card-stroke);
-  --panel-card-vessel-color: var(--figma-Primary-Teal);
-  --panel-card-alert-value: var(--figma-Status-Error);
-  --panel-alert-selected-border: var(--figma-Alert-selected-border);
-  --panel-alert-selected-bg: var(--figma-Alert-selected-bg);
+  --panel-bg: var(--card);
+  --panel-border: var(--border);
+  --panel-header-icon-bg: var(--teal-50);
+  --panel-header-icon-color: var(--brand-teal);
+  --panel-tab-active-underline: var(--status-error);
+  --panel-search-bg: var(--muted);
+  --panel-card-bg: var(--card);
+  --panel-card-border: var(--border);
+  --panel-card-vessel-color: var(--brand-teal);
+  --panel-card-alert-value: var(--status-error);
+  --panel-alert-selected-border: var(--teal-500);
+  --panel-alert-selected-bg: var(--teal-50);
 }
 .dark .panel-alerts {
-  --panel-alert-selected-border: rgba(167, 139, 250, 0.6);
-  --panel-alert-selected-bg: rgba(167, 139, 250, 0.12);
+  --panel-alert-selected-border: var(--teal-400);
+  --panel-alert-selected-bg: var(--teal-900);
 }
 
-/* Response tabs – Figma 9140-68088 (FUEL-SENSE-VXD): active = teal + white bold, inactive = dark text, separator below */
+/* Response tabs – active = teal + white bold */
 .tabs-figma-68088 {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  border-bottom: 1px solid var(--figma-Surface-Card-stroke);
+  border-bottom: 1px solid var(--border);
   padding-bottom: 0;
 }
 .tabs-figma-68088 [role="tab"],
@@ -185,65 +235,54 @@
   transition: background-color 0.15s, color 0.15s;
   border: none;
   background: transparent;
-  color: var(--figma-Text-Title);
+  color: var(--foreground);
   cursor: pointer;
 }
 .tabs-figma-68088 [role="tab"]:hover,
 .tabs-figma-68088 .tab-trigger-figma:hover {
-  background: var(--figma-Grey-03);
+  background: var(--muted);
 }
 .tabs-figma-68088 [role="tab"][data-state="active"],
 .tabs-figma-68088 [role="tab"][aria-selected="true"],
 .tabs-figma-68088 .tab-trigger-figma.tab-trigger-figma-active {
-  background: var(--figma-Primary-Teal);
-  color: var(--figma-Grey-01);
+  background: var(--brand-teal);
+  color: var(--grey-00);
   font-weight: 600;
 }
 
 .dark {
-  --background: var(--figma-Grey-11);
-  --foreground: var(--figma-Grey-01);
-  --card: var(--figma-Grey-10);
-  --card-foreground: var(--figma-Grey-01);
-  --popover: var(--figma-Grey-10);
-  --popover-foreground: var(--figma-Grey-01);
-  --primary: var(--figma-Primary-Teal);
-  --primary-foreground: var(--figma-Grey-01);
-  --secondary: var(--figma-Grey-10);
-  --secondary-foreground: var(--figma-secondary-elements-foreground);
-  --muted: var(--figma-Grey-10);
-  --muted-foreground: var(--figma-Text-Icon);
-  --accent: var(--figma-Buttons-button-container-2);
-  --accent-foreground: var(--figma-Grey-01);
-  --destructive: var(--figma-Status-Error-dark);
-  --border: var(--figma-Surface-Grey-BG-1-Stroke);
-  --input: var(--figma-Grey-10);
-  --ring: var(--figma-Primary-Teal);
-  --chart-1: var(--figma-Primary-Teal);
-  --chart-2: var(--figma-Grey-01);
-  --chart-3: var(--figma-Text-Icon);
-  --chart-4: var(--figma-Surface-Teal-BG-1);
-  --chart-5: var(--figma-Gray-500);
-  --sidebar: var(--figma-Grey-11);
-  --sidebar-foreground: var(--figma-Grey-01);
-  --sidebar-primary: var(--figma-Primary-Teal);
-  --sidebar-primary-foreground: var(--figma-Grey-01);
-  --sidebar-accent: var(--figma-Grey-10);
-  --sidebar-accent-foreground: var(--figma-Grey-01);
-  --sidebar-border: var(--figma-Surface-Grey-BG-1-Stroke);
-  --sidebar-ring: var(--figma-Primary-Teal);
-  /* FuelSense theme – dark (Figma Greys) */
-  --fs-brand: var(--figma-Primary-Teal);
-  --fs-brand-light: var(--figma-Surface-Teal-BG-1);
-  --fs-brand-dark: var(--figma-Primary-Dark-Blue);
-  --fs-green: var(--figma-Primary-Teal);
-  --fs-topbar: var(--figma-Grey-10);
-  --fs-sidebar: var(--figma-Grey-11);
-  --fs-alert: var(--figma-Status-Error-dark);
-  --fs-surface: var(--figma-Grey-10);
-  --fs-surface-elevated: var(--figma-Grey-10);
-  --fs-border: var(--figma-Surface-Grey-BG-1-Stroke);
-  --fs-input: var(--figma-Grey-10);
+  --background: var(--grey-08);
+  --foreground: var(--grey-00);
+  --card: var(--grey-07);
+  --card-foreground: var(--grey-00);
+  --popover: var(--grey-07);
+  --popover-foreground: var(--grey-00);
+  --primary: var(--teal-500);
+  --primary-foreground: var(--grey-00);
+  --secondary: var(--grey-07);
+  --secondary-foreground: var(--grey-05);
+  --muted: var(--grey-07);
+  --muted-foreground: var(--grey-05);
+  --accent: rgba(33, 148, 149, 0.2);
+  --accent-foreground: var(--grey-00);
+  --destructive: var(--status-error-dark);
+  --destructive-foreground: var(--grey-00);
+  --border: var(--grey-07);
+  --input: var(--grey-07);
+  --ring: var(--teal-500);
+  --chart-1: var(--teal-500);
+  --chart-2: var(--grey-00);
+  --chart-3: var(--grey-05);
+  --chart-4: var(--teal-50);
+  --chart-5: var(--grey-06);
+  --sidebar: var(--grey-08);
+  --sidebar-foreground: var(--grey-00);
+  --sidebar-primary: var(--teal-500);
+  --sidebar-primary-foreground: var(--grey-00);
+  --sidebar-accent: var(--grey-07);
+  --sidebar-accent-foreground: var(--grey-00);
+  --sidebar-border: var(--grey-07);
+  --sidebar-ring: var(--teal-500);
 }
 
 @layer base {
@@ -253,17 +292,77 @@
   body {
     @apply bg-background text-foreground font-sans;
   }
-  /* Ensure chat output and all prose use the same font (Inter) */
+  h1 {
+    @apply font-poppins font-semibold text-foreground text-3xl;
+  }
+  h2 {
+    @apply font-poppins font-semibold text-foreground text-2xl;
+  }
+  h3 {
+    @apply font-poppins font-semibold text-foreground text-xl;
+  }
+  h4 {
+    @apply font-poppins font-semibold text-foreground text-lg;
+  }
+  a {
+    @apply font-poppins text-brand-teal hover:underline;
+  }
+  p {
+    @apply font-sans text-base text-foreground;
+  }
+  small,
+  .caption {
+    @apply font-sans text-xs text-muted-foreground;
+  }
+  .tabular-num {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  /* Prose (markdown in chat) */
   .prose,
   .prose *,
   [class*="prose"] * {
     font-family: inherit;
   }
+  .prose h1,
+  .prose h2,
+  .prose h3 {
+    font-family: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, sans-serif;
+    @apply font-semibold text-foreground;
+  }
+  .prose h1 { @apply text-2xl; }
+  .prose h2 { @apply text-xl; }
+  .prose h3 { @apply text-lg; }
+  .prose a {
+    font-family: var(--font-poppins), 'Poppins', ui-sans-serif, system-ui, sans-serif;
+    @apply text-brand-teal hover:underline;
+  }
+  .prose strong {
+    @apply font-semibold text-foreground;
+  }
+  .prose code {
+    @apply font-mono bg-teal-50 text-teal-700 rounded px-1;
+  }
+  .prose blockquote {
+    @apply border-l-4 border-teal-300 pl-3 text-muted-foreground italic;
+  }
+  .prose table {
+    @apply w-full border-collapse text-sm;
+  }
+  .prose th {
+    @apply font-poppins font-semibold text-muted-foreground uppercase tracking-wide text-left py-3 px-4 border-b border-border bg-grey-01;
+  }
+  .prose td {
+    @apply py-3 px-4 border-b border-border text-foreground;
+  }
+  .prose tr:hover td {
+    @apply bg-teal-50;
+  }
 }
 
-/* FuelSense brand gradient (teal → green) */
+/* FuelSense brand gradient (teal → brand) */
 .bg-fs-brand-gradient {
-  background: linear-gradient(to bottom right, var(--fs-brand), var(--fs-green));
+  background: linear-gradient(to bottom right, var(--brand-teal), var(--teal-600));
 }
 
 /* Animation utilities */
@@ -282,16 +381,36 @@
   animation: fadeIn 0.3s ease-out;
 }
 
+/* Leaflet popup: design system card, no default arrow/border */
+.leaflet-popup-content-wrapper {
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  padding: 0;
+}
+.leaflet-popup-content {
+  margin: 0;
+  min-width: 160px;
+}
+.leaflet-popup-tip {
+  display: none;
+}
+
 /* Component tier styling for HybridResponseRenderer */
 .component-tier-0 {
   @apply w-full;
 }
 .component-tier-1 {
-  @apply w-full;
+  @apply w-full rounded-xl border border-border shadow-sm;
+  animation: fadeIn 0.3s ease-out;
 }
 .component-tier-2 {
-  @apply w-full;
+  @apply w-full rounded-xl border border-border shadow-sm;
+  animation: fadeIn 0.3s ease-out;
+  animation-delay: 100ms;
 }
 .component-tier-3 {
-  @apply w-full;
+  @apply w-full rounded-xl bg-grey-01;
+  animation: fadeIn 0.3s ease-out;
+  animation-delay: 200ms;
 }

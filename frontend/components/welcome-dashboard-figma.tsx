@@ -8,11 +8,11 @@ import { ChevronRight, Ship, Activity, Fuel, AlertTriangle, CheckCircle } from "
  * Uses Figma design tokens; layout and copy from get_design_context / screenshot.
  */
 const INSIGHT_CARDS = [
-  { id: "cp-risk", title: "CP Risk", metric: "30%", unit: "Vessels", color: "var(--figma-Alert-selected-border)", bg: "var(--figma-Alert-selected-bg)", Icon: Activity },
+  { id: "cp-risk", title: "CP Risk", metric: "30%", unit: "Vessels", color: "var(--teal-500)", bg: "var(--teal-50)", Icon: Activity },
   { id: "perf-drift", title: "Performance Drift", metric: "10%", unit: "Voyages", color: "#ea580c", bg: "rgba(234, 88, 12, 0.12)", Icon: Ship },
   { id: "low-rob", title: "Low ROB", metric: "15%", unit: "of vessels", color: "#0ea5e9", bg: "rgba(14, 165, 233, 0.12)", Icon: Fuel },
-  { id: "fuel-anomalies", title: "Fuel Anomalies", metric: "15%", unit: "Vessels", color: "#219495", bg: "var(--figma-Surface-Teal-BG-1)", Icon: AlertTriangle },
-  { id: "taken-action", title: "Taken Action", metric: "20%", unit: "Vessels", color: "var(--figma-Grey-08)", bg: "var(--figma-Grey-03)", Icon: CheckCircle },
+  { id: "fuel-anomalies", title: "Fuel Anomalies", metric: "15%", unit: "Vessels", color: "#219495", bg: "var(--teal-50)", Icon: AlertTriangle },
+  { id: "taken-action", title: "Taken Action", metric: "20%", unit: "Vessels", color: "var(--grey-06)", bg: "var(--muted)", Icon: CheckCircle },
 ] as const;
 
 function InsightCard({
@@ -33,12 +33,7 @@ function InsightCard({
   return (
     <button
       type="button"
-      className="w-full text-left rounded-xl border p-4 shadow-sm hover:opacity-90 transition-opacity flex items-start justify-between gap-3"
-      style={{
-        borderColor: "var(--figma-Surface-Card-stroke)",
-        backgroundColor: "var(--figma-Surface-Card)",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-      }}
+      className="w-full text-left rounded-xl border-0 bg-grey-01 p-4 shadow-none hover:opacity-90 transition-opacity flex items-start justify-between gap-3"
     >
       <div className="flex items-start gap-3 min-w-0 flex-1">
         <div
@@ -48,15 +43,15 @@ function InsightCard({
           <Icon className="h-5 w-5 shrink-0" style={{ color }} />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold truncate" style={{ color: "var(--figma-Text-Title)" }}>
+          <p className="text-sm font-semibold truncate" style={{ color: "var(--foreground)" }}>
             {title}
           </p>
-          <p className="text-sm font-medium mt-0.5" style={{ color: "var(--figma-Text-Secondary)" }}>
+          <p className="text-sm font-medium mt-0.5" style={{ color: "var(--muted-foreground)" }}>
             {metric} {unit}
           </p>
         </div>
       </div>
-      <ChevronRight className="h-5 w-5 shrink-0" style={{ color: "var(--figma-Text-Icon)" }} />
+      <ChevronRight className="h-5 w-5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
     </button>
   );
 }
@@ -66,8 +61,8 @@ export function WelcomeDashboardFigma() {
     <div
       className="relative flex-1 overflow-y-auto min-h-0 flex flex-col items-center justify-start pt-8 pb-12 px-4"
       style={{
-        background: "var(--figma-Grey-02)",
-        backgroundImage: "radial-gradient(circle at 1px 1px, var(--figma-Grey-05) 1px, transparent 0)",
+        background: "var(--grey-01)",
+        backgroundImage: "radial-gradient(circle at 1px 1px, var(--grey-04) 1px, transparent 0)",
         backgroundSize: "16px 16px",
       }}
     >
@@ -76,7 +71,7 @@ export function WelcomeDashboardFigma() {
         <div
           className="w-14 h-14 rounded-full flex items-center justify-center mb-4 shadow-md"
           style={{
-            background: "linear-gradient(135deg, var(--figma-Primary-Teal) 0%, #1a7a7b 100%)",
+            background: "linear-gradient(135deg, var(--brand-teal) 0%, #1a7a7b 100%)",
             boxShadow: "0 4px 14px rgba(33, 148, 149, 0.35), 0 0 0 2px rgba(234, 88, 12, 0.2)",
           }}
         >
@@ -85,17 +80,17 @@ export function WelcomeDashboardFigma() {
 
         <h1
           className="text-2xl font-bold text-center mb-3"
-          style={{ color: "var(--figma-Text-Title)" }}
+          style={{ color: "var(--foreground)" }}
         >
           Good morning, John!
         </h1>
 
         <p
           className="text-center text-sm max-w-lg mb-8 leading-relaxed"
-          style={{ color: "var(--figma-Text-Secondary)", fontFamily: "var(--figma-font-face), sans-serif" }}
+          style={{ color: "var(--muted-foreground)", fontFamily: "var(--font-poppins), 'Poppins', sans-serif" }}
         >
-          I've analyzed your fleet and found a few <strong style={{ color: "var(--figma-Text-Title)" }}>important updates</strong> worth
-          reviewing today. You can <strong style={{ color: "var(--figma-Text-Title)" }}>open any card below</strong> to dive into a
+          I've analyzed your fleet and found a few <strong style={{ color: "var(--foreground)" }}>important updates</strong> worth
+          reviewing today. You can <strong style={{ color: "var(--foreground)" }}>open any card below</strong> to dive into a
           specific insight, or choose "Show Summary" if you'd like to see everything together.
         </p>
 
@@ -117,7 +112,7 @@ export function WelcomeDashboardFigma() {
           href="#"
           onClick={(e) => e.preventDefault()}
           className="text-sm font-medium underline hover:opacity-90"
-          style={{ color: "var(--figma-Primary-Teal)" }}
+          style={{ color: "var(--brand-teal)" }}
         >
           Show Summary
         </a>

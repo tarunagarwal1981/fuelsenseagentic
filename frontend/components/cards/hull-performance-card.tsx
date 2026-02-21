@@ -23,14 +23,14 @@ interface HullPerformanceCardProps {
 // Helper Functions
 // ============================================================================
 
-function getConditionVariant(condition: 'GOOD' | 'AVERAGE' | 'POOR'): 'default' | 'secondary' | 'destructive' {
+function getConditionVariant(condition: 'GOOD' | 'AVERAGE' | 'POOR'): 'good' | 'fair' | 'poor' {
   switch (condition) {
     case 'GOOD':
-      return 'default';
+      return 'good';
     case 'AVERAGE':
-      return 'secondary';
+      return 'fair';
     case 'POOR':
-      return 'destructive';
+      return 'poor';
   }
 }
 
@@ -96,7 +96,7 @@ export function HullPerformanceCard({ analysis, chartData }: HullPerformanceCard
   );
 
   return (
-    <Card className="w-full shadow-lg">
+    <Card variant="elevated" className="w-full">
       {/* ================================================================ */}
       {/* Summary Header */}
       {/* ================================================================ */}
@@ -164,22 +164,22 @@ export function HullPerformanceCard({ analysis, chartData }: HullPerformanceCard
       <CardContent className="pt-0">
         {hasChartData ? (
           <Tabs defaultValue="power" className="w-full">
-            <TabsList className="tabs-figma-68088 grid w-full grid-cols-3 mb-4 bg-transparent p-0 h-auto rounded-none border-0 border-b border-[var(--figma-Surface-Card-stroke)]">
+            <TabsList className="tabs-figma-68088 grid w-full grid-cols-3 mb-4 bg-transparent p-0 h-auto rounded-none border-0 border-b border-border">
               <TabsTrigger
                 value="power"
-                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-brand-teal data-[state=active]:text-primary-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-foreground hover:bg-muted border-0"
               >
                 Power Loss
               </TabsTrigger>
               <TabsTrigger
                 value="speed"
-                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-brand-teal data-[state=active]:text-primary-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-foreground hover:bg-muted border-0"
               >
                 Speed Loss
               </TabsTrigger>
               <TabsTrigger
                 value="consumption"
-                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-[var(--figma-Primary-Teal)] data-[state=active]:text-[var(--figma-Grey-01)] data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-[var(--figma-Text-Title)] hover:bg-[var(--figma-Grey-03)] border-0"
+                className="text-xs md:text-sm rounded-md px-4 py-2.5 data-[state=active]:bg-brand-teal data-[state=active]:text-primary-foreground data-[state=active]:font-semibold data-[state=active]:shadow-none bg-transparent text-foreground hover:bg-muted border-0"
               >
                 Speed-Consumption
               </TabsTrigger>
